@@ -1,0 +1,638 @@
+{
+  "_note": "Vision OCR blocks fixture（只存文本+坐标，无原图、无 PII）。坐标约定：归一化、y 轴向上（y 越大越靠上）。",
+  "_origin": "按 2026-11-12 合成的 11 项化验单截图形态构造（WBC/HGB/PLT/NEUT#/LYM#/RBC/ALT/LDH/CRP/CREA/RET%），用于锁「版式重建 + 行解析」回归。",
+  "_expected": {
+    "rows": 11,
+    "names": [
+      "WBC",
+      "HGB",
+      "PLT",
+      "NEUT#",
+      "LYM#",
+      "RBC",
+      "ALT",
+      "LDH",
+      "CRP",
+      "CREA",
+      "RET%"
+    ]
+  },
+  "blocks": [
+    {
+      "index": 1,
+      "text": "首都医科大学附属北京朝阳医院",
+      "boundingBox": {
+        "x": 0.2,
+        "y": 0.958,
+        "width": 0.4,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 2,
+      "text": "检验科 临检组",
+      "boundingBox": {
+        "x": 0.08,
+        "y": 0.936,
+        "width": 0.22,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 3,
+      "text": "样本号 F3266470935",
+      "boundingBox": {
+        "x": 0.08,
+        "y": 0.914,
+        "width": 0.24,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 4,
+      "text": "报告日期 2026-09-20",
+      "boundingBox": {
+        "x": 0.44,
+        "y": 0.914,
+        "width": 0.26,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 5,
+      "text": "病历号 2094933",
+      "boundingBox": {
+        "x": 0.72,
+        "y": 0.914,
+        "width": 0.2,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 6,
+      "text": "姓名 某某",
+      "boundingBox": {
+        "x": 0.08,
+        "y": 0.892,
+        "width": 0.16,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 7,
+      "text": "性别 男  年龄 30岁",
+      "boundingBox": {
+        "x": 0.44,
+        "y": 0.892,
+        "width": 0.3,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 8,
+      "text": "项目名称",
+      "boundingBox": {
+        "x": 0.08,
+        "y": 0.86,
+        "width": 0.16,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 9,
+      "text": "结果",
+      "boundingBox": {
+        "x": 0.44,
+        "y": 0.86,
+        "width": 0.08,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 10,
+      "text": "单位",
+      "boundingBox": {
+        "x": 0.6,
+        "y": 0.86,
+        "width": 0.08,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 11,
+      "text": "参考区间",
+      "boundingBox": {
+        "x": 0.72,
+        "y": 0.86,
+        "width": 0.14,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 12,
+      "text": "提示",
+      "boundingBox": {
+        "x": 0.88,
+        "y": 0.86,
+        "width": 0.08,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 13,
+      "text": "WBC",
+      "boundingBox": {
+        "x": 0.08,
+        "y": 0.82,
+        "width": 0.24,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 14,
+      "text": "HGB",
+      "boundingBox": {
+        "x": 0.08,
+        "y": 0.7819999999999999,
+        "width": 0.24,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 15,
+      "text": "PLT",
+      "boundingBox": {
+        "x": 0.08,
+        "y": 0.744,
+        "width": 0.24,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 16,
+      "text": "NEUT#",
+      "boundingBox": {
+        "x": 0.08,
+        "y": 0.706,
+        "width": 0.24,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 17,
+      "text": "LYM#",
+      "boundingBox": {
+        "x": 0.08,
+        "y": 0.6679999999999999,
+        "width": 0.24,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 18,
+      "text": "RBC",
+      "boundingBox": {
+        "x": 0.08,
+        "y": 0.6299999999999999,
+        "width": 0.24,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 19,
+      "text": "ALT",
+      "boundingBox": {
+        "x": 0.08,
+        "y": 0.592,
+        "width": 0.24,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 20,
+      "text": "LDH",
+      "boundingBox": {
+        "x": 0.08,
+        "y": 0.5539999999999999,
+        "width": 0.24,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 21,
+      "text": "CRP",
+      "boundingBox": {
+        "x": 0.08,
+        "y": 0.516,
+        "width": 0.24,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 22,
+      "text": "CREA",
+      "boundingBox": {
+        "x": 0.08,
+        "y": 0.478,
+        "width": 0.24,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 23,
+      "text": "RET%",
+      "boundingBox": {
+        "x": 0.08,
+        "y": 0.43999999999999995,
+        "width": 0.24,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 24,
+      "text": "6.83",
+      "boundingBox": {
+        "x": 0.44,
+        "y": 0.82,
+        "width": 0.12,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 25,
+      "text": "92",
+      "boundingBox": {
+        "x": 0.44,
+        "y": 0.7819999999999999,
+        "width": 0.12,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 26,
+      "text": "68",
+      "boundingBox": {
+        "x": 0.44,
+        "y": 0.744,
+        "width": 0.12,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 27,
+      "text": "1.20",
+      "boundingBox": {
+        "x": 0.44,
+        "y": 0.706,
+        "width": 0.12,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 28,
+      "text": "4.10",
+      "boundingBox": {
+        "x": 0.44,
+        "y": 0.6679999999999999,
+        "width": 0.12,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 29,
+      "text": "3.20",
+      "boundingBox": {
+        "x": 0.44,
+        "y": 0.6299999999999999,
+        "width": 0.12,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 30,
+      "text": "65",
+      "boundingBox": {
+        "x": 0.44,
+        "y": 0.592,
+        "width": 0.12,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 31,
+      "text": "320",
+      "boundingBox": {
+        "x": 0.44,
+        "y": 0.5539999999999999,
+        "width": 0.12,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 32,
+      "text": "18.0",
+      "boundingBox": {
+        "x": 0.44,
+        "y": 0.516,
+        "width": 0.12,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 33,
+      "text": "62",
+      "boundingBox": {
+        "x": 0.44,
+        "y": 0.478,
+        "width": 0.12,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 34,
+      "text": "1.8",
+      "boundingBox": {
+        "x": 0.44,
+        "y": 0.43999999999999995,
+        "width": 0.12,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 35,
+      "text": "10^9/L",
+      "boundingBox": {
+        "x": 0.6,
+        "y": 0.82,
+        "width": 0.1,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 36,
+      "text": "g/L",
+      "boundingBox": {
+        "x": 0.6,
+        "y": 0.7819999999999999,
+        "width": 0.1,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 37,
+      "text": "10^9/L",
+      "boundingBox": {
+        "x": 0.6,
+        "y": 0.744,
+        "width": 0.1,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 38,
+      "text": "10^9/L",
+      "boundingBox": {
+        "x": 0.6,
+        "y": 0.706,
+        "width": 0.1,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 39,
+      "text": "10^9/L",
+      "boundingBox": {
+        "x": 0.6,
+        "y": 0.6679999999999999,
+        "width": 0.1,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 40,
+      "text": "10^12/L",
+      "boundingBox": {
+        "x": 0.6,
+        "y": 0.6299999999999999,
+        "width": 0.1,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 41,
+      "text": "U/L",
+      "boundingBox": {
+        "x": 0.6,
+        "y": 0.592,
+        "width": 0.1,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 42,
+      "text": "U/L",
+      "boundingBox": {
+        "x": 0.6,
+        "y": 0.5539999999999999,
+        "width": 0.1,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 43,
+      "text": "mg/L",
+      "boundingBox": {
+        "x": 0.6,
+        "y": 0.516,
+        "width": 0.1,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 44,
+      "text": "umol/L",
+      "boundingBox": {
+        "x": 0.6,
+        "y": 0.478,
+        "width": 0.1,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 45,
+      "text": "%",
+      "boundingBox": {
+        "x": 0.6,
+        "y": 0.43999999999999995,
+        "width": 0.1,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 46,
+      "text": "3.5-9.5",
+      "boundingBox": {
+        "x": 0.72,
+        "y": 0.82,
+        "width": 0.16,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 47,
+      "text": "130-175",
+      "boundingBox": {
+        "x": 0.72,
+        "y": 0.7819999999999999,
+        "width": 0.16,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 48,
+      "text": "125-350",
+      "boundingBox": {
+        "x": 0.72,
+        "y": 0.744,
+        "width": 0.16,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 49,
+      "text": "1.8-6.3",
+      "boundingBox": {
+        "x": 0.72,
+        "y": 0.706,
+        "width": 0.16,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 50,
+      "text": "1.1-3.2",
+      "boundingBox": {
+        "x": 0.72,
+        "y": 0.6679999999999999,
+        "width": 0.16,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 51,
+      "text": "4.3-5.8",
+      "boundingBox": {
+        "x": 0.72,
+        "y": 0.6299999999999999,
+        "width": 0.16,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 52,
+      "text": "7-40",
+      "boundingBox": {
+        "x": 0.72,
+        "y": 0.592,
+        "width": 0.16,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 53,
+      "text": "120-250",
+      "boundingBox": {
+        "x": 0.72,
+        "y": 0.5539999999999999,
+        "width": 0.16,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 54,
+      "text": "0-3",
+      "boundingBox": {
+        "x": 0.72,
+        "y": 0.516,
+        "width": 0.16,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 55,
+      "text": "57-97",
+      "boundingBox": {
+        "x": 0.72,
+        "y": 0.478,
+        "width": 0.16,
+        "height": 0.016
+      },
+      "confidence": 1
+    },
+    {
+      "index": 56,
+      "text": "0.5-2.5",
+      "boundingBox": {
+        "x": 0.72,
+        "y": 0.43999999999999995,
+        "width": 0.16,
+        "height": 0.016
+      },
+      "confidence": 1
+    }
+  ]
+}
