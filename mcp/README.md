@@ -48,6 +48,20 @@ node mcp/intake-server.mjs # stdio，由 AI 客户端拉起或手动接入
 | `intake_update_patient` | 写病友档案 | 身份证/手机号/住址**拒收**（红线） |
 | `intake_get_card` | 出 A4 资料卡 | 默认脱敏；返回 `counts`/`summary` + HTML 落盘路径 |
 
+## 写盘后果（哪些工具会改本机数据）
+
+工具分两类，**调用前请先分清**：
+
+| 工具 | 是否写盘 | 写到哪 |
+|---|---|---|
+| `intake_save_report` | **会写库** | 向 `data/reports.json` **追加**一条记录（含 rows、原文 text、sha256/dhash/内容指纹、元信息）。该文件是本机数据、已被 `.gitignore` 覆盖，但**是真的落盘**——同一份报告重复调用会被查重拦住，`force:true` 则会再追加一条独立记录 |
+| `intake_update_patient` | **会写库** | 覆盖写 `data/intake/patient.json`（病友档案抬头） |
+| `intake_get_card` | 写临时文件 | 在系统临时目录生成 `medbrief-card-*.html`（`/tmp` 级，可随时删） |
+| `intake_stitch_images` | 写临时文件 | 在 `/tmp` 落一张拼接图，返回路径 |
+| `intake_ocr_image` / `intake_parse_text` / `intake_list_reports` / `intake_get_patient` | 只读 | 不改任何文件（OCR 走本机 8008，不入库） |
+
+**测试纪律**：要试 `intake_save_report` 时，要么指向独立库，要么**跑完按返回的 `reportId` 精确删除**——不要留下测试记录，也不要用「清空 reports.json」这种粗手段（会连带删掉别人的真实报告）。`mcp/smoke-test.mjs` 自己就是这么收尾的：它打印清理前后的条数（`2 → 1`），只删自己写的那一条。
+
 典型链路：
 
 ```
