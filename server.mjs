@@ -938,16 +938,29 @@ function getNextReleaseCountdown() {
     try {
       const store = readReports()
       const image = String(body.image || '')
-      const rows = Array.isArray(body.rows) && body.rows.length ? body.rows : parseLabRows(body.text || '')
+      const parsedRows = Array.isArray(body.rows) && body.rows.length ? body.rows : parseLabRows(body.text || '')
       const meta = body.meta || {}
+      // 每条 row 都落日期：资料卡的「趋势段」按 row.measuredAt 取时间，缺失就退回 row.reportDate；
+      // 两者都空则趋势段直接少行（不是空表就是静默丢数据）。故入库时统一用 meta.reportDate 兜底打戳。
+      const reportDate = String(meta.reportDate || '')
+      const rows = parsedRows.map((r) => ({
+        ...r,
+        reportDate: r.reportDate || reportDate,
+        measuredAt: r.measuredAt || r.reportDate || reportDate,
+      }))
       const imageBuf = image ? Buffer.from(image.replace(/^data:image\/[a-z+]+;base64,/i, ''), 'base64') : null
       const sha256 = imageBuf ? sha256Bytes(imageBuf) : ''
       const dhash = String(body.dhash || '')
       const fingerprint = buildReportFingerprint(rows, meta)
-      const dup = findDuplicate({ sha256, dhash }, store.reports)
-      if (dup.dup) return sendJson(res, 200, { ok: false, duplicate: dup, hint: '这张图已导入过' })
-      const sameContent = store.reports.find((r) => r.fingerprint === fingerprint)
-      if (sameContent) return sendJson(res, 200, { ok: false, duplicate: { dup: true, kind: 'content', of: sameContent.id }, hint: '同一份报告（内容一致）' })
+      // force=true：用户已在弹窗里确认「仍要导入」——跳过去重判定，但仍计算并保存指纹，
+      // 否则这条记录永久不受查重覆盖（旧的前端兜底是「不带 image 重发」，那是查重盲区）
+      const force = body.force === true
+      if (!force) {
+        const dup = findDuplicate({ sha256, dhash }, store.reports)
+        if (dup.dup) return sendJson(res, 200, { ok: false, duplicate: dup, hint: '这张图已导入过' })
+        const sameContent = store.reports.find((r) => r.fingerprint === fingerprint)
+        if (sameContent) return sendJson(res, 200, { ok: false, duplicate: { dup: true, kind: 'content', of: sameContent.id }, hint: '同一份报告（内容一致）' })
+      }
       const rec = {
         id: `rep_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`,
         createdAt: new Date().toISOString(),

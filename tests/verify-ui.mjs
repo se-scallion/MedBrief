@@ -7,6 +7,7 @@ import { chromium } from 'playwright'
 
 const BASE = process.env.MEDBRIEF_BASE || 'http://127.0.0.1:5174'
 const TABS = [
+  { label: '资料导入', probe: /病友|导入|资料卡/ },
   { label: '出诊监控', probe: /出诊中|停诊|两周总排班/ },
   { label: '挂号与预约', probe: /就诊人|医院/ },
   { label: '病历资料', probe: /近期指标|速览|病历/ },

@@ -15,6 +15,7 @@ import BookingTab from './tabs/BookingTab.jsx'
 import BriefTab from './tabs/BriefTab.jsx'
 import OrdersTab from './tabs/OrdersTab.jsx'
 import SessionTab from './tabs/SessionTab.jsx'
+import IntakePage from './pages/IntakePage.jsx'
 
 const { Header, Content, Footer } = Layout
 const { Text } = Typography
@@ -40,6 +41,7 @@ export default function App() {
   const logValue = useMemo(() => ({ logs, pushLog, clearLogs }), [logs, pushLog, clearLogs])
 
   const items = [
+    { key: 'intake', label: '资料导入', children: <IntakePage /> },
     { key: 'monitor', label: '出诊监控', children: <MonitorTab /> },
     { key: 'booking', label: '挂号与预约', children: <BookingTab /> },
     { key: 'brief', label: '病历资料', children: <BriefTab /> },
@@ -76,7 +78,7 @@ export default function App() {
         </Header>
 
         <Content style={{ padding: '16px 20px 32px' }}>
-          <Tabs defaultActiveKey="monitor" items={items} destroyOnHidden={false} />
+          <Tabs defaultActiveKey="intake" items={items} destroyOnHidden={false} />
         </Content>
 
         <Footer style={{ textAlign: 'center', color: '#94a3b8', fontSize: 12, padding: 12 }}>
