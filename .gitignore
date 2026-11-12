@@ -8,3 +8,6 @@ data/114-flow/
 # 前端构建产物（按需 npx vite build --config web/vite.config.js）
 web/dist/
 web/dist-next/
+data/intake/
+# 用户导入的报告原件索引与结构化结果（本机数据，不入库）
+data/reports.json
