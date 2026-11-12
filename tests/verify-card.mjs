@@ -268,10 +268,33 @@ it('真实图单位规范化：不得出现 `*10 9/L` / `£1` / `gL&` 这类 OCR
   assert.equal(normalizeUnit('£1'), '')
 })
 
-it('真实 fixture 已脱敏：不含姓名 / 病历号 / 条码 / 床号 / 医生 / 医院原值', () => {
-  const dump = JSON.stringify(REAL)
-  const leaks = ['代惠', '2094933', '0024379684', 'F3266470935', '血液二^12', '史庭', '首都医科大学附属北京朝阳医院'].filter((k) => dump.includes(k))
-  assert.deepEqual(leaks, [], `fixture 里仍有真实信息：${leaks.join('、')}`)
+// 脱敏断言（两份真实 fixture 共用）：身份字段 + 「换了院名却漏了院址」都要挡住。
+// 教训：双栏 fixture 曾把院名换成「某某县人民医院」，但 `地址：河北省香河县新开街30号` 原样留着 —— 肉眼永远抓不住，只能靠断言。
+const PII_TOKENS = [
+  // 姓名 / 病历号 / 条码 / 床号 / 医生
+  '代惠', '代聪', '2094933', '0024379684', 'F3266470935', '血液二^12', '史庭', '荆志辉',
+  // 院名全称
+  '首都医科大学附属北京朝阳医院', '北京朝阳医院', '香河县人民医院',
+  // 院址地名（换名漏地址的漏网）
+  '香河', '新开街', '朝阳区', '东十里堡', '常营',
+]
+function assertRedacted(fixture, label) {
+  const dump = JSON.stringify(fixture)
+  const leaks = PII_TOKENS.filter((k) => dump.includes(k))
+  assert.deepEqual(leaks, [], `${label} 仍有真实信息：${leaks.join('、')}`)
+  // 所有含「地址」的块必须是占位形态（含「某」或数字 0 占位），不许出现省/市/县/街/路 + 门牌的实写
+  // 约定：占位符是「某」或「00」。含地址的块必须出现占位符，否则视为没脱敏
+  const addrBlocks = (fixture.blocks || []).filter((b) => /地址/.test(String(b.text || '')))
+  const badAddr = addrBlocks.filter((b) => !/某|00/.test(b.text))
+  assert.deepEqual(badAddr.map((b) => b.text), [], `${label} 的地址行未脱敏：${badAddr.map((b) => b.text).join('；')}`)
+}
+
+it('真实 fixture 已脱敏：不含姓名 / 病历号 / 条码 / 床号 / 医生 / 院名 / 院址', () => {
+  assertRedacted(REAL, '单栏 fixture')
+})
+
+it('双栏 fixture 已脱敏：院名换了、院址也必须换（换名漏地址）', () => {
+  assertRedacted(REAL2, '双栏 fixture')
 })
 
 console.log('\n' + '='.repeat(46))
