@@ -168,17 +168,20 @@ const fs=require('node:fs');
 
 ---
 
-## 四、共享纯函数（直接复制，不建 npm 包）
+## 四、共享「口径」，不共享代码（2026-11-12 按实测更正）
 
-当前共享量少，直接在各自 `lib/` 下维护同名文件即可。**MedData 是上游**，算法改动以 MedData 的 `pnpm test` 门禁为准；改动后手动同步到 MedBrief。
+| 文件 | MedData | MedBrief | 关系 |
+|---|---|---|---|
+| `typingCard.js` | `src/utils/typingCard.js`，**333 行**，`buildTypingCard()` 返回 `identity/hospital/onset/typing/genes/course/stage` 七段完整卡 | `lib/typingCard.js`，**45 行**，同签名但只产出 manifest 用的 `typingSummary` | **两套实现，形状不同，不存在「同步」这个动作**（旧表述「各自维护同名文件、改动后手动同步」与实际不符，已删） |
 
-| 文件 | 功能 | 同步触发条件 |
-|---|---|---|
-| `lib/typingCard.js` | 急淋 B 分型计算卡（纯函数） | MedData 侧有实质逻辑改动时 |
+**共享的是口径，不是代码**（两套实现都必须守，改动任一侧都要人工核对另一侧是否仍在同一口径）：
 
-**合并触发条件**（达到时建 `packages/core` npm 包）：被引用纯函数 > 10 个或改动超过 3 次/月。
+1. 数值、病名、分期、基因型**只照抄来源**（表单/报告/库内记录），**拿不到就留空**；
+2. 不推测、不兜底、不编造——`''` 优于一个看起来合理的默认值；
+3. UI 侧对空值显示「未记录」，不得渲染成正常或占位结论；
+4. 红线：只陈述数值与时间，不写诊断结论与治疗建议（`.agents/testing-lessons.md`）。
 
----
+**2026-11-12 实例（两侧对账结果）**：MedData 侧**本来就合规**（`typingCard.js:314` 无诊断即空串、`pickOnset` 无依据返回空、`buildGenes` 只列检出通道），全仓 grep `2024-03|IKZF1缺失|CD19+|CD22+` 在生产代码 0 命中；**不合规的全在 MedBrief 侧**，`lib/typingCard.js` 原有 5 处兜底（诊断/分期/治疗描述/标志物/院名）已全部清空。
 
 ## 五、不共享的部分（各管各的，不要相互侵入）
 
