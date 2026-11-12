@@ -94,7 +94,25 @@ curl -s -X POST http://127.0.0.1:5174/api/brief/bundle \
 | `deskewImage(input, angleDeg)` | 白底放大画布后旋转，输出 png dataUrl | 只在需要时调用，避免无谓重采样 |
 | `autoDeskew(input)` | 估角 + 条件矫正 | **死区 0.5°**：`|angle| < 0.5°` 一律不动（二次插值本身会让小字发糊） |
 
-**顺序约束（硬）**：deskew **必须在切块之前**（`server.mjs` 的 `/api/intake/ocr` 里先 `autoDeskew`、再 `planChunks`）。先切块等于把歪图切成歪块，后面的切块与行聚类全部白做。
+**OCR 链顺序（硬约束，2026-11-12 定稿）**
+
+```
+deskew（autoDeskew）→ cropToContent（裁墨迹 bbox 白边）→ planChunks → 逐块 OCR → 行合并（mergeChunkRows）
+```
+
+- **deskew 必须在切块之前**：先切块等于把歪图切成歪块，行聚类与切块全部白做。
+- **cropToContent 必须在 deskew 之后、planChunks 之前**：deskew 旋转必然给四角补白（宽度被撑大、内容没变宽），
+  若直接拿回正后的尺寸判 h/w，本该切块的超重图会被判成「不超高」——
+  实测 2223×6490（h/w 2.92，该切）→ 回正后 2448×6564（h/w 2.68，判不切）→ **48 行只出 43 行**；
+  裁掉白边后 1864×6295（h/w 3.38）→ 切 2 块 → **raw 48、12 项**。白边是唯一变量。
+
+**尺寸语义（改断言/加预处理前必读）**
+
+> **凡改变图像尺寸的步骤之后，所有尺寸类判据必须用 `contentWidth` / `contentHeight`，不得用原图尺寸。**
+
+- `planChunks` 只接受**裁剪后**的尺寸；响应里的 `chunkAspect` / `chunkHeights` 全部按内容 bbox 计算；
+- 测试里曾写死原图尺寸（`chunkHeights === [4816]`、「块高之和 > 6424」、`h / 2000`），链上多了 crop 一步后**三条同时假红** —— 现已全部归一到 `contentWidth` / `contentHeight`；
+- `cropToContent` 的边界（都不许抛错）：纯白/无墨迹 → 不裁；墨迹铺满（bbox 异常）→ 不裁；裁完几乎没变小（本来就贴边）→ 不裁。四周留 `padding=10px`，别把贴边文字切掉。
 
 **`/api/intake/ocr` 新增响应字段**：
 
@@ -104,5 +122,7 @@ curl -s -X POST http://127.0.0.1:5174/api/brief/bundle \
 | `deskewed` | 是否真的旋转过（`|angle| ≥ 0.5°` 才为 `true`） |
 | `deskewMs` | 估角耗时（ms），用于盯 150ms 预算 |
 | `deskewConfidence` | 估角置信度（0–1，与次优角度的方差比）；低置信度时可靠人工校对兜底 |
+| `cropped` / `cropBox` | 是否按墨迹 bbox 裁过白边；裁剪框 `{x,y,w,h}`（排障用） |
+| `contentWidth` / `contentHeight` | **裁剪后的内容尺寸** —— 所有尺寸类判据的唯一基准 |
 
 **残留边界**：回正后仍可能丢 1 行（0.5° 量化 + 插值）。实测：歪 1°/3°/5° → 11/11；**歪 2° → 10/11**。可接受，人工校对兜底；详见 `docs/问诊资料卡.md` 的「已知边界」。
