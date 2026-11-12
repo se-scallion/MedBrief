@@ -38,6 +38,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { createGuahaoManager } from './lib/guahaoCore.js'
 import { buildMedDataBundle, parseMedDataBundle } from './lib/meddataBundle.js'
+import { blocksToLines } from './lib/visionLayout.mjs'
 import {
   sha256Bytes, findDuplicate, stitchVertically,
   parseLabRows, buildReportFingerprint, groupForDoctorCard, summarizeForCard,
@@ -925,8 +926,23 @@ function getNextReleaseCountdown() {
         signal: AbortSignal.timeout(90000),
       })
       const j = await r.json().catch(() => ({}))
-      const text = j.text || j.result || (Array.isArray(j.blocks) ? j.blocks.map((b) => b.text || '').join('\n') : '')
-      sendJson(res, 200, { ok: !!text, text, rows: parseLabRows(text), engine: '8008/ocr-vision', upstream: j.ok === false ? j.error : undefined })
+      const blocks = Array.isArray(j.blocks) ? j.blocks : []
+      // 版式重建：Vision 按「列」返回块，直接拼文本会把项目名与数值分成两段，导致按行解析只能出 1 行
+      // （实测：11 项化验单解析出 1 行垃圾）。有 boundingBox 时先按 y 聚类成行、行内按 x 排序。
+      const hasBoxes = blocks.some((b) => b && b.boundingBox)
+      const layoutLines = hasBoxes ? blocksToLines(blocks) : []
+      const text = layoutLines.length
+        ? layoutLines.join('\n')
+        : (j.text || j.result || blocks.map((b) => b.text || '').join('\n'))
+      sendJson(res, 200, {
+        ok: !!text,
+        text,
+        lines: layoutLines,
+        rows: parseLabRows(text),
+        engine: '8008/ocr-vision',
+        layout: hasBoxes ? 'reconstructed' : 'raw-text',
+        upstream: j.ok === false ? j.error : undefined,
+      })
     } catch (e) {
       sendJson(res, 200, { ok: false, unavailable: true, reason: e.message, fallback: 'paste-text' })
     }
