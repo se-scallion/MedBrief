@@ -19,6 +19,7 @@ import {
   Switch,
   Table,
   Tag,
+  Tooltip,
   Typography,
   Upload,
 } from 'antd'
@@ -248,7 +249,11 @@ export default function IntakePage() {
     }
     patchItem(item.id, { status: 'ocr' })
     try {
-      const { body } = await postJson('/api/intake/ocr', { image: item.dataUrl })
+      // 拼接产物必须带 stitched:true：后端只对拼接结果做「重叠区重复行」合并。
+      // 单图导入绝不能带——两次复查同名同值是正常的，合并就成了丢数据。
+      const payload = { image: item.dataUrl }
+      if (item.source === 'stitch') payload.stitched = true
+      const { body } = await postJson('/api/intake/ocr', payload)
       if (!body.ok) {
         // 上游不可用 or 识别为空：显式标「未识别」，绝不渲染成空表
         patchItem(item.id, {
@@ -266,8 +271,15 @@ export default function IntakePage() {
         rows: body.rows || [],
         ocrNote: body.upstream ? `上游提示：${body.upstream}` : '',
         engine: body.engine || '',
+        rawRowCount: body.rawRowCount ?? null,
+        stitchedDeduped: body.stitchedDeduped ?? 0,
       })
-      pushLog(`「${item.name}」识别完成，得到 ${(body.rows || []).length} 行`, 'ok')
+      const deduped = body.stitchedDeduped || 0
+      pushLog(
+        `「${item.name}」识别完成，得到 ${(body.rows || []).length} 行` +
+          (deduped ? `（重叠区合并 ${deduped} 行：原始 ${body.rawRowCount} → ${(body.rows || []).length}）` : ''),
+        'ok',
+      )
     } catch (e) {
       patchItem(item.id, { status: 'failed', ocrNote: e.message, rows: [], parsed: null })
       pushLog(`「${item.name}」识别失败：${e.message}`, 'err')
@@ -415,7 +427,16 @@ export default function IntakePage() {
         dataIndex: 'name',
         key: 'name',
         width: '22%',
-        render: (v) => <Text strong>{v}</Text>,
+        render: (v, r) => (
+          <Space size={4} wrap>
+            <Text strong>{v}</Text>
+            {r.suspectedStitchDuplicate && (
+              <Tooltip title="该行在拼接重叠区出现过多次，已合并为一行，原始值未丢弃">
+                <Tag color="gold">重叠合并 {r.dedupedFrom ? `×${r.dedupedFrom}` : ''}</Tag>
+              </Tooltip>
+            )}
+          </Space>
+        ),
       },
       {
         title: '值',

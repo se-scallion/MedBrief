@@ -14,10 +14,11 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { buildCard } from '../lib/intakeCard.js'
 import { blocksToLines } from '../lib/visionLayout.mjs'
-import { parseLabRows, detectCbcCode, normalizeUnit } from '../lib/reportIntake.mjs'
+import { parseLabRows, detectCbcCode, normalizeUnit, splitTwoColumnLine } from '../lib/reportIntake.mjs'
 
 const FIXTURE = JSON.parse(fs.readFileSync(new URL('./fixtures/vision-blocks-lab.json', import.meta.url), 'utf8'))
 const REAL = JSON.parse(fs.readFileSync(new URL('./fixtures/vision-blocks-real-cbc.json', import.meta.url), 'utf8'))
+const REAL2 = JSON.parse(fs.readFileSync(new URL('./fixtures/vision-blocks-real-cbc-2col.json', import.meta.url), 'utf8'))
 
 function scoreReal() {
   const rows = parseLabRows(blocksToLines(REAL.blocks).join('\n'))
@@ -37,6 +38,24 @@ function scoreReal() {
     else wrong.push(`${e.code}: ${rows[idx].value} ≠ ${e.value}`)
   }
   return { rows, hit, wrong, miss, noValue }
+}
+
+function scoreTwoColumn() {
+  const rows = parseLabRows(blocksToLines(REAL2.blocks).join('\n'))
+  const used = new Set()
+  const hit = []
+  const wrong = []
+  const miss = []
+  for (const e of REAL2._expected) {
+    const idx = rows.findIndex((r, i) => !used.has(i) && detectCbcCode(r.name) === e.code)
+    if (idx < 0) { miss.push(e.code); continue }
+    used.add(idx)
+    const ev = Number(String(e.value).replace(/[^\d.\-]/g, ''))
+    const gv = Number(rows[idx].num)
+    if (Number.isFinite(ev) && Math.abs(ev - gv) <= Math.max(0.02, Math.abs(ev) * 0.005)) hit.push(e.code)
+    else wrong.push(`${e.code}: ${rows[idx].value} ≠ ${e.value}`)
+  }
+  return { rows, hit, wrong, miss }
 }
 
 let pass = 0
@@ -214,6 +233,28 @@ it('真实图关键项不得漏：WBC / Hb / PLT / RBC / HCT / MCHC / RDW / hsCR
   const must = ['WBC', 'Hb', 'PLT', 'RBC', 'HCT', 'MCHC', 'RDW_CV', 'HS_CRP', 'NEUT_PCT', 'MONO_ABS']
   const missing = must.filter((c) => !hit.includes(c))
   assert.deepEqual(missing, [], `关键项漏解析：${missing.join('、')}`)
+})
+
+it('双栏血常规 fixture（已脱敏）：一行两套指标按锚点切分，解析出 26/26 项', () => {
+  assert.equal(REAL2.blocks.length, 191, `双栏 fixture 应含 191 个 block，实际 ${REAL2.blocks.length}`)
+  const { rows, hit, wrong, miss } = scoreTwoColumn()
+  console.log(`      双栏图：解析 ${rows.length} 行 / 命中 ${hit.length}/${REAL2._expected.length} / 值错 ${wrong.length} / 漏 ${miss.join(',') || '无'}`)
+  assert.ok(hit.length >= 26, `双栏解析退化：${hit.length}/26（基线 26，只升不降）`)
+  assert.deepEqual(wrong, [], `双栏出现错误值：${wrong.join('；')}`)
+})
+
+it('双栏切分只认「中文名+缩写+数值」锚点：单栏行绝不被切碎', () => {
+  // 单栏行：只有一个锚点 → 原样返回
+  const single = '白细胞（WBC） 3.33 3.5-9.5 10^9/L'
+  assert.deepEqual(splitTwoColumnLine(single), [single])
+  // 单栏但带括号缩写 + 参考区间，仍不得切
+  const single2 = '平均红细胞血红蛋白浓度（MCHC） 331.00 316-354'
+  assert.deepEqual(splitTwoColumnLine(single2), [single2])
+  // 双栏行：两个锚点 → 切成两段，且切点在第二个中文名之前
+  const two = splitTwoColumnLine('1 大白细胞 WBC 3.17 10~9/L 3.5-9.5 16大平均血红蛋白量 MCH 29.9 Pg 27-34')
+  assert.equal(two.length, 2)
+  assert.ok(two[1].includes('MCH'), `右段应含第二套缩写，实际：${two[1]}`)
+  assert.ok(two[0].includes('WBC') && !two[0].includes('MCH'), `左段只含第一套，实际：${two[0]}`)
 })
 
 it('真实图单位规范化：不得出现 `*10 9/L` / `£1` / `gL&` 这类 OCR 噪声单位', () => {

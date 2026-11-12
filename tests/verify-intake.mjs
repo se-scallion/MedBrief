@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import {
   sha256Bytes, dhash64, hamming64, findDuplicate, NEAR_DUP_THRESHOLD,
   parseLabRows, classifyAnalyte, buildReportFingerprint, groupForDoctorCard, summarizeForCard,
-  normalizeUnit, detectCbcCode, CBC_ORDER,
+  normalizeUnit, detectCbcCode, CBC_ORDER, splitTwoColumnLine, dedupeStitchRows,
 } from '../lib/reportIntake.mjs'
 
 let pass = 0
@@ -169,6 +169,36 @@ it('序号插值：名称缺失的值行按序号补名，且必须打 nameInfer
   assert.equal(inferred.name, '中性粒细胞%')
   assert.equal(inferred.value, '64.0')
   assert.equal(rows[0].nameInferred, false, '识别到的行不得标记为推定')
+})
+
+it('拼接去重：同码同值同日期合并为一行，并留痕（不静默删）', () => {
+  const rows = [
+    { name: '血红蛋白', value: '53', num: 53, measuredAt: '2026-08-08' },
+    { name: '白细胞', value: '3.17', num: 3.17, measuredAt: '2026-08-08' },
+    { name: '血红蛋白', value: '53', num: 53, measuredAt: '2026-08-08' },
+  ]
+  const out = dedupeStitchRows(rows)
+  assert.equal(out.rawCount, 3)
+  assert.equal(out.merged, 1)
+  assert.equal(out.rows.length, 2)
+  const hb = out.rows.find((r) => r.name === '血红蛋白')
+  assert.equal(hb.dedupedFrom, 2, '被合并的行必须记录合并了几条')
+  assert.equal(hb.suspectedStitchDuplicate, true, '必须打疑似拼接重复标记')
+})
+
+it('拼接去重：同名不同值不合并（不同日期的复查不是重复）', () => {
+  const out = dedupeStitchRows([
+    { name: '血红蛋白', value: '53', measuredAt: '2026-08-08' },
+    { name: '血红蛋白', value: '92', measuredAt: '2026-09-20' },
+  ])
+  assert.equal(out.rows.length, 2)
+  assert.equal(out.merged, 0)
+})
+
+it('单图导入不受影响：parseLabRows 的产物永远不带拼接去重标记', () => {
+  const rows = parseLabRows('白细胞 6.83 3.5-9.5 10^9/L\n血红蛋白 113 130-175 g/L')
+  assert.equal(rows.length, 2)
+  assert.deepEqual(rows.filter((r) => r.suspectedStitchDuplicate).map((r) => r.name), [])
 })
 
 it('空输入不抛错', () => {

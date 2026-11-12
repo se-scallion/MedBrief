@@ -41,7 +41,7 @@ import { buildMedDataBundle, parseMedDataBundle } from './lib/meddataBundle.js'
 import { blocksToLines } from './lib/visionLayout.mjs'
 import {
   sha256Bytes, findDuplicate, stitchVertically,
-  parseLabRows, buildReportFingerprint, groupForDoctorCard, summarizeForCard,
+  parseLabRows, buildReportFingerprint, groupForDoctorCard, summarizeForCard, dedupeStitchRows,
 } from './lib/reportIntake.mjs'
 import { loadPatient, savePatient, buildCard } from './lib/intakeCard.js'
 import { summarizeState, formatSummaryText } from './lib/metricsSummary.js'
@@ -934,11 +934,18 @@ function getNextReleaseCountdown() {
       const text = layoutLines.length
         ? layoutLines.join('\n')
         : (j.text || j.result || blocks.map((b) => b.text || '').join('\n'))
+      // 拼接产物才去重（body.stitched / stitchedFrom>1）；单图导入永不走这条，
+      // 因为两次复查同名指标同值是正常的，删掉就成了丢数据。
+      const rawRows = parseLabRows(text)
+      const wantsDedupe = body.stitched === true || Number(body.stitchedFrom) > 1
+      const dedupe = wantsDedupe ? dedupeStitchRows(rawRows) : { rows: rawRows, merged: 0, rawCount: rawRows.length }
       sendJson(res, 200, {
         ok: !!text,
         text,
         lines: layoutLines,
-        rows: parseLabRows(text),
+        rows: dedupe.rows,
+        rawRowCount: dedupe.rawCount,
+        stitchedDeduped: dedupe.merged,
         engine: '8008/ocr-vision',
         layout: hasBoxes ? 'reconstructed' : 'raw-text',
         upstream: j.ok === false ? j.error : undefined,
