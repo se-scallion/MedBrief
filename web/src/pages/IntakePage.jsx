@@ -841,7 +841,8 @@ export default function IntakePage() {
             <Space wrap>
               <Tag color={card.masked ? 'green' : 'orange'}>{card.masked ? '已脱敏（姓名打码）' : '未脱敏'}</Tag>
               <Text type="secondary" style={{ fontSize: 12 }}>
-                报告 {card.counts?.reports ?? 0} 份 · 指标 {card.counts?.metrics ?? 0} 项 · 异常 {card.counts?.abnormal ?? 0} 项
+                报告 {card.counts?.reports ?? 0} 份 · 指标 {card.counts?.latest ?? card.counts?.rows ?? 0} 项 ·
+                异常 {card.summary?.abnormalCount ?? 0} 项
               </Text>
             </Space>
             <iframe
