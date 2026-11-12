@@ -17,6 +17,13 @@ import {
 } from '../lib/guahaoCore.js'
 import { buildMedDataBundle, parseMedDataBundle, BUNDLE_FORMAT, BUNDLE_VERSION } from '../lib/meddataBundle.js'
 import { summarizeState, formatSummaryText, LAB_CODE_ALIASES } from '../lib/metricsSummary.js'
+import {
+  buildVisitBrief,
+  collectSeries,
+  trendSymbol,
+  isAbnormal,
+  parseRefRange,
+} from '../lib/visitBrief.js'
 
 let pass = 0
 let fail = 0
@@ -243,6 +250,87 @@ it('指标聚合：formatSummaryText 只输出有值的指标行', () => {
   const text = formatSummaryText(summarizeState(state))
   assert.ok(text.includes('白细胞 6.83'), `文本应含白细胞值，实际：${text}`)
   assert.equal(text.split('\n').length, 1, '空指标不应占行')
+})
+
+// ---------- 5. 本次就诊一页速览 ----------
+function briefState() {
+  return {
+    patient_meta: { name: '代**', gender: 'Male', age: 30, diagnosis: 'B-ALL' },
+    records: [
+      { date: '2026-08-27', created_at: '2026-08-27T01:00:00Z', data_points: [
+        { standard_code: 'WBC', value: '7.68', unit: '10^9/L', ref_range: '3.5-9.5', status: 'NORMAL' },
+        { standard_code: 'PLT', value: '79', unit: '10^9/L', ref_range: '125-350', status: 'LOW' },
+        { standard_code: 'Hb', value: '63', unit: 'g/L', ref_range: '130-175', status: 'LOW' },
+      ] },
+      { date: '2026-09-03', created_at: '2026-09-03T01:00:00Z', data_points: [
+        { standard_code: 'WBC', value: '4.02', unit: '10^9/L', ref_range: '3.5--9.5', status: 'NORMAL' },
+        { standard_code: 'PLT', value: '238', unit: '10^9/L', ref_range: '126--350', status: 'NORMAL' },
+        { standard_code: 'Hb', value: '84', unit: 'g/L', ref_range: '130-175', status: 'LOW' },
+      ] },
+      { date: '2026-09-20', created_at: '2026-09-20T01:00:00Z', data_points: [
+        { standard_code: 'WBC', value: '6.83', unit: '10^9/L', ref_range: '3.5-9.5', status: 'NORMAL' },
+        { standard_code: 'PLT', value: '321', unit: '10^9/L', ref_range: '125-350', status: 'NORMAL' },
+        { standard_code: 'Hb', value: '113', unit: 'g/L', ref_range: '130-175', status: 'LOW' },
+      ] },
+      { date: '2026-07-20', created_at: '2026-07-20T01:00:00Z', data_points: [
+        { standard_code: 'WBC', value: '9.90', unit: '10^9/L', ref_range: '3.5-9.5', status: 'HIGH' },
+      ] },
+    ],
+    diseaseMetrics: [
+      { code: 'BM_BLAST_PCT', date: '2026-08-01', value: 12.0, unit: '%', stream: 'morph' },
+      { code: 'BM_BLAST_PCT', date: '2026-10-10', value: 1.5, unit: '%', stream: 'morph' },
+      { code: 'FCM_MRD_PCT', date: '2026-09-03', value: 0.2, unit: '%', stream: 'fcm' },
+    ],
+  }
+}
+
+it('速览：趋势箭头 ↑ / ↓ / → / 无上次数据记 —', () => {
+  assert.equal(trendSymbol({ num: 6.83 }, { num: 4.02 }), '↑')
+  assert.equal(trendSymbol({ num: 4.02 }, { num: 6.83 }), '↓')
+  assert.equal(trendSymbol({ num: 5.0 }, { num: 5.01 }), '→')
+  assert.equal(trendSymbol({ num: 5.0 }, null), '—')
+  assert.equal(trendSymbol({ num: null }, { num: 1 }), '—')
+})
+
+it('速览：时间倒序取近 3 次，且第 3 条也带趋势（趋势在完整序列上算）', () => {
+  const series = collectSeries(briefState(), 3)
+  assert.equal(series.WBC.length, 3, '应只取近 3 次')
+  assert.deepEqual(series.WBC.map((x) => x.date), ['2026-09-20', '2026-09-03', '2026-08-27'])
+  assert.equal(series.WBC[2].trend, '↓', `第 3 条应与 2026-07-20 的 9.90 比较得 ↓，实际 ${series.WBC[2].trend}`)
+})
+
+it('速览：OCR 双连字符参考区间不得误判为异常（126--350 / 3.5--9.5）', () => {
+  assert.deepEqual(parseRefRange('126--350'), { low: 126, high: 350 })
+  assert.deepEqual(parseRefRange('3.5--9.5'), { low: 3.5, high: 9.5 })
+  assert.equal(isAbnormal({ num: 238, refRange: '126--350', status: 'NORMAL' }), false)
+  assert.equal(isAbnormal({ num: 4.02, refRange: '3.5--9.5', status: 'NORMAL' }), false)
+  assert.equal(isAbnormal({ num: 79, refRange: '125-350', status: 'LOW' }), true)
+})
+
+it('速览：异常值按参考区间标记，骨髓/流式无参考区间不判异常', () => {
+  const brief = buildVisitBrief({ state: briefState(), limit: 3, generatedAt: '2026-11-12T09:00:00Z' })
+  assert.ok(brief.text.includes('〔低〕'), '血红蛋白偏低应标 〔低〕')
+  assert.ok(!brief.text.includes('238↑〔高〕'), '双连字符区间误判会导致 238 被标高')
+  assert.ok(brief.text.includes('骨髓原始细胞比例'), '应包含骨髓原始细胞比例')
+  assert.ok(!/骨髓原始细胞比例.*〔(低|高)〕/.test(brief.text), '骨髓指标不应作异常判定')
+})
+
+it('速览红线：正文只陈述数值与趋势，不出现结论/建议类措辞', () => {
+  const brief = buildVisitBrief({ state: briefState(), limit: 3, generatedAt: '2026-11-12T09:00:00Z' })
+  // 只检查【一】【二】两节的数值陈述（【三】与页首说明本身就是在声明"不含结论"，不算违规）
+  const body = (brief.text.split('【一】')[1] || '').split('【三】')[0]
+  assert.ok(body.length > 0, '应有正文')
+  const forbidden = ['建议', '考虑', '提示', '可能', '复发', '缓解', '预后', '诊断', '治疗方案', '风险']
+  const hit = forbidden.filter((w) => body.includes(w))
+  assert.deepEqual(hit, [], `正文出现结论类措辞：${hit.join('、')}`)
+  assert.ok(brief.html.includes('不含诊断结论与治疗建议'), 'HTML 卡片应显式声明不含结论与建议')
+})
+
+it('速览：HTML 卡片为可打印一页（含 @page 与表格）', () => {
+  const brief = buildVisitBrief({ state: briefState(), limit: 3 })
+  assert.ok(brief.html.includes('@page'), '应含打印样式')
+  assert.ok(brief.html.includes('<table'), '应含表格')
+  assert.ok(brief.html.includes('class="bad"'), '异常值应有标红类')
 })
 
 // ---------- 汇总 ----------

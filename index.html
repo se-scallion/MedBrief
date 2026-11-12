@@ -476,9 +476,19 @@
         <button class="btn btn-primary btn-sm" onclick="loadFromMedData()">从本地 MedData 载入近期指标</button>
         <button class="btn btn-secondary btn-sm" onclick="document.getElementById('meddata-file').click()">导入 .meddata 文件</button>
         <input id="meddata-file" type="file" accept=".meddata,application/json" style="display:none" onchange="importMedDataFile(this)" />
+        <button class="btn btn-primary btn-sm" onclick="buildVisitSummary()">生成就诊一页速览</button>
       </div>
       <div id="meddata-status" class="mt12" style="font-size:12px; color:var(--gray-400);">尚未载入</div>
       <div id="meddata-latest" class="hidden mt12" style="font-size:12px; line-height:1.8;"></div>
+      <div id="visit-brief" class="hidden mt12">
+        <div class="card-title" style="margin-bottom:8px;">本次就诊一页速览（只陈述数值与趋势，不含诊断结论与治疗建议）</div>
+        <pre id="visit-brief-text" style="font-size:12px; white-space:pre-wrap; line-height:1.8; color:var(--gray-700); background:var(--gray-50, #fafafa); border:1px solid var(--gray-200, #eee); border-radius:6px; padding:12px; max-height:420px; overflow:auto;"></pre>
+        <div class="flex mt12" style="gap:8px; flex-wrap:wrap;">
+          <button class="btn btn-primary btn-sm" onclick="printVisitBrief()">打印 / 存为 PDF</button>
+          <button class="btn btn-secondary btn-sm" onclick="downloadVisitBrief('txt')">下载 .txt</button>
+          <button class="btn btn-secondary btn-sm" onclick="downloadVisitBrief('html')">下载 .html 卡片</button>
+        </div>
+      </div>
     </div>
     <div class="grid2">
       <div>
@@ -1058,6 +1068,51 @@
     } finally {
       input.value = ''  // 允许重复选同一个文件
     }
+  }
+
+  // ===== 本次就诊一页速览（只陈述数值与趋势，不下结论）=====
+  let visitBriefData = null
+
+  async function buildVisitSummary() {
+    setMedDataStatus('正在生成一页速览…')
+    try {
+      const r = await fetch(BASE + '/api/brief/visit-summary')
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.reason || j.error || '生成失败')
+      visitBriefData = j
+      document.getElementById('visit-brief-text').textContent = j.text
+      document.getElementById('visit-brief').classList.remove('hidden')
+      setMedDataStatus(`速览已生成（数据源：${j.meta?.sourceLabel || '-'}，近 ${j.meta?.limit || 3} 次）`, 'var(--success, #16a34a)')
+    } catch (e) {
+      setMedDataStatus(`速览生成失败：${e.message}${e.message.includes('导入') ? '' : '（本机 MedData 不可用时请先导入 .meddata 文件）'}`, 'var(--danger, #dc2626)')
+    }
+  }
+
+  function printVisitBrief() {
+    if (!visitBriefData) return
+    const w = window.open('', '_blank')
+    if (!w) { alert('浏览器拦截了弹出窗口，请允许弹窗后重试'); return }
+    w.document.open()
+    w.document.write(visitBriefData.html)
+    w.document.close()
+    w.focus()
+    setTimeout(() => w.print(), 300)
+  }
+
+  function downloadVisitBrief(kind) {
+    if (!visitBriefData) return
+    const m = visitBriefData.meta || {}
+    const stamp = new Date().toISOString().slice(0, 10)
+    const base = `就诊速览-${m.patientName || '患者'}-${stamp}`
+    const isTxt = kind === 'txt'
+    const blob = new Blob([isTxt ? visitBriefData.text : visitBriefData.html], {
+      type: isTxt ? 'text/plain;charset=utf-8' : 'text/html;charset=utf-8',
+    })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `${base}.${isTxt ? 'txt' : 'html'}`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000)
   }
 
   async function generateBundle() {
