@@ -5,6 +5,7 @@ import assert from 'node:assert/strict'
 import {
   sha256Bytes, dhash64, hamming64, findDuplicate, NEAR_DUP_THRESHOLD,
   parseLabRows, classifyAnalyte, buildReportFingerprint, groupForDoctorCard, summarizeForCard,
+  normalizeUnit, detectCbcCode, CBC_ORDER,
 } from '../lib/reportIntake.mjs'
 
 let pass = 0
@@ -134,6 +135,40 @@ it('资料卡兼容字段：组上带 rows 别名、行上带 measuredAt（供 l
 it('资料卡兼容字段：无 measuredAt 时回落 reportDate（不出现空日期）', () => {
   const groups = groupForDoctorCard([{ name: '血小板', value: '321', num: 321, status: 'normal', reportDate: '2026-09-03' }])
   assert.equal(groups[0].rows[0].measuredAt, '2026-09-03')
+})
+
+it('单位规范化：OCR 拆坏的 10^n/L 与噪声单位', () => {
+  assert.equal(normalizeUnit('*10 9/L'), '10^9/L')
+  assert.equal(normalizeUnit('*10~9/L'), '10^9/L')
+  assert.equal(normalizeUnit('*10°9/L'), '10^9/L')
+  assert.equal(normalizeUnit('*109/L'), '10^9/L')
+  assert.equal(normalizeUnit('*1012/L'), '10^12/L')
+  assert.equal(normalizeUnit('gL&'), 'g/L')
+  assert.equal(normalizeUnit('£1'), '')
+  assert.equal(normalizeUnit('mg/L'), 'mg/L')
+})
+
+it('项目码判定：中文百分号 / 绝对值 # 不混淆，MCH 与 MCHC 不混淆', () => {
+  assert.equal(detectCbcCode('中性粒细胞%'), 'NEUT_PCT')
+  assert.equal(detectCbcCode('中性粒细胞#'), 'NEUT_ABS')
+  assert.equal(detectCbcCode('单核细胞#'), 'MONO_ABS')
+  assert.equal(detectCbcCode('平均红细胞血红蛋白含量CMCH）'), 'MCH')
+  assert.equal(detectCbcCode('平均红细胞血红蛋白浓度（MCHC）'), 'MCHC')
+  assert.equal(detectCbcCode('红细胞分布宽度-CV（RDW-CV）'), 'RDW_CV')
+  assert.equal(detectCbcCode('完全不相干的行'), null)
+  assert.equal(CBC_ORDER.length, 23)
+})
+
+it('序号插值：名称缺失的值行按序号补名，且必须打 nameInferred 标记', () => {
+  // 第 1 行有名有号，第 2 行只有「序号 + 结果 + 区间」（真实单据里名称块没被识别）
+  const text = ['1 白细胞（WBC） 3.33 3.5-9.5 10^9/L', '2 64.0 40-75'].join('\n')
+  const rows = parseLabRows(text)
+  assert.equal(rows.length, 2)
+  const inferred = rows.find((r) => r.nameInferred)
+  assert.ok(inferred, '第 2 行应被序号插值补名')
+  assert.equal(inferred.name, '中性粒细胞%')
+  assert.equal(inferred.value, '64.0')
+  assert.equal(rows[0].nameInferred, false, '识别到的行不得标记为推定')
 })
 
 it('空输入不抛错', () => {
