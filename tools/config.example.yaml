@@ -1,0 +1,95 @@
+# ==============================================================================
+# 北京市预约挂号统一平台 (114) 挂号/抢号核心模块配置文件
+# ==============================================================================
+# 使用说明：
+# 1. 复制本文件为 config.yaml: cp config.example.yaml config.yaml
+# 2. 登录 114 挂号官网 (https://www.114yygh.com)，从开发者工具 (F12) 的
+#    Application -> Cookies 中获取 `cmi-user-ticket` 并填入下方 auth.cmi_user_ticket。
+# 3. 配置目标医院代码、一级科室代码、二级科室代码及目标医生优先级列表。
+# ==============================================================================
+
+auth:
+  # 114 平台用户票据（核心鉴权凭据，位于 Cookie 或 Request Headers 的 cmi-user-ticket）
+  # 必填项。用于鉴权用户身份与就诊人绑定关系
+  cmi_user_ticket: "YOUR_CMI_USER_TICKET_HERE"
+
+  # 可选：如果个别接口需要完整 Cookie 串，可在此处直接粘贴整个 Cookie 字符串
+  cookie: ""
+
+target:
+  # 目标医院名称（仅作日志展示与提示）
+  hospital_name: "北京大学人民医院"
+  # 目标医院代码（从 114 医院主页 URL 中获取，例如 https://www.114yygh.com/hospital/140 中的 140）
+  hospital_code: "140"
+
+  # 一级科室代码（例如血液科门诊对应的一级大类代码）
+  first_dept_code: "14001"
+  # 二级科室代码（具体的挂号专科代码）
+  second_dept_code: "1400101"
+  # 科室名称展示
+  dept_name: "血液内科门诊"
+
+  # 目标挂号日期 (格式: YYYY-MM-DD)
+  target_date: "2026-11-20"
+
+  # 时段偏好：
+  # 1: 仅上午 (Morning)
+  # 2: 仅下午 (Afternoon)
+  # 0: 上下午均可 (Any)
+  duty_time: 1
+
+  # 目标医生优先级队列（医生撮合引擎将按由上到下的顺序依次匹配）：
+  # 支持医生全名精确匹配，支持职称模糊匹配（如 "知名专家"、"主任医师"），支持通配符 "*" 表示任意医生
+  target_doctors:
+    - "江倩"
+    - "黄晓军"
+    - "知名专家"
+    - "主任医师"
+    - "副主任医师"
+
+  # 替补策略：
+  # 若配置的目标医生均无号，是否允许撮合引擎自动锁定同科室其他有余号的医生（true / false）
+  allow_substitute: false
+
+  # 就诊人信息配置：
+  # 就诊人姓名（需在 114 就诊人列表中已实名认证）
+  patient_name: "张三"
+  # 就诊人 ID（可选，若留空则自动从登录账号的就诊人列表中按 patient_name 匹配）
+  patient_id: ""
+  # 医保卡/就诊卡号（部分医院强制要求，若留空则尝试使用默认就诊卡）
+  card_id: ""
+
+sniper:
+  # 本地时钟提前量发包参数（毫秒 delta_ms）：
+  # 核心抗延迟参数！系统自动计算与 114 服务器的时间差 Δt 后，
+  # 在 (放号时点 - Δt - delta_ms) 发送第一波锁定请求，抵消网络往返与代理耗时。
+  # 建议值：50 ~ 200 ms。
+  delta_ms: 120
+
+  # 冲刺模式 (burst) 参数：
+  # 每次发包重试间隔（毫秒）
+  burst_interval_ms: 150
+  # 冲刺最大发包尝试次数
+  burst_max_retry: 25
+
+  # 捡漏模式 (watch) 参数：
+  # 巡检轮询基础间隔（秒）
+  watch_interval_sec: 5
+  # 随机抖动时间（秒），实际间隔为 interval ± random(0, jitter)，防止固定频次触发风控
+  watch_jitter_sec: 2
+
+  # 单次网络请求超时时间（秒）
+  timeout_sec: 6
+
+notification:
+  # 是否开启本地终端响铃与 macOS 提示音（afplay）
+  sound: true
+
+  # Bark 手机推送通知（iOS 设备推荐，格式: https://api.day.app/YOUR_KEY/）
+  bark_url: ""
+
+  # Server酱微信推送（SCTkey）
+  serverchan_sendkey: ""
+
+  # 自定义 Webhook（支持钉钉、企业微信机器人、飞书等）
+  custom_webhook: ""

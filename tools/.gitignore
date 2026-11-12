@@ -1,0 +1,9 @@
+# 敏感配置文件（含真实用户 cookie 与手机号）
+config.yaml
+*.cookies
+.env
+
+# Python 编译缓存
+__pycache__/
+*.py[cod]
+*$py.class
