@@ -3,3 +3,4 @@ data/guahao-orders.json
 data/114-auth.json
 .DS_Store
 *.log
+data/tmp/
