@@ -239,10 +239,12 @@ ego lite 的 Chromium（真实指纹 + 独立 profile）可通过。故 `lib/ego
 | 4 | **预约记录**：`tabs/OrdersTab.jsx`（订单列表 + 取消 + 凭证打印） | ✅ |
 | 5 | **114 会话**：`tabs/SessionTab.jsx`（唤起登录 + 会话状态）。开发者排障区**故意未迁入**，符合「面向普通患者、禁止 F12」；需要时走 `/legacy` | ✅ |
 | 6 | 收尾：`base=/`、`/` 即新壳、`/guahao` 与 `/next` 302 到 `/`、旧工作台 `/legacy`、`npm run test:ui` UI 冒烟 | ✅ |
+| 7 | **遗留（未做）**：按「3 页 + `:doctorId`」引入 react-router、建医生库（官网页面 id/医院/科室/114 编码进数据）、App.jsx 由 5 tab 改为一级页 + 子路由，同步改 `test:ui` 断言 | ⏳ |
 
-**URL 结构：单页 + `?tab=` 查询参数**，不引入 react-router。当前只有一个业务目标（主鸿鹄），
-`/guahao/:doctorId/monitor` 这类多医生子路由属于**过度设计**，暂不做。
-再触发条件（满足其一才引入路由层）：① 真的要维护 ≥3 个医生的独立监控页；② 需要分享/收藏到具体患者或订单详情页。
+**URL 结构（定稿，与「信息架构 3 页」一致）**：引入 `react-router-dom@6`（MedData 已有此依赖），
+`/guahao` 为一级页、`/guahao/:doctorId/monitor` 与 `/guahao/:doctorId/flow` 为子路由，`/records`、`/settings` 各为一级页。
+理由：产品定位是「不能只服务一个医生」（见 MEMORY），排班监控必须按医生实例化，纯 `?tab=` 挂不住这层嵌套。
+**当前代码状态**：`web/src/App.jsx` 仍是 5 tab + `?tab=` 的过渡形态，路由化改造未做（见下表「遗留」）。
 
 **为什么不是 Vue**（2026-11-12 定稿）：
 1. 已投入沉没成本：`BookingPage.jsx`（707 行）+ antd 组件 + 主题 token 已跑通，换 Vue = 全部重写；
