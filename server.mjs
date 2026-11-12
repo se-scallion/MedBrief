@@ -33,7 +33,7 @@
 import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
-import { spawn } from 'node:child_process'
+import { spawn, execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { createGuahaoManager } from './lib/guahaoCore.js'
@@ -55,6 +55,15 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 const PORT = parseInt(process.env.PORT || '5174', 10)
+// 进程启动信息：用于判断「长驻进程是否落后于代码」（配合 /api/health.head 比对 git HEAD）
+const SERVER_STARTED_AT = new Date().toISOString()
+const SERVER_HEAD = (() => {
+  try {
+    return execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: __dirname, encoding: 'utf8' }).trim()
+  } catch {
+    return 'unknown'
+  }
+})()
 const DATA_DIR = path.join(__dirname, 'data')
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true })
@@ -161,9 +170,14 @@ const server = http.createServer(async (req, res) => {
   const pathname = parsedUrl.pathname
 
   // 1. GET /api/health
+  //    ⚠️ 带上 head/startedAt：长驻 node 进程不热更新，改了 lib/* 忘重启会静默用旧模块
+  //    （2026-11-12 真实踩到：intakeCard.js 改了但进程还是旧的，卡片脚注看不到）。
+  //    判据：`curl /api/health | jq -r .head` 与 `git rev-parse --short HEAD` 不一致 = 进程落后于代码。
   if (req.method === 'GET' && pathname === '/api/health') {
     sendJson(res, 200, {
       ok: true,
+      head: SERVER_HEAD,
+      startedAt: SERVER_STARTED_AT,
       app: 'medbrief',
       name: 'MedBrief Standalone Workbench',
       port: PORT,
