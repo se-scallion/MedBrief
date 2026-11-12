@@ -121,6 +121,21 @@ it('资料卡摘要：异常清单 + 缺项提示（缺 WBC/PLT 要报出来）'
   assert.deepEqual(s.missingBasics.sort(), ['PLT', 'WBC'])
 })
 
+it('资料卡兼容字段：组上带 rows 别名、行上带 measuredAt（供 lib/intakeCard.js 渲染层读取）', () => {
+  const rows = [{ name: '白细胞', value: '6.83', num: 6.83, unit: '10^9/L', refRange: '3.5-9.5', status: 'normal', measuredAt: '2026-09-20', reportId: 'rep_x' }]
+  const groups = groupForDoctorCard(rows)
+  assert.equal(groups.length, 1)
+  assert.ok(Array.isArray(groups[0].rows), 'group.rows 必须是数组')
+  assert.equal(groups[0].rows, groups[0].items, 'rows 应与 items 是同一数组（别名，不复制）')
+  assert.equal(groups[0].rows[0].measuredAt, '2026-09-20', '渲染层按 measuredAt 显示日期')
+  assert.equal(groups[0].rows[0].reportId, 'rep_x')
+})
+
+it('资料卡兼容字段：无 measuredAt 时回落 reportDate（不出现空日期）', () => {
+  const groups = groupForDoctorCard([{ name: '血小板', value: '321', num: 321, status: 'normal', reportDate: '2026-09-03' }])
+  assert.equal(groups[0].rows[0].measuredAt, '2026-09-03')
+})
+
 it('空输入不抛错', () => {
   assert.deepEqual(parseLabRows(''), [])
   assert.deepEqual(groupForDoctorCard([]), [])

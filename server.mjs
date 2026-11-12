@@ -10,6 +10,11 @@
 //   - POST /api/brief/bundle         问诊病历录入并打包为 MedData 标准交换包 (.meddata)
 //   - GET  /api/meddata/summary      就诊前从本机 MedData 数据服务(8787)载入近期指标（不可用则 ok:false，前端降级导入 .meddata）
 //   - POST /api/brief/import         导入 .meddata 交换包并解析出近期指标（通道 2 的降级路径）
+//   - GET  /api/intake/reports       已导入报告清单（不含原图/原文）
+//   - POST /api/intake/reports       报告入库（查重：图片 sha256/dhash + 内容指纹）
+//   - GET  /api/intake/patient       病友档案（不含身份证/手机号/住址）
+//   - POST /api/intake/patient       更新病友档案（patch，身份类字段一律不收）
+//   - GET  /api/intake/card          问诊资料卡（A4 一页 HTML；?mask=0 关闭姓名脱敏）
 //   - GET  /api/brief/visit-summary  本次就诊一页速览（纯文本 + 可打印 HTML；只陈述数值与趋势，不下结论）
 //   - GET  /api/guahao/sniper/status 114 会话与时钟差校准状态
 //   - POST /api/guahao/reset         排班与订单重置（供自动化测试隔离用）
@@ -33,6 +38,11 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { createGuahaoManager } from './lib/guahaoCore.js'
 import { buildMedDataBundle, parseMedDataBundle } from './lib/meddataBundle.js'
+import {
+  sha256Bytes, findDuplicate, stitchVertically,
+  parseLabRows, buildReportFingerprint, groupForDoctorCard, summarizeForCard,
+} from './lib/reportIntake.mjs'
+import { loadPatient, savePatient, buildCard } from './lib/intakeCard.js'
 import { summarizeState, formatSummaryText } from './lib/metricsSummary.js'
 import { buildVisitBrief } from './lib/visitBrief.js'
 import { fetchLiveDoctorSchedule } from './lib/bjcyhScraper.js'
@@ -232,6 +242,28 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
+
+async function readJsonBody(req) {
+  const raw = req.__rawBody != null ? req.__rawBody : ''
+  if (!raw) return {}
+  try { return JSON.parse(raw) } catch { return {} }
+}
+
+// ---------- 报告入库存储（data/reports.json，本机文件，不入 git） ----------
+const REPORTS_FILE = path.join(__dirname, 'data', 'reports.json')
+function readReports() {
+  try {
+    const j = JSON.parse(fs.readFileSync(REPORTS_FILE, 'utf8'))
+    return { reports: Array.isArray(j.reports) ? j.reports : [] }
+  } catch {
+    return { reports: [] }
+  }
+}
+function writeReports(store) {
+  fs.mkdirSync(path.dirname(REPORTS_FILE), { recursive: true })
+  fs.writeFileSync(REPORTS_FILE, JSON.stringify({ version: 1, reports: store.reports }, null, 2), 'utf8')
+}
+
 function getNextReleaseCountdown() {
   // 全部用「epoch 毫秒 + 固定 +08:00」计算，再用 getUTC* 读北京墙上时间。
   // 旧实现用 toISOString() 打印位移后的 Date，会把 UTC 当成北京时间（显示 09:30 而非 17:30）；
@@ -419,7 +451,6 @@ function getNextReleaseCountdown() {
     return
   }
 
-  // 3. GET /api/guahao/orders
   // 2b. GET /api/guahao/doctors — 本地医生档案（前端「选项」数据源）
   if (req.method === 'GET' && pathname === '/api/guahao/doctors') {
     try {
@@ -497,6 +528,8 @@ function getNextReleaseCountdown() {
       bodyBuffer.push(chunk)
     }
     const rawBody = Buffer.concat(bodyBuffer).toString('utf8')
+    // POST 体已被本分支读空；留一份给后续非 POST 作用域的处理器（如 /api/intake/*）
+    req.__rawBody = rawBody
     let payload = {}
     try {
       payload = rawBody ? JSON.parse(rawBody) : {}
@@ -714,8 +747,10 @@ function getNextReleaseCountdown() {
             diagnosis,
             stage,
             hospital: patient.hospital || '北京朝阳医院',
-            onset: patient.onset || '2024-03',
-            genes: patient.genes || ['IKZF1缺失', 'CD19+', 'CD22+'],
+            // 不写死临床默认值：既往史与基因型必须由表单提供。旧默认值等于给每个导出包塞
+            // 无来源的「2024-03 起病 / IKZF1缺失 / CD19+ / CD22+」，医生看了会当事实（代诊-报告指出）
+            onset: patient.onset || '',
+            genes: Array.isArray(patient.genes) ? patient.genes : [],
           },
           docs: [
             {
@@ -762,7 +797,8 @@ function getNextReleaseCountdown() {
       return
     }
 
-    // 8c. POST /api/brief/import — 导入 .meddata 交换包（通道 2 的降级路径）    // 解析放在服务端：lib/meddataBundle.js 是 ESM，index.html 是 classic script，
+    // 8c. POST /api/brief/import — 导入 .meddata 交换包（通道 2 的降级路径）
+    // 解析放在服务端：lib/meddataBundle.js 是 ESM，index.html 是 classic script，
     // 前端不重复实现一份解析器（避免两份实现漂移）。
     if (pathname === '/api/brief/import') {
       try {
@@ -805,6 +841,131 @@ function getNextReleaseCountdown() {
     res.statusCode = 302
     res.setHeader('Location', '/?merged=guahao')
     res.end()
+    return
+  }
+
+  // 10. 报告导入（问诊资料卡的取数层）：拼接 / 解析 / OCR / 入库
+  //     数据只来自用户导入；不读 MedData 任何库（MedData 只当 OCR 引擎）。
+  if (req.method === 'GET' && pathname === '/api/intake/reports') {
+    const store = readReports()
+    sendJson(res, 200, {
+      ok: true,
+      total: store.reports.length,
+      reports: store.reports.map((r) => ({ ...r, images: undefined, text: undefined })),
+    })
+    return
+  }
+
+  // 10a. 病友档案（资料卡的抬头）：只收非身份字段，身份类一律不收
+  if (req.method === 'GET' && pathname === '/api/intake/patient') {
+    sendJson(res, 200, { ok: true, patient: loadPatient() })
+    return
+  }
+
+  if (req.method === 'POST' && pathname === '/api/intake/patient') {
+    const body = await readJsonBody(req)
+    try {
+      const patient = savePatient(body || {})
+      // savePatient 内部已 delete idCard/phone/address；这里回执明确告知，避免前端以为存进去了
+      sendJson(res, 200, { ok: true, patient, notStored: ['idCard', 'phone', 'address'] })
+    } catch (e) {
+      sendJson(res, 500, { ok: false, error: `保存档案失败：${e.message}` })
+    }
+    return
+  }
+
+  // 10b. 问诊资料卡：把已导入的报告渲染成 A4 一页（mask=0 关闭姓名脱敏，默认脱敏）
+  if (req.method === 'GET' && pathname === '/api/intake/card') {
+    try {
+      const mask = parsedUrl.searchParams.get('mask') !== '0'
+      const { reports } = readReports()
+      const card = buildCard({ reports, mask })
+      sendJson(res, 200, card) // { ok, masked, patient, counts, summary, groups, html }
+    } catch (e) {
+      sendJson(res, 500, { ok: false, error: `生成资料卡失败：${e.message}` })
+    }
+    return
+  }
+
+  if (pathname === '/api/intake/stitch' && req.method === 'POST') {
+    const body = await readJsonBody(req)
+    try {
+      const imgs = Array.isArray(body.images) ? body.images : []
+      if (!imgs.length) return sendJson(res, 400, { ok: false, error: 'images 不能为空' })
+      const r = await stitchVertically(imgs)
+      sendJson(res, 200, { ok: true, ...r })
+    } catch (e) {
+      sendJson(res, 500, { ok: false, error: `拼接失败：${e.message}` })
+    }
+    return
+  }
+
+  if (pathname === '/api/intake/parse' && req.method === 'POST') {
+    const body = await readJsonBody(req)
+    try {
+      const rows = parseLabRows(body.text || '')
+      const groups = groupForDoctorCard(rows)
+      sendJson(res, 200, { ok: true, rows, groups, summary: summarizeForCard(groups) })
+    } catch (e) {
+      sendJson(res, 500, { ok: false, error: e.message })
+    }
+    return
+  }
+
+  if (pathname === '/api/intake/ocr' && req.method === 'POST') {
+    const body = await readJsonBody(req)
+    try {
+      const image = String(body.image || '')
+      if (!image.startsWith('data:image/')) return sendJson(res, 400, { ok: false, error: 'image 需要 data:image/*;base64,' })
+      const id = `intake-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`
+      const r = await fetch('http://127.0.0.1:8008/api/ocr-vision', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, image }),
+        signal: AbortSignal.timeout(90000),
+      })
+      const j = await r.json().catch(() => ({}))
+      const text = j.text || j.result || (Array.isArray(j.blocks) ? j.blocks.map((b) => b.text || '').join('\n') : '')
+      sendJson(res, 200, { ok: !!text, text, rows: parseLabRows(text), engine: '8008/ocr-vision', upstream: j.ok === false ? j.error : undefined })
+    } catch (e) {
+      sendJson(res, 200, { ok: false, unavailable: true, reason: e.message, fallback: 'paste-text' })
+    }
+    return
+  }
+
+  if (pathname === '/api/intake/reports' && req.method === 'POST') {
+    const body = await readJsonBody(req)
+    try {
+      const store = readReports()
+      const image = String(body.image || '')
+      const rows = Array.isArray(body.rows) && body.rows.length ? body.rows : parseLabRows(body.text || '')
+      const meta = body.meta || {}
+      const imageBuf = image ? Buffer.from(image.replace(/^data:image\/[a-z+]+;base64,/i, ''), 'base64') : null
+      const sha256 = imageBuf ? sha256Bytes(imageBuf) : ''
+      const dhash = String(body.dhash || '')
+      const fingerprint = buildReportFingerprint(rows, meta)
+      const dup = findDuplicate({ sha256, dhash }, store.reports)
+      if (dup.dup) return sendJson(res, 200, { ok: false, duplicate: dup, hint: '这张图已导入过' })
+      const sameContent = store.reports.find((r) => r.fingerprint === fingerprint)
+      if (sameContent) return sendJson(res, 200, { ok: false, duplicate: { dup: true, kind: 'content', of: sameContent.id }, hint: '同一份报告（内容一致）' })
+      const rec = {
+        id: `rep_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`,
+        createdAt: new Date().toISOString(),
+        sha256, dhash, fingerprint,
+        kind: meta.kind || 'lab',
+        reportDate: meta.reportDate || '',
+        hospital: meta.hospital || '',
+        patientName: meta.patientName || '',
+        imageRef: imageBuf ? `sha256:${sha256}` : '',
+        text: String(body.text || ''),
+        rows,
+      }
+      store.reports.push(rec)
+      writeReports(store)
+      sendJson(res, 200, { ok: true, report: rec, total: store.reports.length })
+    } catch (e) {
+      sendJson(res, 500, { ok: false, error: e.message })
+    }
     return
   }
 
