@@ -273,10 +273,21 @@ export default function IntakePage() {
         engine: body.engine || '',
         rawRowCount: body.rawRowCount ?? null,
         stitchedDeduped: body.stitchedDeduped ?? 0,
+        // 超高图自动切块：h/w > 2.8 时后端切块分别识别（Vision 对超高图内部降采样会中间带成片丢行）。
+        // 只做显示，判据与切块逻辑都在后端；这里把证据留全，出问题能看出是「切块」还是「去重」干的。
+        chunked: !!body.chunked,
+        chunks: body.chunks || 1,
+        chunkAspect: body.chunkAspect ?? null,
+        chunkMerged: body.chunkMerged || 0,
+        chunkValueConflicts: body.chunkValueConflicts || 0,
       })
       const deduped = body.stitchedDeduped || 0
       pushLog(
         `「${item.name}」识别完成，得到 ${(body.rows || []).length} 行` +
+          (body.chunked
+            ? `（拼图过高 h/w ${body.chunkAspect}，已切 ${body.chunks} 块识别：原始 ${body.rawRowCount} 行 → 合并 ${body.chunkMerged || 0} 行` +
+              `${body.chunkValueConflicts ? `，边界残值冲突 ${body.chunkValueConflicts} 行` : ''}）`
+            : '') +
           (deduped ? `（重叠区合并 ${deduped} 行：原始 ${body.rawRowCount} → ${(body.rows || []).length}）` : ''),
         'ok',
       )
@@ -435,6 +446,11 @@ export default function IntakePage() {
                 <Tag color="gold">重叠合并 {r.dedupedFrom ? `×${r.dedupedFrom}` : ''}</Tag>
               </Tooltip>
             )}
+            {r.valueConflict && (
+              <Tooltip title="该行正好落在切块边界，不同块读出了不同数值；已按出现次数最多的值保留，请人工核对">
+                <Tag color="volcano">读数冲突</Tag>
+              </Tooltip>
+            )}
           </Space>
         ),
       },
@@ -546,6 +562,15 @@ export default function IntakePage() {
       </div>
 
       <div>
+        {item.chunked && (
+          <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>
+            拼图过高（h/w {item.chunkAspect}），已切 {item.chunks} 块分别识别：原始 {item.rawRowCount} 行 → 合并后{' '}
+            {item.rows.length} 行{item.chunkMerged ? `（切块合并 ${item.chunkMerged} 行）` : ''}
+            {item.chunkValueConflicts
+              ? `，其中 ${item.chunkValueConflicts} 行落在块边界、读数有冲突（已按多数值保留并标「读数冲突」）`
+              : ''}
+          </Text>
+        )}
         <Space style={{ marginBottom: 6 }} wrap>
           <Text strong style={{ fontSize: 13 }}>指标行</Text>
           <Tag>{item.rows.length} 行</Tag>
@@ -709,6 +734,13 @@ export default function IntakePage() {
                           <Space size={6} wrap>
                             <Text type="secondary" style={{ fontSize: 12 }}>{fmtSize(item.size)}</Text>
                             {item.source === 'stitch' && <Tag color="blue">拼接图</Tag>}
+                            {item.chunked && (
+                              <Tooltip
+                                title={`拼图过高（h/w ${item.chunkAspect}），Vision 会内部降采样、中间带成片丢行，已切成 ${item.chunks} 块分别识别后合并`}
+                              >
+                                <Tag color="purple">已切 {item.chunks} 块识别</Tag>
+                              </Tooltip>
+                            )}
                             <Text type="secondary" style={{ fontSize: 12 }}>
                               {item.rows.length ? `${item.rows.length} 行` : '0 行'}
                             </Text>
