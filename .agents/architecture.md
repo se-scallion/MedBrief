@@ -12,7 +12,7 @@
 |---|---|
 | 后端 | Node.js (ESM) · 纯 `node:http` · 无框架 |
 | 前端（工作台） | `index.html` 单页 · 纯 Vanilla JS · 无构建工具（主界面，全部功能都在这） |
-| 前端（114 挂号页） | `web/` React 18 + antd + Vite，构建产物 `web/dist`，由 server 托管在 `/guahao`；未构建时该路径返回 503 并提示 `npx vite build --config web/vite.config.js` |
+| 前端（React 整站，迁移中） | `web/` **React 19.3 + antd 6.6 + Vite 8 + dayjs**（实测解析版本，与 MedData 同一份 `node_modules`）。构建产物 `web/dist`（旧 114 页，托管 `/guahao`）与 `web/dist-next`（新版整站预览，托管 `/next/`），两者都已 gitignore |
 | 浏览器自动化 | **ego-browser（ego lite）**，不可换 Playwright（见下方「关键判据」） |
 | 依赖 | `node_modules` 软链接到 `MedData/node_modules`（省磁盘；`web/node_modules` 仅存 vite 临时目录） |
 | 端口 | `5174`（固定，可用 `PORT` 覆盖） |
@@ -171,6 +171,23 @@ ego lite 的 Chromium（真实指纹 + 独立 profile）可通过。故 `lib/ego
 | 5 | 图形验证码识别率无样本支撑（AI 视觉仅 2/2 张），人工兜底不可撤 | 攒 ≥50 张样本给出通过率；未达标前保留人工弹窗 |
 
 ---
+
+## 技术栈决策：React 而非 Vue（2026-11-12 用户拍板「用架构、方便后期升级」）
+
+**结论：React。** 依据是仓库事实，不是偏好：
+
+| 判据 | 事实 |
+|---|---|
+| 上游 MedData 的栈 | `meddata-ai` = **React 19.2 + antd 6.6 + Vite 8 + tailwind 3 + echarts 6 + react-router-dom 6**，`src/` 下 **69 个 `.jsx`、0 个 `.vue`** |
+| 本项目已有代码 | 114 挂号页 `web/src/BookingPage.jsx` 707 行、迁移壳 `App.jsx` 均为 React；换 Vue 等于全部返工 |
+| 组件库一致性 | 两项目共用同一份 `node_modules`（软链），`antd 6.6.6` 已就位；Vue 侧要另装 element-plus/naive，等于引入**第二套设计语言**（用户本来嫌页面丑，两套只会更丑） |
+| 升级路径 | 两端同为 Vite，升版一次对齐；共享 UI 组件（图表/上传/OCR 预览）可整块复制，符合 `INTERFACE.md`「不建 monorepo、共享靠复制」的既有权衡 |
+| 性能 | 实测 gzip 408KB，局域网场景可忽略 —— 用户已明确「不算重点」 |
+
+**版本对齐规则**：MedBrief 不单独锁前端版本，跟随 MedData 已装版本（当前 `react 19.3.0 / antd 6.6.6 / vite 8.3.4`）。
+要升就两边一起升，并在本文件更新这一行。
+
+**暂不引入 react-router-dom**：整站目前用 tab 状态 + URL query（`?tab=`），够用；等真的出现多级页面再引，避免过度设计。
 
 ## 前端合并（方案 C，2026-11-12 用户拍板：整站 React 化 + 视觉重构）
 
