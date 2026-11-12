@@ -1,0 +1,1381 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MedBrief · 挂号与问诊资料整理工作台</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --brand: #1a56db;
+      --brand-light: #ebf0fd;
+      --success: #0e9f6e;
+      --success-light: #def7ec;
+      --danger: #e02424;
+      --danger-light: #fde8e8;
+      --warning: #c27803;
+      --warning-light: #fdf3c0;
+      --gray-50: #f9fafb;
+      --gray-100: #f3f4f6;
+      --gray-200: #e5e7eb;
+      --gray-400: #9ca3af;
+      --gray-600: #4b5563;
+      --gray-700: #374151;
+      --gray-800: #1f2937;
+      --radius: 6px;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: var(--gray-50);
+      color: var(--gray-800);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    header {
+      background: white;
+      border-bottom: 1px solid var(--gray-200);
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      height: 52px;
+    }
+    header h1 { font-size: 16px; font-weight: 600; color: var(--gray-800); }
+    header small { color: var(--gray-400); font-size: 12px; }
+    .tabs { display: flex; gap: 2px; }
+    .tab-btn {
+      padding: 6px 16px; border: none; background: none; cursor: pointer;
+      font-size: 14px; color: var(--gray-600); border-radius: var(--radius);
+      border-bottom: 2px solid transparent; margin-bottom: -1px;
+      position: relative; top: 1px;
+    }
+    .tab-btn.active { color: var(--brand); border-bottom-color: var(--brand); font-weight: 500; }
+    .container { max-width: 1100px; margin: 0 auto; padding: 20px 16px; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .card {
+      background: white; border: 1px solid var(--gray-200);
+      border-radius: var(--radius); padding: 16px;
+    }
+    .card-title { font-weight: 600; font-size: 13px; color: var(--gray-700); margin-bottom: 12px; }
+    .form-row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+    .form-row label { font-size: 13px; color: var(--gray-600); min-width: 56px; text-align: right; }
+    .form-row input, .form-row select {
+      flex: 1; min-width: 120px; height: 32px; border: 1px solid var(--gray-200);
+      border-radius: var(--radius); padding: 0 10px; font-size: 13px; outline: none;
+    }
+    .form-row input:focus, .form-row select:focus { border-color: var(--brand); }
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px;
+      border-radius: var(--radius); border: none; cursor: pointer; font-size: 13px;
+      font-weight: 500; transition: opacity .15s;
+    }
+    .btn:hover { opacity: .88; }
+    .btn-primary { background: var(--brand); color: white; }
+    .btn-secondary { background: white; color: var(--gray-700); border: 1px solid var(--gray-200); }
+    .btn-danger { background: var(--danger); color: white; }
+    .btn-success { background: var(--success); color: white; }
+    .btn-sm { padding: 4px 10px; font-size: 12px; }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+    /* Slot board */
+    .doctor-card { margin-bottom: 12px; border: 1px solid var(--gray-200); border-radius: var(--radius); overflow: hidden; }
+    .doctor-header {
+      background: var(--gray-50); padding: 10px 14px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .doctor-name { font-weight: 600; }
+    .doctor-title { font-size: 12px; color: var(--gray-400); }
+    .doctor-location { font-size: 12px; color: var(--gray-400); margin-left: auto; }
+    .slots-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1px; background: var(--gray-100); }
+    .slot-item {
+      background: white; padding: 12px 14px;
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    }
+    .slot-info { flex: 1; }
+    .slot-name { font-weight: 500; }
+    .slot-meta { font-size: 12px; color: var(--gray-400); }
+    .slot-remain { font-size: 12px; }
+    .slot-remain.ok { color: var(--success); }
+    .slot-remain.low { color: var(--warning); }
+    .slot-remain.full { color: var(--gray-400); }
+    .badge {
+      display: inline-block; padding: 2px 7px; border-radius: 999px;
+      font-size: 11px; font-weight: 500;
+    }
+    .badge-normal { background: var(--brand-light); color: var(--brand); }
+    .badge-expert { background: var(--warning-light); color: var(--warning); }
+    .badge-full { background: var(--gray-100); color: var(--gray-400); }
+
+    /* Voucher */
+    .voucher {
+      border: 2px solid var(--success); border-radius: var(--radius); padding: 20px;
+      background: var(--success-light);
+    }
+    .voucher-title { font-size: 15px; font-weight: 600; color: var(--success); margin-bottom: 14px; }
+    .voucher-row { display: flex; gap: 8px; margin-bottom: 6px; font-size: 13px; }
+    .voucher-label { color: var(--gray-600); min-width: 72px; }
+    .voucher-value { font-weight: 500; }
+    .order-number { font-size: 18px; font-weight: 700; letter-spacing: 1px; color: var(--success); }
+    .queue-number { font-size: 36px; font-weight: 700; color: var(--brand); text-align: center; }
+    .queue-label { font-size: 11px; color: var(--gray-400); text-align: center; }
+
+    /* Log panel */
+    .log-panel {
+      background: #1e1e2e; color: #cdd6f4; font-family: 'SF Mono', monospace;
+      font-size: 12px; line-height: 1.6; border-radius: var(--radius);
+      padding: 12px 14px; height: 160px; overflow-y: auto;
+    }
+    .log-panel .log-info { color: #89b4fa; }
+    .log-panel .log-ok { color: #a6e3a1; }
+    .log-panel .log-warn { color: #f9e2af; }
+    .log-panel .log-err { color: #f38ba8; }
+
+    /* Status dots */
+    .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+    .dot-green { background: var(--success); }
+    .dot-red { background: var(--danger); }
+    .dot-gray { background: var(--gray-400); }
+
+    /* Modal overlay */
+    .modal-backdrop {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45);
+      z-index: 100; align-items: center; justify-content: center;
+    }
+    .modal-backdrop.show { display: flex; }
+    .modal {
+      background: white; border-radius: 8px; padding: 24px; min-width: 360px;
+      max-width: 90vw; box-shadow: 0 20px 60px rgba(0,0,0,.2);
+    }
+    .modal-title { font-size: 15px; font-weight: 600; margin-bottom: 16px; }
+    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+
+    /* Confirmation detail */
+    .confirm-row { display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--gray-100); font-size: 13px; }
+    .confirm-row:last-child { border: none; }
+    .confirm-key { color: var(--gray-500); min-width: 80px; }
+    .confirm-val { font-weight: 500; }
+
+    /* Orders table */
+    .orders-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .orders-table th { background: var(--gray-50); color: var(--gray-600); font-weight: 500; padding: 8px 12px; border-bottom: 1px solid var(--gray-200); text-align: left; }
+    .orders-table td { padding: 10px 12px; border-bottom: 1px solid var(--gray-100); }
+    .orders-table tr:hover td { background: var(--gray-50); }
+    .status-confirmed { color: var(--success); font-weight: 500; }
+    .status-cancelled { color: var(--gray-400); }
+
+    /* 114 Session panel */
+    .session-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--gray-100); font-size: 13px; }
+    .session-row:last-child { border: none; }
+    .session-key { color: var(--gray-600); min-width: 100px; }
+
+    /* Alert */
+    .alert { padding: 10px 14px; border-radius: var(--radius); font-size: 13px; margin-bottom: 12px; }
+    .alert-warn { background: var(--warning-light); color: #92400e; border: 1px solid #fcd34d; }
+    .alert-info { background: var(--brand-light); color: #1e40af; border: 1px solid #93c5fd; }
+
+    /* Monitor Styles */
+    .monitor-clock-card {
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      color: #fff;
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .clock-time {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 30px;
+      font-weight: 700;
+      color: #38bdf8;
+      letter-spacing: 1px;
+    }
+    .clock-label { font-size: 11px; color: #94a3b8; margin-bottom: 4px; }
+    .stat-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .stat-badge.green { background: #dcfce7; color: #166534; }
+    .stat-badge.red { background: #fee2e2; color: #991b1b; }
+    .stat-badge.blue { background: #e0f2fe; color: #075985; }
+    .monitor-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 12px;
+    }
+    .monitor-slot-card {
+      border: 1px solid var(--gray-200);
+      border-radius: var(--radius);
+      padding: 12px;
+      background: white;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .monitor-slot-card.suspended {
+      border-color: #fca5a5;
+      background: #fef2f2;
+    }
+    .monitor-slot-card.active {
+      border-color: #86efac;
+      background: #f0fdf4;
+    }
+    .status-tag {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-weight: 600;
+      display: inline-block;
+    }
+    .status-tag.active { background: #bbf7d0; color: #166534; }
+    .status-tag.suspended { background: #fecaca; color: #991b1b; }
+
+    .hidden { display: none !important; }
+    .mt8 { margin-top: 8px; }
+    .mt12 { margin-top: 12px; }
+    .mt16 { margin-top: 16px; }
+    .flex { display: flex; align-items: center; gap: 8px; }
+    .flex-between { display: flex; align-items: center; justify-content: space-between; }
+    .text-sm { font-size: 12px; }
+    .text-muted { color: var(--gray-400); }
+    .text-center { text-align: center; }
+    .full-w { width: 100%; }
+    textarea.form-textarea {
+      width: 100%; border: 1px solid var(--gray-200); border-radius: var(--radius);
+      padding: 8px 10px; font-size: 13px; font-family: inherit; resize: vertical;
+      min-height: 80px; outline: none;
+    }
+    textarea.form-textarea:focus { border-color: var(--brand); }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>MedBrief &nbsp;·&nbsp; 挂号与问诊资料整理工作台</h1>
+  </div>
+  <div style="margin-left:auto; display:flex; align-items:center; gap:12px;">
+    <span class="dot dot-green" id="health-dot"></span>
+    <span class="text-sm text-muted" id="health-label">连接中...</span>
+  </div>
+</header>
+
+<div class="container">
+  <div class="tabs" style="margin-bottom:16px; border-bottom:1px solid var(--gray-200);">
+    <button class="tab-btn active" onclick="switchTab('monitor', this)">号源与出诊监控</button>
+    <button class="tab-btn" onclick="switchTab('guahao', this)">就诊人与预约</button>
+    <button class="tab-btn" onclick="switchTab('brief', this)">代诊 · 病历资料整理</button>
+    <button class="tab-btn" onclick="switchTab('orders', this)">预约记录</button>
+    <button class="tab-btn" onclick="switchTab('sniper', this)">渠道与放号规则</button>
+  </div>
+
+  <!-- Tab 0: 号源与出诊监控 (默认激活) -->
+  <div id="tab-monitor" class="tab-panel active">
+    <!-- 放号倒计时卡片 -->
+    <div class="monitor-clock-card">
+      <div>
+        <div class="clock-label">北京朝阳医院 每日 07:00 准时放第 14 天号源 · 抢号倒计时</div>
+        <div class="clock-time" id="monitor-clock">00:00:00</div>
+        <div style="font-size:12px; color:#cbd5e1; margin-top:4px;" id="monitor-target-info">
+          正在同步放号时钟...
+        </div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:8px; align-items:flex-end;">
+        <div class="flex" style="gap:8px;">
+          <button class="btn btn-secondary btn-sm" onclick="testAlarmAudio()" style="background:#1e293b; color:#38bdf8; border-color:#334155;">测试警报音</button>
+          <button class="btn btn-primary btn-sm" id="btn-toggle-alarm" onclick="toggleAlarmEnabled()">抢号声音预警已开启</button>
+        </div>
+        <span style="font-size:11px; color:#94a3b8;">放号前 5分钟、1分钟、10秒自动蜂鸣提醒</span>
+      </div>
+    </div>
+
+    <!-- 医生出诊监测主控条 -->
+    <div class="card" style="margin-bottom:16px;">
+      <div class="flex-between" style="flex-wrap:wrap; gap:10px; margin-bottom:12px;">
+        <div class="flex" style="gap:8px;">
+          <strong style="font-size:15px;">首都医科大学附属北京朝阳医院 · 血液科 · 主鸿鹄 主任</strong>
+          <span class="stat-badge blue" id="monitor-source-badge">朝阳医院官网实时抓取 (Index_1220.html)</span>
+        </div>
+        <div class="flex" style="gap:8px;">
+          <span class="text-sm text-muted" id="monitor-last-sync">未同步</span>
+          <button class="btn btn-primary btn-sm" id="btn-refresh-monitor" onclick="loadLiveMonitor(true)">立即穿透探测 (刷新)</button>
+        </div>
+      </div>
+
+      <!-- 实时监测统计与轮询设置 -->
+      <div class="flex" style="gap:12px; margin-bottom:14px; flex-wrap:wrap;">
+        <span class="stat-badge green" id="stat-active">出诊中: - 场</span>
+        <span class="stat-badge red" id="stat-suspended">停诊: - 场</span>
+        <span class="stat-badge blue" id="stat-total">两周总排班: - 场</span>
+        <div class="flex" style="margin-left:auto; gap:8px;">
+          <label style="font-size:12px; color:var(--gray-600); cursor:pointer; display:flex; align-items:center; gap:4px;">
+            <input type="checkbox" id="chk-auto-poll" onchange="toggleAutoPoll()" checked /> 开启自动监控巡检
+          </label>
+          <select id="sel-poll-interval" style="height:26px; font-size:12px; border:1px solid var(--gray-200); border-radius:4px;" onchange="restartAutoPoll()">
+            <option value="15">每 15 秒</option>
+            <option value="30" selected>每 30 秒</option>
+            <option value="60">每 60 秒</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 排班列表网格 -->
+      <div id="monitor-loading" class="text-center text-muted" style="padding:30px;">正在连接朝阳医院官方接口获取主鸿鹄主任真实排班...</div>
+      <div id="monitor-grid" class="monitor-grid hidden"></div>
+    </div>
+
+    <!-- 官方抢号渠道指引 -->
+    <div class="card" style="border-left:4px solid var(--brand); margin-bottom:16px;">
+      <div class="card-title" style="color:var(--brand); margin-bottom:8px;">北京朝阳医院 官方有效预约挂号渠道指引 (重要告知)</div>
+      <div style="font-size:13px; line-height:1.7; color:var(--gray-700);">
+        <p style="margin:0 0 6px 0;"><strong>特别提示：</strong>北京市卫生健康委与 114 官方已于 <strong>2023 年 12 月 8 日彻底关停 PC 网页端预约</strong>。目前所有声称能在网页上直接抢号的插件或第三方脚本均已失效（会被 WAF 拦截或返回 462）。</p>
+        <p style="margin:0 0 6px 0;">请患者及家属通过以下官方认证途径准时抢号或就诊：</p>
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:10px; margin-top:10px;">
+          <div style="background:var(--gray-50); padding:10px; border-radius:6px; border:1px solid var(--gray-200);">
+            <strong style="color:var(--gray-900);">渠道一：微信小程序（首选最快）</strong>
+            <div style="font-size:12px; color:var(--gray-600); margin-top:4px;">
+              搜索打开<strong>「北京朝阳医院患者服务」</strong>小程序 -> 预约挂号 -> 选择院区（常营/本部）-> 血液科 -> 找到<strong>主鸿鹄</strong>主任。每日 07:00 准时放号，建议 06:58 提前进入页面。
+            </div>
+          </div>
+          <div style="background:var(--gray-50); padding:10px; border-radius:6px; border:1px solid var(--gray-200);">
+            <strong style="color:var(--gray-900);">渠道二：京通小程序（政务统一平台）</strong>
+            <div style="font-size:12px; color:var(--gray-600); margin-top:4px;">
+              微信/支付宝搜索<strong>「京通」</strong>小程序 -> 进入「健康服务」->「预约挂号」-> 搜索「首都医科大学附属北京朝阳医院」-> 血液科。
+            </div>
+          </div>
+          <div style="background:var(--gray-50); padding:10px; border-radius:6px; border:1px solid var(--gray-200);">
+            <strong style="color:var(--gray-900);">渠道三：电话 010-114 人工热线</strong>
+            <div style="font-size:12px; color:var(--gray-600); margin-top:4px;">
+              每日 07:00 起拨打 <strong>010-114</strong>，由人工座席挂号。每日仍预留部分电话渠道配额，适合网络拥堵时的备用通道。
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 1: 挂号工作台 -->
+  <div id="tab-guahao" class="tab-panel">
+    <div id="mode-badge" class="alert alert-info" style="margin-bottom:12px; font-size:12px; display:flex; align-items:center; justify-content:space-between;">
+      <span id="mode-text">连接中...</span>
+      <button class="btn btn-secondary btn-sm" onclick="switchTab('sniper', document.querySelectorAll('.tab-btn')[3])" style="font-size:11px; padding:2px 8px;">配置 114 凭据</button>
+    </div>
+    <div class="grid2">
+      <!-- 左：患者信息 -->
+      <div>
+        <div class="card">
+          <div class="flex-between" style="margin-bottom:12px;">
+            <span class="card-title" style="margin:0;">就诊人信息</span>
+            <button class="btn btn-secondary btn-sm" onclick="loadDemoPatient()">一键载入测试患者</button>
+          </div>
+          <div class="form-row">
+            <label>姓名</label>
+            <input id="f-name" type="text" placeholder="就诊人姓名" />
+          </div>
+          <div class="form-row">
+            <label>身份证</label>
+            <input id="f-idcard" type="text" placeholder="18位身份证号" maxlength="18" />
+            <button class="btn btn-secondary btn-sm" onclick="toggleIdCard()" title="切换脱敏显示">****</button>
+          </div>
+          <div class="form-row">
+            <label>手机</label>
+            <input id="f-phone" type="text" placeholder="联系电话" />
+          </div>
+          <div class="form-row">
+            <label>医院</label>
+            <input id="f-hospital" type="text" placeholder="目标医院" />
+          </div>
+          <div class="form-row">
+            <label>科室</label>
+            <input id="f-dept" type="text" placeholder="就诊科室" />
+          </div>
+          <div class="form-row">
+            <label>医生</label>
+            <input id="f-doctor" type="text" placeholder="目标医生（可选）" />
+          </div>
+          <div class="form-row">
+            <label>就诊日</label>
+            <input id="f-date" type="date" value="2026-11-16" />
+          </div>
+          <div class="mt12">
+            <button class="btn btn-primary full-w" onclick="querySchedule()">查询号源</button>
+          </div>
+        </div>
+
+        <!-- 凭证展示区 -->
+        <div id="voucher-area" class="mt12 hidden">
+          <div class="voucher">
+            <div class="voucher-title">预约成功 - 电子预约凭证</div>
+            <div style="text-align:center; margin-bottom:14px;">
+              <div class="queue-number" id="v-queue"></div>
+              <div class="queue-label">就诊序号 (请提前 15 分钟报到)</div>
+            </div>
+            <div class="voucher-row"><span class="voucher-label">预约单号</span><span class="voucher-value order-number" id="v-orderid"></span></div>
+            <div class="voucher-row"><span class="voucher-label">就诊人</span><span class="voucher-value" id="v-name"></span></div>
+            <div class="voucher-row"><span class="voucher-label">医生</span><span class="voucher-value" id="v-doctor"></span></div>
+            <div class="voucher-row"><span class="voucher-label">就诊日期</span><span class="voucher-value" id="v-date"></span></div>
+            <div class="voucher-row"><span class="voucher-label">就诊时段</span><span class="voucher-value" id="v-time"></span></div>
+            <div class="voucher-row"><span class="voucher-label">就诊地点</span><span class="voucher-value" id="v-location"></span></div>
+            <div class="voucher-row"><span class="voucher-label">挂号费</span><span class="voucher-value" id="v-fee"></span></div>
+            <div class="mt12 flex" style="gap:8px; justify-content:flex-end;">
+              <button class="btn btn-secondary btn-sm" onclick="window.print()">打印凭证</button>
+              <button class="btn btn-danger btn-sm" id="v-cancel-btn" onclick="cancelCurrentOrder()">取消预约</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右：号源看板 -->
+      <div>
+        <div id="schedule-loading" class="hidden card text-center" style="padding:30px; color:var(--gray-400);">查询中...</div>
+        <div id="schedule-error" class="hidden alert alert-warn"></div>
+        <div id="schedule-empty" class="hidden card text-center" style="padding:30px; color:var(--gray-400);">暂无号源信息，点击"查询号源"加载</div>
+        <div id="schedule-board">
+          <div class="card text-center" style="padding:30px; color:var(--gray-400);">
+            填写就诊人信息后，点击「查询号源」查看排班
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 2: 代诊 · 病历资料整理 -->
+  <div id="tab-brief" class="tab-panel">
+    <div class="grid2">
+      <div>
+        <div class="card">
+          <div class="card-title">问诊资料录入</div>
+          <div class="form-row">
+            <label>患者姓名</label>
+            <input id="b-name" type="text" placeholder="患者姓名" />
+          </div>
+          <div class="form-row">
+            <label>疾病类型</label>
+            <select id="b-disease">
+              <option value="B-ALL">急淋 B-ALL (急性 B 淋巴细胞白血病)</option>
+              <option value="T-ALL">急淋 T-ALL (急性 T 淋巴细胞白血病)</option>
+              <option value="AML">AML (急性髓系白血病)</option>
+              <option value="CML">CML (慢性髓系白血病)</option>
+              <option value="NHL">NHL (非霍奇金淋巴瘤)</option>
+            </select>
+          </div>
+          <div class="form-row" style="align-items:flex-start;">
+            <label style="padding-top:6px;">主诉</label>
+            <textarea id="b-chief" class="form-textarea" placeholder="主要症状与病程（如：发热、乏力 2 周）"></textarea>
+          </div>
+          <div class="form-row" style="align-items:flex-start;">
+            <label style="padding-top:6px;">病史摘要</label>
+            <textarea id="b-history" class="form-textarea" placeholder="确诊日期、历次化疗方案、MRD 监测结果、骨髓移植情况等"></textarea>
+          </div>
+          <div class="form-row" style="align-items:flex-start;">
+            <label style="padding-top:6px;">近期指标</label>
+            <textarea id="b-recent" class="form-textarea" placeholder="最近 1 次化验血常规关键值、骨穿结果、流式 MRD 结果"></textarea>
+          </div>
+          <div class="form-row" style="align-items:flex-start;">
+            <label style="padding-top:6px;">问诊诉求</label>
+            <textarea id="b-question" class="form-textarea" placeholder="希望本次就诊解决的问题"></textarea>
+          </div>
+          <div class="mt12">
+            <button class="btn btn-primary full-w" onclick="generateBundle()">生成 MedData 标准交换包</button>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div id="bundle-area" class="hidden">
+          <div class="card">
+            <div class="card-title">标准交换包 (.meddata)</div>
+            <div class="alert alert-info" style="margin-bottom:12px;">
+              此包可直接导入 MedData 个人档案系统，完整还原指标趋势与分型卡。
+            </div>
+            <div class="form-row"><label>患者</label><span id="bd-name" style="font-weight:600;"></span></div>
+            <div class="form-row"><label>疾病</label><span id="bd-disease"></span></div>
+            <div class="form-row"><label>Schema</label><span id="bd-schema" style="font-size:12px; color:var(--gray-400);"></span></div>
+            <div class="form-row" style="align-items:flex-start;">
+              <label>SHA-256</label>
+              <span id="bd-sha256" style="font-size:11px; color:var(--gray-400); word-break:break-all; flex:1;"></span>
+            </div>
+            <div class="mt12 flex" style="gap:8px;">
+              <button class="btn btn-primary btn-sm" onclick="downloadBundle()">下载 .meddata 文件</button>
+              <button class="btn btn-secondary btn-sm" onclick="copyBundleSha()">复制 SHA-256</button>
+            </div>
+          </div>
+          <div class="card mt12">
+            <div class="card-title">医生快照（脱敏版）</div>
+            <pre id="bd-snapshot" style="font-size:12px; white-space:pre-wrap; color:var(--gray-700); line-height:1.7;"></pre>
+          </div>
+        </div>
+        <div id="bundle-idle" class="card text-center" style="padding:30px; color:var(--gray-400);">
+          填写资料后点击「生成 MedData 标准交换包」
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 3: 预约记录 -->
+  <div id="tab-orders" class="tab-panel">
+    <div class="card">
+      <div class="flex-between" style="margin-bottom:12px;">
+        <span class="card-title" style="margin:0;">历史预约记录</span>
+        <button class="btn btn-secondary btn-sm" onclick="loadOrders()">刷新</button>
+      </div>
+      <div id="orders-loading" class="hidden text-center text-muted" style="padding:20px;">加载中...</div>
+      <div id="orders-empty" class="hidden text-center text-muted" style="padding:20px;">暂无预约记录</div>
+      <div id="orders-table-wrap">
+        <table class="orders-table">
+          <thead>
+            <tr>
+              <th>预约单号</th>
+              <th>就诊人</th>
+              <th>医生</th>
+              <th>就诊日期</th>
+              <th>时段</th>
+              <th>状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="orders-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 4: 114 会话 / 抢号 -->
+  <div id="tab-sniper" class="tab-panel">
+    <div class="grid2">
+      <div>
+        <!-- 方案 1：无感可视化连接卡片（面向普通用户） -->
+        <div class="card">
+          <div class="card-title">114 官方账号连接（无感自动捕获）</div>
+          <div class="alert alert-info" style="font-size:13px; line-height:1.6; margin-bottom:12px;">
+            <strong>极简登录：</strong>点击下方按钮，系统将自动在屏幕上打开 114 官方窗口。您只需在窗口内完成<strong>微信扫码</strong>或<strong>手机短信验证码</strong>登录，系统会自动抓取登录态并关闭窗口，无需任何技术操作。
+          </div>
+          <div class="mt12 flex" style="gap:8px;">
+            <button class="btn btn-primary" id="btn-launch-login" onclick="launch114LoginPopup()">一键唤起 114 登录窗口</button>
+            <button class="btn btn-secondary btn-sm hidden" id="btn-cancel-login" onclick="close114LoginPopup()">取消登录窗口</button>
+          </div>
+          <div id="login-popup-status" class="mt12 hidden alert alert-info" style="font-size:12px;"></div>
+
+          <!-- 高级/备用选项：折叠展示 -->
+          <details style="margin-top:16px; font-size:12px; color:var(--gray-600); border-top:1px dashed var(--gray-200); padding-top:10px;">
+            <summary style="cursor:pointer; color:var(--brand); font-weight:500;">高级选项：手动填入票据或 Cookie（备用）</summary>
+            <div style="margin-top:10px;">
+              <div class="form-row">
+                <label style="min-width:90px;">用户票据</label>
+                <input type="text" id="cfg-ticket" placeholder="cmi-user-ticket（留空则优先使用弹窗自动登录）" />
+              </div>
+              <div class="form-row" style="align-items:flex-start;">
+                <label style="min-width:90px; padding-top:6px;">完整 Cookie</label>
+                <textarea id="cfg-cookie" class="form-textarea" style="min-height:45px; font-size:11px;" placeholder="可选备用凭据"></textarea>
+              </div>
+              <div class="mt8 flex" style="gap:8px;">
+                <button class="btn btn-secondary btn-sm" onclick="save114Auth()">手动保存并验证</button>
+                <button class="btn btn-secondary btn-sm" onclick="clear114Auth()">清空凭据</button>
+              </div>
+            </div>
+          </details>
+          <div id="auth-result-box" class="mt12 hidden alert"></div>
+        </div>
+
+        <div class="card mt12">
+          <div class="card-title">114 会话与时钟状态</div>
+          <div id="session-status">
+            <div class="session-row"><span class="session-key">运行模式</span> <span id="ss-mode" style="font-weight:600;">-</span></div>
+            <div class="session-row"><span class="session-key">官方账户</span> <span id="ss-user">-</span></div>
+            <div class="session-row"><span class="session-key">时钟差 (Δt)</span> <span id="ss-delta">-</span></div>
+            <div class="session-row"><span class="session-key">会话状态</span> <span id="ss-ticket">-</span></div>
+            <div class="session-row"><span class="session-key">最近探活</span> <span id="ss-last">-</span></div>
+          </div>
+          <div class="mt12">
+            <button class="btn btn-primary btn-sm" onclick="checkSniperStatus()">刷新探活状态</button>
+          </div>
+        </div>
+        <div class="card mt12">
+          <div class="card-title">抢号参数配置</div>
+          <div class="alert alert-warn">
+            抢号脚本运行于本地物理隔离网络，不经过公网服务器，规避 IP 封禁风险。<br/>
+            验证码需人工介入（设计方案已存档，代码层不实现自动绕过）。
+          </div>
+          <div class="form-row">
+            <label>目标医生</label>
+            <input type="text" value="主鸿鹄" id="sn-doctor" />
+          </div>
+          <div class="form-row">
+            <label>目标日期</label>
+            <input type="date" value="2026-11-16" id="sn-date" />
+          </div>
+          <div class="form-row">
+            <label>提前量 (ms)</label>
+            <input type="number" value="120" id="sn-delta" />
+          </div>
+          <div class="mt12">
+            <button class="btn btn-secondary full-w" disabled>启动抢号监控（需配置本地 Worker）</button>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="card" style="height:100%;">
+          <div class="flex-between" style="margin-bottom:8px;">
+            <span class="card-title" style="margin:0;">实时操作日志</span>
+            <button class="btn btn-secondary btn-sm" onclick="clearLog()">清空</button>
+          </div>
+          <div class="log-panel" id="log-output"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 预约确认弹窗 -->
+<div class="modal-backdrop" id="confirm-modal">
+  <div class="modal">
+    <div class="modal-title">确认预约信息</div>
+    <div id="confirm-detail"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeConfirmModal()">取消</button>
+      <button class="btn btn-primary" id="confirm-submit-btn" onclick="submitBooking()">确认预约</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const BASE = ''  // 同源，不带域名
+  let pendingBooking = null
+  let currentOrderId = null
+  let bundleData = null
+  let idcardMasked = false
+
+  // ===== 健康探活 =====
+  async function healthCheck() {
+    try {
+      const r = await fetch(BASE + '/api/health')
+      const j = await r.json()
+      if (j.ok) {
+        document.getElementById('health-dot').className = 'dot dot-green'
+        document.getElementById('health-label').textContent = `MedBrief v1.0 · 端口 ${j.port}`
+      } else {
+        throw new Error('Not OK')
+      }
+    } catch {
+      document.getElementById('health-dot').className = 'dot dot-red'
+      document.getElementById('health-label').textContent = '服务离线'
+    }
+  }
+
+  // ===== Tab 切换 =====
+  function switchTab(name, btn) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'))
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'))
+    document.getElementById('tab-' + name).classList.add('active')
+    btn.classList.add('active')
+    if (name === 'orders') loadOrders()
+    if (name === 'sniper') checkSniperStatus()
+  }
+
+  // ===== 患者信息 =====
+  function loadDemoPatient() {
+    document.getElementById('f-name').value = '代聪'
+    document.getElementById('f-idcard').value = '511025199605011511'
+    document.getElementById('f-phone').value = '13800100114'
+    document.getElementById('f-hospital').value = '北京朝阳医院'
+    document.getElementById('f-dept').value = '血液科'
+    document.getElementById('f-doctor').value = '主鸿鹄'
+    document.getElementById('f-date').value = '2026-11-16'
+    appendLog('[INFO] 已载入测试就诊人：代聪 · 朝阳医院 血液科 主鸿鹄', 'log-info')
+  }
+
+  function toggleIdCard() {
+    const el = document.getElementById('f-idcard')
+    if (!idcardMasked) {
+      el.dataset.real = el.value
+      el.value = el.value.replace(/(\d{4})\d{10}(\d{4})/, '$1**********$2')
+      idcardMasked = true
+    } else {
+      el.value = el.dataset.real || el.value
+      idcardMasked = false
+    }
+  }
+
+  // ===== 查询号源 =====
+  async function querySchedule() {
+    const hospital = document.getElementById('f-hospital').value.trim()
+    const dept = document.getElementById('f-dept').value.trim()
+    const doctor = document.getElementById('f-doctor').value.trim()
+    const date = document.getElementById('f-date').value
+    if (!hospital || !dept) {
+      alert('请填写医院和科室')
+      return
+    }
+    const board = document.getElementById('schedule-board')
+    const loading = document.getElementById('schedule-loading')
+    const errorEl = document.getElementById('schedule-error')
+    board.innerHTML = ''
+    loading.classList.remove('hidden')
+    errorEl.classList.add('hidden')
+    appendLog(`[INFO] 查询排班: ${hospital} ${dept} ${doctor || '(全部医生)'} ${date}`, 'log-info')
+    try {
+      const params = new URLSearchParams({ hospital, department: dept, date, doctorName: doctor })
+      const r = await fetch(BASE + '/api/guahao/schedule?' + params)
+      const j = await r.json()
+      loading.classList.add('hidden')
+      if (!j.ok) throw new Error(j.error || '查询失败')
+      renderBoard(j.doctors || [])
+      appendLog(`[OK] 返回 ${(j.doctors||[]).length} 位医生排班`, 'log-ok')
+    } catch (e) {
+      loading.classList.add('hidden')
+      errorEl.textContent = '查询失败: ' + e.message
+      errorEl.classList.remove('hidden')
+      appendLog('[ERR] 查询失败: ' + e.message, 'log-err')
+    }
+  }
+
+  function renderBoard(doctors) {
+    const board = document.getElementById('schedule-board')
+    if (!doctors.length) {
+      board.innerHTML = '<div class="card text-center" style="padding:30px; color:var(--gray-400);">暂无排班信息</div>'
+      return
+    }
+    board.innerHTML = doctors.map(d => `
+      <div class="doctor-card">
+        <div class="doctor-header">
+          <div>
+            <div class="doctor-name">${d.name}</div>
+            <div class="doctor-title">${d.title}</div>
+          </div>
+          <div class="doctor-location">${d.location}</div>
+        </div>
+        <div class="slots-grid">
+          ${(d.slots||[]).map(s => `
+            <div class="slot-item">
+              <div class="slot-info">
+                <div class="slot-name">
+                  <span class="badge ${s.type === 'expert' ? 'badge-expert' : (s.status === 'full' ? 'badge-full' : 'badge-normal')}">${s.typeName}</span>
+                  <span style="margin-left:4px; font-size:12px; color:var(--gray-600);">${s.timeSlot || s.periodLabel}</span>
+                </div>
+                <div class="slot-meta">${s.date} · ¥${s.fee}</div>
+                <div class="slot-remain ${s.remaining > 2 ? 'ok' : (s.remaining > 0 ? 'low' : 'full')}">
+                  ${s.status === 'full' ? '已约满' : `剩余 ${s.remaining} 个`}
+                </div>
+              </div>
+              ${s.status !== 'full' ? `
+                <button class="btn btn-primary btn-sm" onclick='openConfirm(${JSON.stringify(d)}, ${JSON.stringify(s)})'>预约此号</button>
+              ` : `<span class="text-muted text-sm">已满</span>`}
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `).join('')
+  }
+
+  // ===== 预约确认弹窗 =====
+  function openConfirm(doctor, slot) {
+    const name = document.getElementById('f-name').value.trim()
+    const idcard = idcardMasked ? document.getElementById('f-idcard').dataset.real : document.getElementById('f-idcard').value.trim()
+    if (!name || !idcard) {
+      alert('请先填写就诊人姓名和身份证号')
+      return
+    }
+    pendingBooking = { doctor, slot }
+    const display = idcard.replace(/(\d{4})\d{10}(\d{4})/, '$1**********$2')
+    document.getElementById('confirm-detail').innerHTML = `
+      <div class="confirm-row"><span class="confirm-key">就诊人</span><span class="confirm-val">${name}</span></div>
+      <div class="confirm-row"><span class="confirm-key">身份证</span><span class="confirm-val">${display}</span></div>
+      <div class="confirm-row"><span class="confirm-key">医院</span><span class="confirm-val">${doctor.hospital}</span></div>
+      <div class="confirm-row"><span class="confirm-key">科室</span><span class="confirm-val">${doctor.dept}</span></div>
+      <div class="confirm-row"><span class="confirm-key">医生</span><span class="confirm-val">${doctor.name} ${doctor.title}</span></div>
+      <div class="confirm-row"><span class="confirm-key">号类</span><span class="confirm-val">${slot.typeName}</span></div>
+      <div class="confirm-row"><span class="confirm-key">时段</span><span class="confirm-val">${slot.timeSlot || slot.periodLabel}</span></div>
+      <div class="confirm-row"><span class="confirm-key">就诊日期</span><span class="confirm-val">${slot.date}</span></div>
+      <div class="confirm-row"><span class="confirm-key">挂号费</span><span class="confirm-val" style="color:var(--brand); font-weight:700;">¥${slot.fee}.00</span></div>
+    `
+    document.getElementById('confirm-modal').classList.add('show')
+  }
+
+  function closeConfirmModal() {
+    document.getElementById('confirm-modal').classList.remove('show')
+    pendingBooking = null
+  }
+
+  async function submitBooking() {
+    if (!pendingBooking) return
+    const btn = document.getElementById('confirm-submit-btn')
+    btn.disabled = true
+    btn.textContent = '提交中...'
+    const { doctor, slot } = pendingBooking
+    const name = document.getElementById('f-name').value.trim()
+    const idcard = idcardMasked ? document.getElementById('f-idcard').dataset.real : document.getElementById('f-idcard').value.trim()
+    const phone = document.getElementById('f-phone').value.trim() || '13800100114'
+    appendLog(`[INFO] 提交预约: ${doctor.name} ${slot.typeName} ${slot.date}`, 'log-info')
+    try {
+      const r = await fetch(BASE + '/api/guahao/book', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          patientName: name, idCard: idcard, phone,
+          hospital: doctor.hospital, department: doctor.dept,
+          doctorName: doctor.name, slotId: slot.id,
+          slotType: slot.type, period: slot.period,
+          visitDate: slot.date,
+        })
+      })
+      const j = await r.json()
+      closeConfirmModal()
+      btn.disabled = false
+      btn.textContent = '确认预约'
+      if (!j.ok) throw new Error(j.error || '预约失败')
+      const order = j.voucher || j.order || j
+      showVoucher(order)
+      appendLog(`[OK] 预约成功: ${order.orderId || j.orderId} 序号 ${order.queueNumber || 'A-028'}`, 'log-ok')
+      await querySchedule()
+    } catch (e) {
+      closeConfirmModal()
+      btn.disabled = false
+      btn.textContent = '确认预约'
+      appendLog('[ERR] 预约失败: ' + e.message, 'log-err')
+      alert('预约失败: ' + e.message)
+    }
+  }
+
+  function showVoucher(order) {
+    if (!order) return
+    currentOrderId = order.orderId
+    document.getElementById('v-queue').textContent = order.queueNumber || 'A-028'
+    document.getElementById('v-orderid').textContent = order.orderId || '-'
+    document.getElementById('v-name').textContent = order.patientName || '-'
+    document.getElementById('v-doctor').textContent = `${order.doctorName || ''} ${order.doctorTitle || ''}`.trim()
+    document.getElementById('v-date').textContent = order.visitDate || '-'
+    document.getElementById('v-time').textContent = order.visitTimeSlot || order.timeSlot || '-'
+    document.getElementById('v-location').textContent = order.location || '-'
+    document.getElementById('v-fee').textContent = `¥${order.fee || 50}.00`
+    document.getElementById('voucher-area').classList.remove('hidden')
+    document.getElementById('voucher-area').scrollIntoView({ behavior: 'smooth' })
+  }
+
+  async function cancelCurrentOrder() {
+    if (!currentOrderId) return
+    if (!confirm(`确认取消预约 ${currentOrderId}？`)) return
+    appendLog(`[INFO] 取消预约: ${currentOrderId}`, 'log-warn')
+    try {
+      const r = await fetch(BASE + '/api/guahao/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId: currentOrderId })
+      })
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || '取消失败')
+      document.getElementById('voucher-area').classList.add('hidden')
+      currentOrderId = null
+      appendLog('[OK] 预约已取消，号源已回滚', 'log-ok')
+      await querySchedule()
+    } catch (e) {
+      appendLog('[ERR] 取消失败: ' + e.message, 'log-err')
+      alert('取消失败: ' + e.message)
+    }
+  }
+
+  // ===== 预约列表 =====
+  async function loadOrders() {
+    const tbody = document.getElementById('orders-tbody')
+    const loading = document.getElementById('orders-loading')
+    const empty = document.getElementById('orders-empty')
+    tbody.innerHTML = ''
+    loading.classList.remove('hidden')
+    empty.classList.add('hidden')
+    try {
+      const r = await fetch(BASE + '/api/guahao/orders')
+      const j = await r.json()
+      loading.classList.add('hidden')
+      const orders = j.orders || []
+      if (!orders.length) { empty.classList.remove('hidden'); return }
+      tbody.innerHTML = orders.map(o => `
+        <tr>
+          <td><code style="font-size:12px;">${o.orderId}</code></td>
+          <td>${o.patientName}</td>
+          <td>${o.doctorName}</td>
+          <td>${o.visitDate}</td>
+          <td>${o.timeSlot || '-'}</td>
+          <td class="${o.status === 'CONFIRMED' ? 'status-confirmed' : 'status-cancelled'}">${o.statusLabel}</td>
+          <td>
+            ${o.status === 'CONFIRMED' ? `<button class="btn btn-danger btn-sm" onclick="cancelOrder('${o.orderId}')">取消</button>` : ''}
+          </td>
+        </tr>
+      `).join('')
+    } catch (e) {
+      loading.classList.add('hidden')
+      empty.textContent = '加载失败: ' + e.message
+      empty.classList.remove('hidden')
+    }
+  }
+
+  async function cancelOrder(orderId) {
+    if (!confirm(`确认取消预约 ${orderId}？`)) return
+    try {
+      const r = await fetch(BASE + '/api/guahao/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId })
+      })
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || '取消失败')
+      await loadOrders()
+    } catch (e) {
+      alert('取消失败: ' + e.message)
+    }
+  }
+
+  // ===== 生成 MedData 交换包 =====
+  async function generateBundle() {
+    const name = document.getElementById('b-name').value.trim()
+    const disease = document.getElementById('b-disease').value
+    const chief = document.getElementById('b-chief').value.trim()
+    const history = document.getElementById('b-history').value.trim()
+    const recent = document.getElementById('b-recent').value.trim()
+    const question = document.getElementById('b-question').value.trim()
+    if (!name) { alert('请填写患者姓名'); return }
+    try {
+      const r = await fetch(BASE + '/api/brief/bundle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ patientName: name, diseaseType: disease, chiefComplaint: chief, history, recentData: recent, question })
+      })
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || '生成失败')
+      bundleData = j
+      document.getElementById('bd-name').textContent = name
+      document.getElementById('bd-disease').textContent = disease
+      document.getElementById('bd-schema').textContent = `schema ${j.schemaVersion} · ${j.format}`
+      document.getElementById('bd-sha256').textContent = j.sha256
+      const snap = j.bundle?.payload?.patientMeta || {}
+      document.getElementById('bd-snapshot').textContent = JSON.stringify({
+        patientName: name, diseaseType: disease, chiefComplaint: chief,
+        history: history.slice(0, 200) + (history.length > 200 ? '...' : ''),
+        question, sha256: j.sha256
+      }, null, 2)
+      document.getElementById('bundle-area').classList.remove('hidden')
+      document.getElementById('bundle-idle').classList.add('hidden')
+    } catch (e) {
+      alert('生成失败: ' + e.message)
+    }
+  }
+
+  function downloadBundle() {
+    if (!bundleData) return
+    const str = JSON.stringify(bundleData.bundle, null, 2)
+    const a = document.createElement('a')
+    a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(str)
+    a.download = bundleData.filename || 'bundle.meddata'
+    a.click()
+  }
+
+  function copyBundleSha() {
+    if (!bundleData) return
+    navigator.clipboard.writeText(bundleData.sha256).then(() => alert('SHA-256 已复制')).catch(() => {})
+  }
+
+  // ===== 114 会话与凭据 =====
+  async function checkSniperStatus() {
+    try {
+      const r = await fetch(BASE + '/api/guahao/sniper/status')
+      const j = await r.json()
+      const isReal = !!j.realMode
+      document.getElementById('ss-mode').innerHTML = isReal
+        ? `<span class="dot dot-green"></span> <span style="color:var(--success);">114 官方在线直连模式</span>`
+        : `<span class="dot dot-gray"></span> <span style="color:var(--gray-600);">本地沙盒演练模式</span>`
+      document.getElementById('ss-user').textContent = j.user
+        ? `${j.user.realName || '已实名'} (${j.user.mobile || '-'})`
+        : '未登录官方账号'
+      document.getElementById('ss-delta').textContent = `Δt = ${j.clockDelta ?? -120} ms`
+      document.getElementById('ss-ticket').textContent = j.sessionTicket || '未配置 (当前为沙盒模式)'
+      document.getElementById('ss-last').textContent = new Date().toLocaleTimeString()
+
+      // 更新主界面模式提示
+      const modeText = document.getElementById('mode-text')
+      const modeBadge = document.getElementById('mode-badge')
+      if (modeText && modeBadge) {
+        if (isReal) {
+          modeBadge.className = 'alert alert-info'
+          modeText.innerHTML = `<strong>114 官方直连模式：</strong>已连接 114 平台用户 [${j.user?.realName || ''}]，号源实时从 114 同步，抢号服务器时钟差: ${j.clockDelta}ms`
+        } else {
+          modeBadge.className = 'alert alert-warn'
+          modeText.innerHTML = `<strong>模式说明：</strong>当前未输入 114 官方 Cookie/Ticket，运行于<strong>本地沙盒演练模式</strong>（支持测试全流程预约下单与出单）。可随时在「114 会话」粘贴真实 Cookie 直连官方实时放号。`
+        }
+      }
+      appendLog(`[INFO] 状态刷新: ${isReal ? '114 官方在线' : '本地沙盒模式'}, Δt = ${j.clockDelta}ms`, 'log-info')
+    } catch (e) {
+      document.getElementById('ss-mode').innerHTML = `<span class="dot dot-red"></span> 离线`
+      appendLog('[ERR] 无法连接 MedBrief 状态服务: ' + e.message, 'log-err')
+    }
+  }
+
+  async function save114Auth() {
+    const ticket = document.getElementById('cfg-ticket').value.trim()
+    const cookie = document.getElementById('cfg-cookie').value.trim()
+    const resBox = document.getElementById('auth-result-box')
+    resBox.className = 'mt12 alert alert-info'
+    resBox.textContent = '正在连接 114 官方服务器验证登录态...'
+    resBox.classList.remove('hidden')
+    appendLog('[INFO] 正在向 114 官网提交凭据探活...', 'log-info')
+
+    try {
+      const r = await fetch(BASE + '/api/guahao/114/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticket, cookie }),
+      })
+      const j = await r.json()
+      if (j.isLogin) {
+        resBox.className = 'mt12 alert alert-info'
+        resBox.innerHTML = `<strong>鉴权成功！</strong>已连接 114 账号: ${j.user?.realName || ''} (${j.user?.mobile || ''})，就诊人: ${(j.patients||[]).map(p=>p.name).join('、') || '无'}`
+        appendLog(`[OK] 114 鉴权成功: 用户 ${j.user?.realName || ''}`, 'log-ok')
+      } else {
+        resBox.className = 'mt12 alert alert-warn'
+        resBox.innerHTML = `<strong>提示：</strong>${j.message || '凭据未能通过 114 官网登录校验，请确认 cmi-user-ticket 是否已过期'}`
+        appendLog(`[WARN] 114 探活未通过: ${j.message}`, 'log-warn')
+      }
+      await checkSniperStatus()
+    } catch (e) {
+      resBox.className = 'mt12 alert alert-warn'
+      resBox.textContent = '请求失败: ' + e.message
+      appendLog('[ERR] 保存凭据失败: ' + e.message, 'log-err')
+    }
+  }
+
+  // ===== 方案 1：一键唤起登录窗口与自动嗅探 =====
+  let loginCheckTimer = null
+
+  async function launch114LoginPopup() {
+    const btn = document.getElementById('btn-launch-login')
+    const cancelBtn = document.getElementById('btn-cancel-login')
+    const statusBox = document.getElementById('login-popup-status')
+
+    btn.disabled = true
+    btn.textContent = '登录窗口运行中...'
+    cancelBtn.classList.remove('hidden')
+    statusBox.className = 'mt12 alert alert-info'
+    statusBox.innerHTML = '<strong>官方窗口已在屏幕打开：</strong>请在弹出的 Chrome 窗口中完成微信扫码或短信验证码登录，系统会自动抓取凭据并关闭窗口...'
+    statusBox.classList.remove('hidden')
+    appendLog('[INFO] 正在唤起 114 官方登录窗口...', 'log-info')
+
+    try {
+      const r = await fetch(BASE + '/api/guahao/114/launch-login', { method: 'POST' })
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || '唤起窗口失败')
+      appendLog('[OK] 官方登录窗口已就绪，正在后台监听登录态...', 'log-ok')
+
+      // 启动轮询检查登录态是否已捕获
+      if (loginCheckTimer) clearInterval(loginCheckTimer)
+      loginCheckTimer = setInterval(async () => {
+        try {
+          const sr = await fetch(BASE + '/api/guahao/sniper/status')
+          const sj = await sr.json()
+          if (sj.realMode || sj.isLogin) {
+            clearInterval(loginCheckTimer)
+            loginCheckTimer = null
+            btn.disabled = false
+            btn.textContent = '一键唤起 114 登录窗口'
+            cancelBtn.classList.add('hidden')
+            statusBox.className = 'mt12 alert alert-info'
+            statusBox.innerHTML = `<strong>登录成功！</strong>已自动捕获 114 官方凭据，用户: ${sj.user?.realName || '已实名'}，窗口已自动关闭。`
+            appendLog(`[OK] 登录成功！用户 [${sj.user?.realName || ''}] 凭据已自动入库。`, 'log-ok')
+            await checkSniperStatus()
+          }
+        } catch {}
+      }, 2000)
+
+    } catch (e) {
+      btn.disabled = false
+      btn.textContent = '一键唤起 114 登录窗口'
+      cancelBtn.classList.add('hidden')
+      statusBox.className = 'mt12 alert alert-warn'
+      statusBox.textContent = '唤起登录窗口失败: ' + e.message
+      appendLog('[ERR] 唤起失败: ' + e.message, 'log-err')
+    }
+  }
+
+  async function close114LoginPopup() {
+    if (loginCheckTimer) {
+      clearInterval(loginCheckTimer)
+      loginCheckTimer = null
+    }
+    const btn = document.getElementById('btn-launch-login')
+    const cancelBtn = document.getElementById('btn-cancel-login')
+    const statusBox = document.getElementById('login-popup-status')
+
+    btn.disabled = false
+    btn.textContent = '一键唤起 114 登录窗口'
+    cancelBtn.classList.add('hidden')
+    statusBox.classList.add('hidden')
+
+    try {
+      await fetch(BASE + '/api/guahao/114/close-login', { method: 'POST' })
+      appendLog('[INFO] 已关闭 114 登录窗口', 'log-info')
+    } catch {}
+  }
+
+  async function clear114Auth() {
+    document.getElementById('cfg-ticket').value = ''
+    document.getElementById('cfg-cookie').value = ''
+    await save114Auth()
+    document.getElementById('auth-result-box').classList.add('hidden')
+    appendLog('[INFO] 已清空 114 官方凭据，切回本地沙盒模式', 'log-info')
+  }
+
+  // ===== 日志 =====
+  function appendLog(msg, cls = 'log-info') {
+    const el = document.getElementById('log-output')
+    if (!el) return
+    const time = new Date().toTimeString().slice(0, 8)
+    const line = document.createElement('div')
+    line.className = cls
+    line.textContent = `[${time}] ${msg}`
+    el.appendChild(line)
+    el.scrollTop = el.scrollHeight
+  }
+
+  function clearLog() {
+    document.getElementById('log-output').innerHTML = ''
+  }
+
+  // ===== 号源与出诊实时监控 =====
+  let audioCtx = null
+  let alarmEnabled = true
+  let autoPollTimer = null
+  let lastKnownSlotsMap = {}
+  let countdownTargetMs = null
+
+  function playAlertChime() {
+    try {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume()
+      }
+      const osc = audioCtx.createOscillator()
+      const gain = audioCtx.createGain()
+      osc.connect(gain)
+      gain.connect(audioCtx.destination)
+
+      const now = audioCtx.currentTime
+      osc.type = 'sine'
+      osc.frequency.setValueAtTime(880, now)
+      osc.frequency.setValueAtTime(1320, now + 0.12)
+      osc.frequency.setValueAtTime(1760, now + 0.24)
+
+      gain.gain.setValueAtTime(0.3, now)
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5)
+
+      osc.start(now)
+      osc.stop(now + 0.5)
+    } catch (e) {
+      console.warn('Audio chime error:', e)
+    }
+  }
+
+  function testAlarmAudio() {
+    playAlertChime()
+    appendLog('[OK] 警报音试听正常（若无声请检查系统扬声器或浏览器音频权限）', 'log-ok')
+  }
+
+  function toggleAlarmEnabled() {
+    alarmEnabled = !alarmEnabled
+    const btn = document.getElementById('btn-toggle-alarm')
+    if (alarmEnabled) {
+      btn.className = 'btn btn-primary btn-sm'
+      btn.textContent = '抢号声音预警已开启'
+      playAlertChime()
+    } else {
+      btn.className = 'btn btn-secondary btn-sm'
+      btn.textContent = '抢号预警已静音'
+    }
+    appendLog(`[INFO] 声音预警已${alarmEnabled ? '开启' : '关闭'}`, 'log-info')
+  }
+
+  // 放号精准倒计时
+  function updateCountdownClock() {
+    const clockEl = document.getElementById('monitor-clock')
+    const targetEl = document.getElementById('monitor-target-info')
+    if (!clockEl) return
+
+    const now = new Date()
+    // 北京时间 UTC+8
+    const utc = now.getTime() + now.getTimezoneOffset() * 60000
+    const beijingNow = new Date(utc + 3600000 * 8)
+
+    const target = new Date(beijingNow)
+    target.setHours(7, 0, 0, 0)
+    if (beijingNow.getTime() >= target.getTime()) {
+      target.setDate(target.getDate() + 1)
+    }
+
+    const diffMs = target.getTime() - beijingNow.getTime()
+    const totalSec = Math.max(0, Math.floor(diffMs / 1000))
+    const h = String(Math.floor(totalSec / 3600)).padStart(2, '0')
+    const m = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0')
+    const s = String(totalSec % 60).padStart(2, '0')
+
+    clockEl.textContent = `${h}:${m}:${s}`
+
+    // 第 14 天预约日
+    const releaseTarget = new Date(beijingNow)
+    releaseTarget.setDate(releaseTarget.getDate() + 14)
+    const yyyy = releaseTarget.getFullYear()
+    const mm = String(releaseTarget.getMonth() + 1).padStart(2, '0')
+    const dd = String(releaseTarget.getDate()).padStart(2, '0')
+
+    targetEl.innerHTML = `下次放号：<strong>${target.toLocaleDateString('zh-CN')} 07:00:00</strong> &nbsp;·&nbsp; 开放就诊日：<strong>${yyyy}-${mm}-${dd}</strong>`
+
+    // 关键倒计时警报 (300s, 60s, 10s)
+    if (alarmEnabled) {
+      if (totalSec === 300) {
+        playAlertChime()
+        appendLog('⚠️ [预警] 距离 07:00 朝阳医院放号还有 5 分钟！请准备好微信小程序。', 'log-ok')
+      } else if (totalSec === 60) {
+        playAlertChime()
+        appendLog('⚠️ [紧急] 距离放号还有 1 分钟！请立刻进入「北京朝阳医院患者服务」血液科挂号页等待刷新。', 'log-ok')
+      } else if (totalSec === 10) {
+        playAlertChime()
+        appendLog('🚨 [倒计时] 还有 10 秒开始放号！', 'log-err')
+      }
+    }
+  }
+
+  // 抓取朝阳医院官网真实排班
+  async function loadLiveMonitor(force = false) {
+    const btn = document.getElementById('btn-refresh-monitor')
+    const loading = document.getElementById('monitor-loading')
+    const grid = document.getElementById('monitor-grid')
+    const lastSyncEl = document.getElementById('monitor-last-sync')
+
+    if (force) {
+      btn.disabled = true
+      btn.textContent = '探测中...'
+      appendLog('[INFO] 正在向朝阳医院官网穿透探测主鸿鹄主任排班...', 'log-info')
+    }
+
+    try {
+      const url = BASE + '/api/guahao/monitor/realtime' + (force ? '?force=true' : '')
+      const r = await fetch(url)
+      const data = await r.json()
+
+      if (!data.ok) {
+        throw new Error(data.error || '获取官网排班失败')
+      }
+
+      document.getElementById('stat-active').textContent = `出诊中: ${data.activeCount} 场`
+      document.getElementById('stat-suspended').textContent = `停诊: ${data.suspendedCount} 场`
+      document.getElementById('stat-total').textContent = `两周总排班: ${data.slotCount} 场`
+      lastSyncEl.textContent = `最近同步: ${new Date(data.lastFetchedAt).toLocaleTimeString('zh-CN')}${data.fromCache ? ' (缓存)' : ' (实时穿透)'}`
+
+      renderMonitorGrid(data.slots || [])
+
+      // 检测是否有停诊恢复或排班变动
+      let changes = 0
+      ;(data.slots || []).forEach(s => {
+        const key = `${s.department}_${s.dateHeader}_${s.period}`
+        if (lastKnownSlotsMap[key] && lastKnownSlotsMap[key] !== s.status) {
+          changes++
+          const msg = `🔔 [排班变动] ${s.department} ${s.dateHeader} ${s.period} 状态从「${lastKnownSlotsMap[key] === 'active' ? '出诊中' : '停诊'}」变为「${s.statusText}」！`
+          appendLog(msg, 'log-ok')
+          if (alarmEnabled) playAlertChime()
+        }
+        lastKnownSlotsMap[key] = s.status
+      })
+
+      if (changes === 0 && force) {
+        appendLog(`[OK] 朝阳医院官网排班探测完成，共 ${data.slotCount} 场（${data.activeCount} 场正常出诊，${data.suspendedCount} 场停诊），状态暂无变动。`, 'log-ok')
+      }
+
+    } catch (e) {
+      appendLog('[ERR] 官网探测失败: ' + e.message, 'log-err')
+    } finally {
+      loading.classList.add('hidden')
+      grid.classList.remove('hidden')
+      btn.disabled = false
+      btn.textContent = '立即穿透探测 (刷新)'
+    }
+  }
+
+  function renderMonitorGrid(slots) {
+    const grid = document.getElementById('monitor-grid')
+    if (!slots || !slots.length) {
+      grid.innerHTML = '<div class="text-muted text-center" style="grid-column:1/-1; padding:20px;">暂无排班数据</div>'
+      return
+    }
+
+    grid.innerHTML = slots.map(s => {
+      const isSuspended = s.status === 'suspended'
+      return `
+        <div class="monitor-slot-card ${isSuspended ? 'suspended' : 'active'}">
+          <div class="flex-between">
+            <span style="font-weight:600; font-size:13px; color:var(--gray-900);">${s.department}</span>
+            <span class="status-tag ${isSuspended ? 'suspended' : 'active'}">${s.statusText}</span>
+          </div>
+          <div style="font-size:12px; color:var(--gray-600); margin-top:2px;">
+            <strong>${s.dateHeader}</strong> · ${s.period}
+          </div>
+          <div class="flex-between" style="font-size:12px; color:var(--gray-500); margin-top:4px;">
+            <span>${s.doctor} (${s.level})</span>
+            <span style="font-weight:600; color:var(--gray-700);">¥${s.fee}</span>
+          </div>
+          ${isSuspended ? `
+            <div style="font-size:11px; color:#b91c1c; background:#fee2e2; padding:3px 6px; border-radius:3px; margin-top:4px;">
+              官网已发布停诊公告，请勿前往该时段
+            </div>
+          ` : `
+            <div style="font-size:11px; color:#15803d; background:#dcfce7; padding:3px 6px; border-radius:3px; margin-top:4px;">
+              正常出诊，每日 07:00 放号抢号
+            </div>
+          `}
+        </div>
+      `
+    }).join('')
+  }
+
+  // 自动监控巡检
+  function toggleAutoPoll() {
+    const chk = document.getElementById('chk-auto-poll')
+    if (chk.checked) {
+      restartAutoPoll()
+      appendLog('[INFO] 开启自动监控巡检', 'log-info')
+    } else {
+      if (autoPollTimer) clearInterval(autoPollTimer)
+      autoPollTimer = null
+      appendLog('[INFO] 已暂停自动监控巡检', 'log-info')
+    }
+  }
+
+  function restartAutoPoll() {
+    if (autoPollTimer) clearInterval(autoPollTimer)
+    const chk = document.getElementById('chk-auto-poll')
+    if (!chk || !chk.checked) return
+
+    const sec = parseInt(document.getElementById('sel-poll-interval').value || '30', 10)
+    autoPollTimer = setInterval(() => {
+      loadLiveMonitor(false)
+    }, sec * 1000)
+    appendLog(`[INFO] 自动巡检频率已更新为: 每 ${sec} 秒`, 'log-info')
+  }
+
+  // 初始化
+  healthCheck()
+  checkSniperStatus()
+  loadLiveMonitor(false)
+  updateCountdownClock()
+  setInterval(updateCountdownClock, 1000)
+  restartAutoPoll()
+  setInterval(healthCheck, 30000)
+  appendLog('[INFO] MedBrief 号源与放号监控服务已启动', 'log-info')
+</script>
+</body>
+</html>

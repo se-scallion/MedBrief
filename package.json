@@ -1,0 +1,23 @@
+{
+  "name": "medbrief",
+  "version": "1.0.0",
+  "description": "MedBrief - 专为白血病与重大疾病就医设计的独立号源监控与病历整理工作台",
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node server.mjs",
+    "test": "node tests/verify-e2e.mjs"
+  },
+  "keywords": [
+    "guahao",
+    "monitor",
+    "medbrief",
+    "leukemia"
+  ],
+  "author": "Antigravity Team",
+  "license": "ISC",
+  "dependencies": {
+    "playwright": "^1.50.0"
+  }
+}
