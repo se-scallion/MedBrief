@@ -72,6 +72,25 @@ https://www.114yygh.com/newhlwyl/mobile/appointmentRegisterHome?pathchannel=jt
 - 短信与图形验证码有频率限制，重试要留间隔。
 - 站点结构随时可能调整（渠道表、接口前缀、验证流程），改动后按 `architecture.md` 的抓包方法重新取证，不要沿用旧结论。
 
+### ⚠️ 主鸿鹄（医生级）佐证在 461 结案前无脚本解
+
+**这是硬限制，不要再用脚本试图绕**：
+
+- 医生名单**没有任何独立接口**。实测 `/search/doctor`、`/doctor/search`、`/unifiedSearch/doctor` 全是 `8888 404 NOT_FOUND`；
+  `/search/query?keyWord=主鸿鹄` 回 `code 0000` 但 `list: []`（该接口只搜医院，不搜医生）。
+- 医生数据**只在** `POST /product/calendar` 的 `detail[]` 里（`doctorName` / `doctorCode` / `remain`），
+  而该接口当前稳定 **461**（见上文三路径实测），所以「主鸿鹄是否出诊、哪个半天、余号多少」脚本侧拿不到。
+- 因此在 461 结案前，**自动选号也只能在「医生名由人给」的前提下工作**（`--doctor 主鸿鹄` 传入后仍需 calendar 数据才能匹配）。
+
+**人工佐证推荐做法（唯一可行）**：
+
+1. 跑一次流程到 `waf_blocked`，**不要关闭 ego lite 窗口**（登录态在里面）；
+2. 在该窗口手工进入「北京朝阳医院（本部）→ 内科系统 → 血液内科」，点「全部 / 有号」；
+3. 页面会渲染医生卡片（数据即 `product/calendar` 的 `detail[]`）；找到「主鸿鹄」，记录 **日期 / 上午下午 / 剩余号**；
+4. 需要留痕时用截图，或用 DevTools 的 Network 面板看 `product/calendar` 的响应体（此时是 200，body 里就是 `detail[]`），
+   把该 JSON 存到 `data/114-flow/evidence/` 便于后续对照；
+5. 若该项目要长期自动化，触发条件为：**`product/calendar` 恢复 200 后**，再用 `--doctor 主鸿鹄` 跑全自动选号。
+
 ---
 
 ## 自动化执行（已固化，推荐优先用它）
@@ -79,8 +98,8 @@ https://www.114yygh.com/newhlwyl/mobile/appointmentRegisterHome?pathchannel=jt
 手工步骤以上各节仍然有效，但日常操作请直接用脚本，不要重复手工：
 
 ```bash
-# 1) 拉科室树（免登录，可用来验证医院编码）
-node tools/browser-guahao.mjs --list-depts H02110002
+# 1) 拉科室树（免登录，可用来验证医院编码）——业务目标：朝阳本部血液内科
+node tools/browser-guahao.mjs --list-depts H05110001A
 
 # 2) 验证码识别自检（给一张图，看三级识别各自结果）
 node tools/browser-guahao.mjs --solver-check path/to/captcha.png
@@ -88,11 +107,14 @@ node tools/browser-guahao.mjs --solver-check path/to/captcha.png
 # 3) 跑完整挂号（会真实发短信、真实下单）
 node tools/browser-guahao.mjs \
   --phone <11位手机号> \
-  --hos-code H02110002 \
-  --dept1-code yygh_NK_4d2b43fd_vir \
-  --dept2-code 4011301 \
-  --patient-name 代聪 --doctor 张三 --date 2026-11-20
+  --hos-code H05110001A \
+  --dept1-code NKXT \
+  --dept2-code XY \
+  --patient-name <就诊人姓名> --doctor 主鸿鹄
 ```
+
+> 业务目标唯一是**朝阳医院本部 · 血液内科 · 主鸿鹄**。
+> `H02110002 / yygh_NK_4d2b43fd_vir / 4011301`（北京大学人民医院）只用于链路联调，不要拿它排班/下单。
 
 网页表单等价入口：`http://127.0.0.1:5174` → 「就诊人与预约」→「114 真实挂号（浏览器自动流程）」。
 
@@ -117,7 +139,7 @@ node tools/browser-guahao.mjs \
 
 | 院区 | `hosCode` | 血液科 `dept1Code` / `dept2Code` |
 |---|---|---|
-| **本部（西直门）** | **`H05110001A`** | **`NKXT` / `XY`** |
+| **本部（工体南路）** | **`H05110001A`** | **`NKXT` / `XY`** |
 | 常营院区 | `H05110001C` | `NKXT` / `XY` |
 | 石景山院区 | `H05110001` | `NKXT` / `XY` |
 
