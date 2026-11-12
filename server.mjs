@@ -41,9 +41,10 @@ import { buildMedDataBundle, parseMedDataBundle } from './lib/meddataBundle.js'
 import { blocksToLines } from './lib/visionLayout.mjs'
 import {
   sha256Bytes, findDuplicate, stitchVertically,
-  parseLabRows, buildReportFingerprint, groupForDoctorCard, summarizeForCard, dedupeStitchRows,
+  parseLabRows, buildReportFingerprint, groupForDoctorCard, summarizeForCard, dedupeStitchRows, mergeChunkRows,
 } from './lib/reportIntake.mjs'
 import { loadPatient, savePatient, buildCard } from './lib/intakeCard.js'
+import { planChunks, cropChunks, imageSize } from './lib/imageChunker.mjs'
 import { summarizeState, formatSummaryText } from './lib/metricsSummary.js'
 import { buildVisitBrief } from './lib/visitBrief.js'
 import { fetchLiveDoctorSchedule } from './lib/bjcyhScraper.js'
@@ -918,37 +919,69 @@ function getNextReleaseCountdown() {
     try {
       const image = String(body.image || '')
       if (!image.startsWith('data:image/')) return sendJson(res, 400, { ok: false, error: 'image 需要 data:image/*;base64,' })
-      const id = `intake-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`
-      const r = await fetch('http://127.0.0.1:8008/api/ocr-vision', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, image }),
-        signal: AbortSignal.timeout(90000),
-      })
-      const j = await r.json().catch(() => ({}))
-      const blocks = Array.isArray(j.blocks) ? j.blocks : []
-      // 版式重建：Vision 按「列」返回块，直接拼文本会把项目名与数值分成两段，导致按行解析只能出 1 行
-      // （实测：11 项化验单解析出 1 行垃圾）。有 boundingBox 时先按 y 聚类成行、行内按 x 排序。
-      const hasBoxes = blocks.some((b) => b && b.boundingBox)
-      const layoutLines = hasBoxes ? blocksToLines(blocks) : []
-      const text = layoutLines.length
-        ? layoutLines.join('\n')
-        : (j.text || j.result || blocks.map((b) => b.text || '').join('\n'))
-      // 拼接产物才去重（body.stitched / stitchedFrom>1）；单图导入永不走这条，
-      // 因为两次复查同名指标同值是正常的，删掉就成了丢数据。
-      const rawRows = parseLabRows(text)
+
+      // 单次 OCR（一块图 → 文本 + 行）
+      const ocrOnce = async (dataUrl) => {
+        const id = `intake-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`
+        const r = await fetch('http://127.0.0.1:8008/api/ocr-vision', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, image: dataUrl }),
+          signal: AbortSignal.timeout(90000),
+        })
+        const j = await r.json().catch(() => ({}))
+        const blocks = Array.isArray(j.blocks) ? j.blocks : []
+        // 版式重建：Vision 按「列」返回块，直接拼文本会把项目名与数值分成两段
+        const hasBoxes = blocks.some((b) => b && b.boundingBox)
+        const layoutLines = hasBoxes ? blocksToLines(blocks) : []
+        const text = layoutLines.length
+          ? layoutLines.join('\n')
+          : (j.text || j.result || blocks.map((b) => b.text || '').join('\n'))
+        return { text, layoutLines, rows: parseLabRows(text), layout: hasBoxes ? 'reconstructed' : 'raw-text', upstream: j.ok === false ? j.error : undefined }
+      }
+
+      // 超高图自动切块：h/w ≤ 2.8 走单块路径（与未引入切块时逐像素一致）；
+      // h/w > 2.8 时 Vision 会内部降采样，中间带成片丢行（挂号实测 48→35），故按块分别 OCR 再合并。
+      let dim = null
+      try { dim = await imageSize(image) } catch { dim = null }
+      const plan = planChunks(dim || {}, {})
+      let parts = [image]
+      if (plan.chunked) {
+        const cropped = await cropChunks(image, plan.chunks)
+        parts = cropped.parts
+      }
+
+      const results = []
+      for (const part of parts) results.push(await ocrOnce(part))
+
+      const text = results.map((r) => r.text).filter(Boolean).join('\n')
+      const layoutLines = results.flatMap((r) => r.layoutLines)
+      const rawRows = results.flatMap((r) => r.rows)
+
+      // 块间重叠会让被切断的行在相邻两块各出现一次 → 行级去重（键 = 名称|码 + 值 + 日期），留痕不静默删
+      // 块边界会切残行（残行常带错值「血小板 10」），故切块合并用「按值投票」而不是「值必须相同」
+      const chunkMerge = plan.chunked ? mergeChunkRows(rawRows) : { rows: rawRows, merged: 0, conflicts: 0 }
+      // 拼接产物再走一次去重（用户拍多张时的重叠），单图导入永不启用
       const wantsDedupe = body.stitched === true || Number(body.stitchedFrom) > 1
-      const dedupe = wantsDedupe ? dedupeStitchRows(rawRows) : { rows: rawRows, merged: 0, rawCount: rawRows.length }
+      const stitchedDedupe = wantsDedupe ? dedupeStitchRows(chunkMerge.rows) : { rows: chunkMerge.rows, merged: 0 }
+
       sendJson(res, 200, {
         ok: !!text,
         text,
         lines: layoutLines,
-        rows: dedupe.rows,
-        rawRowCount: dedupe.rawCount,
-        stitchedDeduped: dedupe.merged,
+        rows: stitchedDedupe.rows,
+        rawRowCount: rawRows.length,
+        chunked: plan.chunked,
+        chunks: parts.length,
+        chunksPlanned: plan.planned,
+        chunkHeights: plan.chunks.map((c) => c.h),
+        chunkAspect: Number(plan.aspect.toFixed(2)),
+        chunkMerged: chunkMerge.merged || 0,
+        chunkValueConflicts: chunkMerge.conflicts || 0,
+        stitchedDeduped: stitchedDedupe.merged || 0,
         engine: '8008/ocr-vision',
-        layout: hasBoxes ? 'reconstructed' : 'raw-text',
-        upstream: j.ok === false ? j.error : undefined,
+        layout: results[0]?.layout || 'raw-text',
+        upstream: results.find((r) => r.upstream)?.upstream,
       })
     } catch (e) {
       sendJson(res, 200, { ok: false, unavailable: true, reason: e.message, fallback: 'paste-text' })

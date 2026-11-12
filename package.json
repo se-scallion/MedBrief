@@ -14,8 +14,9 @@
     "build:next": "MEDBRIEF_WEB_BASE=/ MEDBRIEF_WEB_OUT=dist-next npx vite build --config web/vite.config.js",
     "dev:web": "npx vite --config web/vite.config.js",
     "test:ui": "node tests/verify-ui.mjs",
-    "test:intake": "node tests/verify-intake.mjs && node tests/verify-card.mjs",
-    "test:card": "node tests/verify-card.mjs"
+    "test:intake": "node tests/verify-intake.mjs && node tests/verify-card.mjs && node tests/verify-chunker.mjs",
+    "test:card": "node tests/verify-card.mjs",
+    "test:chunker": "node tests/verify-chunker.mjs"
   },
   "keywords": [
     "guahao",
