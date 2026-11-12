@@ -66,7 +66,9 @@
 | `tools/browser-guahao.mjs` | 命令行驱动 114 全流程（`--list-depts` / `--solver-check` / 完整挂号），与网页入口共用同一套 lib |
 | `tools/*.py` | **历史参考实现（Deprecated）**：2021–2022 年 PC 端 requests 脚本，114 PC 端已关停，仅作取证留档，不得用于当前链路 |
 | `web/` | React + antd 的 114 挂号页（构建 → `web/dist`，server 托管 `/guahao`） |
-| `index.html` | 完整 Web 工作台（单文件，含 CSS + JS） |
+| `index.html` | 完整 Web 工作台（单文件，含 CSS + JS）；合并后仅作 `/legacy` 回滚位 |
+| `web/src/pages/IntakePage.jsx` | 资料导入页（默认 tab）：批量/粘贴上传、两张拼接、识别校对、入库、资料卡打印 |
+| `mcp/intake-server.mjs` | 资料导入 MCP server（stdio、零依赖）：8 个工具全部转发本机后端，**不复制算法**；`intake_save_report` 在工具层拒绝 idCard/phone/address |
 
 ---
 
