@@ -7,7 +7,9 @@
 
 瑞数（Riversafe）会校验 UA、TLS 指纹与环境一致性，并下发一次性动态令牌 `HKNCYzbu`。
 实测：拿浏览器真 cookie（含 HttpOnly）回放，**经代理与绕过代理都返回 462**。
-唯一可行路径是驱动真实 Chromium（ego lite / Playwright 实体浏览器）让页面自己发请求。
+唯一可行路径是驱动**真实指纹环境的浏览器 ego lite**（`lib/egoDriver.js`）让页面自己发请求。
+注意：Playwright（自带 Chromium / 系统 Chrome，无头或有头）**打不开 114**，实测停在 202 挑战页、
+后续接口一律 462 —— 这一条只对朝阳官网 http://www.bjcyh.com.cn 成立，别把两家站混用。
 
 ## Step 0 · 环境准备（每次会话都要做）
 
