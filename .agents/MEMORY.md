@@ -52,8 +52,12 @@
 | 院区 | 114 `hosCode` | 血液科 `dept1Code` / `dept2Code` | 佐证 |
 |---|---|---|---|
 | **本部（工体南路）** | **`H05110001A`** | **`NKXT` / `XY`**（内科系统 → 血液内科） | 17 个一级科室，`code 0000` |
-| 常营院区 | `H05110001C` | `NKXT` / `XY`（另有专病/国际部血液类门诊） | 15 个一级科室，`code 0000` |
+| 常营院区 | `H05110001C` | `NKXT` / `XY`（另有 `ZBMZ/90C023` 血液心脏联合门诊、`GJYL/XYZLXZBLHTXMZ` 血液肿瘤心脏病联合特需门诊） | 15 个一级科室，`code 0000` |
 | 石景山院区 | `H05110001` | `NKXT` / `XY` | 16 个一级科室，`code 0000` |
+
+- **「国际部」不是独立 `hosCode`，是一级科室 `GJYL 国际医疗部`**：只挂在两个院区下（本部 6 个特需/联合门诊，常营 2 个）。
+  本部 `GJYL` 下全是联合特需门诊（生殖助孕、情绪障碍、糖尿病减重、食管反流、心脏-心理、`TXYL 国际医疗部`），**没有血液科**；
+  血液类特需只在常营 `GJYL/XYZLXZBLHTXMZ`。要挂血液就认 `NKXT/XY`。
 
 - **取编码的方法（可复跑）**：`node tools/browser-guahao.mjs --search-hospital 朝阳 --save`
   走 `GET /search/query?keyWord=<明文URL编码中文>`，结果**增量合并**进 `data/114-catalog/hospitals.json`（现 41 条）。
