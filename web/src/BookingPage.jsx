@@ -58,6 +58,7 @@ export default function BookingPage() {
   const [doctorHistory, setDoctorHistory] = useState(() => {
     try { return JSON.parse(localStorage.getItem('medbrief.114.doctors') || '[]') } catch { return [] }
   })
+  const [doctorOptions, setDoctorOptions] = useState([])
   const [flow, setFlow] = useState(null)
   const [starting, setStarting] = useState(false)
   const [smsCode, setSmsCode] = useState('')
@@ -73,6 +74,30 @@ export default function BookingPage() {
   const hasDate = !!watched.date
 
   // ---------- 目录加载 ----------
+  useEffect(() => {
+    jfetch('/api/guahao/doctors')
+      .then((j) => setDoctorOptions(j.doctors || []))
+      .catch(() => setDoctorOptions([]))
+  }, [])
+
+  // 医生一律给"选项"：本地医生档案在前，历史手输在后，可搜索、可留空
+  const doctorSelectOptions = useMemo(() => {
+    const seen = new Set()
+    const out = []
+    for (const d of doctorOptions) {
+      const v = (d.name || '').trim()
+      if (!v || seen.has(v)) continue
+      seen.add(v)
+      out.push({ value: v, label: d.title ? `${v} · ${d.title}` : v, title: v })
+    }
+    for (const v of doctorHistory) {
+      if (!v || seen.has(v)) continue
+      seen.add(v)
+      out.push({ value: v, label: v, title: v })
+    }
+    return out
+  }, [doctorOptions, doctorHistory])
+
   const loadHospitals = useCallback(async (force = false) => {
     setHosLoading(true)
     try {
@@ -503,13 +528,18 @@ export default function BookingPage() {
                     name="doctor"
                     label="指定医生"
                     rules={[{ max: 20, message: '医生姓名过长' }]}
-                    extra="填了 → 命中即自动提交；不填 → 停确认"
+                    extra="选医生 → 命中即自动提交；留空 → 停在确认环节等你点头"
                   >
-                    <AutoComplete
-                      placeholder="例：主鸿鹄（留空则不指定）"
+                    <Select
+                      showSearch
                       allowClear
-                      options={doctorHistory.map((d) => ({ value: d }))}
-                      filterOption={(input, opt) => (opt.value || '').includes(input)}
+                      placeholder="选择医生（留空 = 不指定）"
+                      options={doctorSelectOptions}
+                      optionFilterProp="label"
+                      filterOption={(input, opt) =>
+                        (opt?.label || '').includes(input) || (opt?.value || '').includes(input)
+                      }
+                      notFoundContent={<span style={{ fontSize: 12 }}>本地医生档案里没有该姓名</span>}
                     />
                   </Form.Item>
                 </Col>

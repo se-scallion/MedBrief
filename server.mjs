@@ -420,6 +420,16 @@ function getNextReleaseCountdown() {
   }
 
   // 3. GET /api/guahao/orders
+  // 2b. GET /api/guahao/doctors — 本地医生档案（前端「选项」数据源）
+  if (req.method === 'GET' && pathname === '/api/guahao/doctors') {
+    try {
+      sendJson(res, 200, guahaoManager.getDoctors())
+    } catch (e) {
+      sendJson(res, 500, { ok: false, error: e.message })
+    }
+    return
+  }
+
   if (req.method === 'GET' && pathname === '/api/guahao/orders') {
     try {
       const patientName = parsedUrl.searchParams.get('patientName') || ''
@@ -789,54 +799,58 @@ function getNextReleaseCountdown() {
     }
   }
 
-  // 8b. React + antd 前端（web/dist，构建命令：npx vite build --config web/vite.config.js）
-  if (req.method === 'GET' && (pathname === '/guahao' || pathname.startsWith('/guahao/'))) {
-    const distDir = path.join(__dirname, 'web', 'dist')
-    const rel = pathname.replace(/^\/guahao\/?/, '')
-    const target = rel ? path.join(distDir, rel) : path.join(distDir, 'index.html')
-    if (fs.existsSync(target) && fs.statSync(target).isFile()) {
-      serveStatic(req, res, target)
-      return
-    }
-    const spaIndex = path.join(distDir, 'index.html')
-    if (fs.existsSync(spaIndex)) {
-      serveStatic(req, res, spaIndex)
-      return
-    }
-    sendJson(res, 503, { ok: false, error: '前端未构建，请先执行 npx vite build --config web/vite.config.js' })
+  // 8b. 旧 React 挂号页 /guahao 已合并进主页面（新壳 /），只保留重定向，避免两套 UI 并存
+  if (req.method === 'GET' && (pathname === '/guahao' || pathname === '/guahao/' || pathname === '/next' || pathname === '/next/')) {
+    res.statusCode = 302
+    res.setHeader('Location', '/?merged=guahao')
+    res.end()
     return
   }
 
-  // 8c. 新版整站 React 壳（web/dist-next，迁移期预览，构建：MEDBRIEF_WEB_BASE=/next/ MEDBRIEF_WEB_OUT=dist-next npx vite build --config web/vite.config.js）
-  //     迁移完成后把 base 改回 /，本条与 8b 合并，旧 index.html 下线。
-  if (req.method === 'GET' && (pathname === '/next' || pathname.startsWith('/next/'))) {
+  // 9. 静态与页面托管
+  //    /        → 新 React 壳（web/dist-next，构建：MEDBRIEF_WEB_BASE=/ MEDBRIEF_WEB_OUT=dist-next npm run build:web）
+  //    /legacy  → 旧单文件工作台 index.html（新壳未覆盖的能力临时兜底，迁完即删）
+  if (req.method === 'GET' || req.method === 'HEAD') {
     const distDir = path.join(__dirname, 'web', 'dist-next')
-    const rel = pathname.replace(/^\/next\/?/, '')
-    const target = rel ? path.join(distDir, rel) : path.join(distDir, 'index.html')
-    if (fs.existsSync(target) && fs.statSync(target).isFile()) {
-      serveStatic(req, res, target)
-      return
+    const legacyHtml = path.join(__dirname, 'index.html')
+    const rel = pathname === '/' ? '' : decodeURIComponent(pathname).replace(/^\//, '')
+
+    // 9a. 新壳的静态资源（/assets/*.js 等）必须先命中，否则会误落到 SPA 回退返回 HTML
+    if (rel && !rel.startsWith('..')) {
+      const assetPath = path.join(distDir, rel)
+      if (assetPath.startsWith(distDir) && fs.existsSync(assetPath) && fs.statSync(assetPath).isFile()) {
+        serveStatic(req, res, assetPath)
+        return
+      }
     }
+
+    // 9b. 旧工作台兜底入口
+    if (pathname === '/legacy' || pathname.startsWith('/legacy/')) {
+      if (fs.existsSync(legacyHtml)) {
+        serveStatic(req, res, legacyHtml)
+        return
+      }
+    }
+
+    // 9c. 项目内其它真实静态文件（如 docs 里的图片）
+    if (rel && !rel.startsWith('..')) {
+      const filePath = path.join(__dirname, rel)
+      if (filePath.startsWith(__dirname) && fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+        serveStatic(req, res, filePath)
+        return
+      }
+    }
+
+    // 9d. 新壳首页与 SPA 回退
     const spaIndex = path.join(distDir, 'index.html')
     if (fs.existsSync(spaIndex)) {
       serveStatic(req, res, spaIndex)
       return
     }
-    sendJson(res, 503, { ok: false, error: '新版前端未构建，请先执行 npm run build:next' })
-    return
-  }
 
-  // 9. 静态页面请求
-  if (req.method === 'GET') {
-    let filePath = path.join(__dirname, pathname === '/' ? 'index.html' : pathname)
-    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
-      serveStatic(req, res, filePath)
-      return
-    }
-    // 单页回退
-    const indexHtml = path.join(__dirname, 'index.html')
-    if (fs.existsSync(indexHtml)) {
-      serveStatic(req, res, indexHtml)
+    // 9e. 新壳未构建：退回旧工作台，服务不至于打不开
+    if (fs.existsSync(legacyHtml)) {
+      serveStatic(req, res, legacyHtml)
       return
     }
   }

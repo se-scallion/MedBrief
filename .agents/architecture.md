@@ -227,19 +227,29 @@ ego lite 的 Chromium（真实指纹 + 独立 profile）可通过。故 `lib/ego
 
 ## 前端合并（方案 C，2026-11-12 用户拍板：整站 React 化 + 视觉重构）
 
-目标：**一套前端**。旧 `index.html`（手写 CSS + 表格，视觉不统一）最终下线，功能按 tab 逐个迁进 `web/src/`。
-迁移期两套并存，`/next/` 是预览入口，`/` 仍是旧版（不为半成品承担回归风险）。
+目标：**一套前端**。旧 `index.html`（手写 CSS + 表格，视觉不统一）已退到 `/legacy` 兜底，一个迭代后删。
+技术选型：**React + antd**（理由见下「为什么不是 Vue」）。
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
-| 0 | 壳：`web/src/App.jsx`（主题 token 统一 `#c8102e`、Segmented 切 tab、tab 写进 URL）+ `/next/` 预览托管 + `npm run build:next` | ✅ 2026-11-12 |
-| 1 | **排班监控（→ 归属 `/guahao/:doctorId/monitor`）**：`MonitorPane`，antd Table/Tag/Statistic 重建 | ✅ 待参数化 |
-| 2 | **114 挂号**：`BookingPage.jsx` 直接挂进 shell（不再 iframe 嵌套） | ✅（待与阶段 4 合并入口） |
-| 3 | **病历页 `/records`**：表单 + 近期指标载入 + 一页速览 + .meddata 导出（原 index.html 的 tab-brief） | ⏳ 待迁 |
-| 4 | **预约与凭证 `/guahao/orders`**：凭证卡 + 打印（`@media print` 需单独写，antd 默认打印会散架） | ⏳ |
-| 5 | **设置页 `/settings`**：114 登录态 + 轮询/预警偏好 + 开发者调试区（折叠） | ⏳ |
-| 6 | **医生库与子路由**：`/guahao` 选医生 → `/:doctorId/monitor` / `/:doctorId/flow`，`react-router-dom@6` 接管 | ⏳ |
-| 7 | 收尾：`base` 改回 `/`、删除旧 `index.html`、`/guahao` 旧页 301、删 8b/8c 两条重复静态托管 | ⏳ |
+| 0 | 壳：`web/src/App.jsx`（antd Layout/Header/Menu + 主题 token `#c8102e`）+ `api.js` 统一 fetch + `alarm.js` 蜂鸣 + 日志上下文 | ✅ 2026-11-12 |
+| 1 | **出诊监控**：`tabs/MonitorTab.jsx`（antd Table/Tag/Statistic，真接口 `/api/guahao/monitor/*`） | ✅ |
+| 2 | **挂号与预约**：`tabs/BookingTab.jsx` 包 `BookingPage.jsx`；医生改为下拉（`GET /api/guahao/doctors`，新增只读接口） | ✅ |
+| 3 | **病历资料**：`tabs/BriefTab.jsx`（近期指标载入 + 一页速览三出口 + .meddata 导入/导出） | ✅ |
+| 4 | **预约记录**：`tabs/OrdersTab.jsx`（订单列表 + 取消 + 凭证打印） | ✅ |
+| 5 | **114 会话**：`tabs/SessionTab.jsx`（唤起登录 + 会话状态）。开发者排障区**故意未迁入**，符合「面向普通患者、禁止 F12」；需要时走 `/legacy` | ✅ |
+| 6 | 收尾：`base=/`、`/` 即新壳、`/guahao` 与 `/next` 302 到 `/`、旧工作台 `/legacy`、`npm run test:ui` UI 冒烟 | ✅ |
+
+**URL 结构：单页 + `?tab=` 查询参数**，不引入 react-router。当前只有一个业务目标（主鸿鹄），
+`/guahao/:doctorId/monitor` 这类多医生子路由属于**过度设计**，暂不做。
+再触发条件（满足其一才引入路由层）：① 真的要维护 ≥3 个医生的独立监控页；② 需要分享/收藏到具体患者或订单详情页。
+
+**为什么不是 Vue**（2026-11-12 定稿）：
+1. 已投入沉没成本：`BookingPage.jsx`（707 行）+ antd 组件 + 主题 token 已跑通，换 Vue = 全部重写；
+2. 依赖形态：`node_modules` 软链到 MedData（React 项目），换 Vue 要新增 `vue`/`@vitejs/plugin-vue`/`element-plus`，
+   等于污染上游项目的依赖树或另建一套安装目录，成本不是零；
+3. 生态量级：React 的 npm 周下载量与中文后台组件（antd）成熟度都更大，招人/查资料更容易；
+4. 性能：两者在本项目量级（一页表格 + 几个表单）都够，用户已明确「性能损耗不算重点」，不构成选择依据。
 
 **护栏（阶段 0 确立，不许跳）**：
 1. **API 一行不改**：迁移只动前端，`npm run test:live` 6/6 必须始终绿。

@@ -1,194 +1,119 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { createContext, useCallback, useContext, useMemo, useState } from 'react'
 import {
-  Alert, Badge, Card, Col, Descriptions, Empty, Row, Segmented, Space,
-  Statistic, Table, Tag, Timeline, Typography,
+  App as AntApp,
+  Badge,
+  Button,
+  Drawer,
+  Layout,
+  Space,
+  Tabs,
+  Tag,
+  Typography,
 } from 'antd'
-import BookingPage from './BookingPage.jsx'
+import MonitorTab from './tabs/MonitorTab.jsx'
+import BookingTab from './tabs/BookingTab.jsx'
+import BriefTab from './tabs/BriefTab.jsx'
+import OrdersTab from './tabs/OrdersTab.jsx'
+import SessionTab from './tabs/SessionTab.jsx'
 
-const { Title, Text, Paragraph } = Typography
+const { Header, Content, Footer } = Layout
+const { Text } = Typography
 
-// 迁移状态：done = 已在 React 内重建；todo = 仍是旧 index.html 里的实现，迁移中
-const TABS = [
-  { key: 'monitor', label: '排班监控', state: 'done' },
-  { key: 'guahao', label: '114 挂号', state: 'done' },
-  { key: 'brief', label: '病历整理', state: 'todo' },
-  { key: 'orders', label: '预约凭证', state: 'todo' },
-  { key: 'auth', label: '登录凭据', state: 'todo' },
-]
+// ---------- 全局事件日志（各 tab 共用，替代旧页面的 appendLog） ----------
+const LogContext = createContext({ logs: [], pushLog: () => {}, clearLogs: () => {} })
+export const useLog = () => useContext(LogContext)
 
-async function jfetch(url, opts) {
-  const r = await fetch(url, opts)
-  const j = await r.json().catch(() => ({}))
-  if (!r.ok || j.ok === false) throw new Error(j.error || `HTTP ${r.status}`)
-  return j
-}
-
-// ---------- 排班监控（旧 index.html 的 tab-monitor 重建）----------
-function MonitorPane() {
-  const [live, setLive] = useState(null)
-  const [countdown, setCountdown] = useState(null)
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      const [a, b] = await Promise.all([
-        jfetch('/api/guahao/monitor/realtime'),
-        jfetch('/api/guahao/monitor/countdown'),
-      ])
-      setLive(a)
-      setCountdown(b)
-      setError('')
-    } catch (e) {
-      setError(e.message || '加载失败')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => { load() }, [load])
-
-  const columns = useMemo(() => [
-    { title: '院区/科室', dataIndex: 'department', width: 170 },
-    { title: '时段', dataIndex: 'period', width: 70 },
-    { title: '日期', dataIndex: 'dateHeader', width: 110 },
-    { title: '等级', dataIndex: 'level', width: 100 },
-    { title: '费用', dataIndex: 'fee', width: 80, render: (v) => (v ? `¥${v}` : '—') },
-    {
-      title: '状态', dataIndex: 'status', width: 100,
-      render: (v, r) => (v === 'active'
-        ? <Tag color="green">{r.statusText || '出诊'}</Tag>
-        : <Tag color="red">{r.statusText || '停诊'}</Tag>),
-    },
-  ], [])
-
-  return (
-    <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      {error && <Alert type="error" showIcon message="排班加载失败" description={error} />}
-      <Row gutter={12}>
-        <Col xs={12} md={6}>
-          <Card size="small">
-            <Statistic title="出诊槽位" value={live?.activeCount ?? '—'} valueStyle={{ color: '#237804' }} />
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card size="small">
-            <Statistic title="停诊槽位" value={live?.suspendedCount ?? '—'} valueStyle={{ color: '#cf1322' }} />
-          </Card>
-        </Col>
-        <Col xs={24} md={6}>
-          <Card size="small">
-            <Statistic title="距 07:00 放号" value={countdown?.countdown ?? '—'} />
-          </Card>
-        </Col>
-        <Col xs={24} md={6}>
-          <Card size="small">
-            <Statistic title="目标就诊日" value={countdown?.targetDateForBooking ?? '—'} />
-          </Card>
-        </Col>
-      </Row>
-      <Card
-        size="small"
-        title={`${live?.hospital || '首都医科大学附属北京朝阳医院'} · ${live?.doctor || '主鸿鹄'} 出诊排班`}
-        extra={<Text type="secondary" style={{ fontSize: 12 }}>{loading ? '加载中…' : live?.lastFetchedAt || ''}</Text>}
-      >
-        <Table
-          size="small"
-          rowKey={(r) => `${r.department}-${r.dateHeader}-${r.period}`}
-          columns={columns}
-          dataSource={live?.slots || []}
-          pagination={false}
-          locale={{ emptyText: <Empty description="暂无排班数据" /> }}
-        />
-        {live?.ruleNotice && (
-          <Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0, fontSize: 12 }}>
-            {live.ruleNotice}
-          </Paragraph>
-        )}
-      </Card>
-      <Alert
-        type="info"
-        showIcon
-        message="数据来源"
-        description={live?.source || '朝阳医院官网 Index_1220.html 实时抓取'}
-      />
-    </Space>
-  )
-}
-
-function TodoPane({ title, legacyTab }) {
-  return (
-    <Card>
-      <Title level={5}>{title}</Title>
-      <Timeline
-        items={[
-          { color: 'green', children: '排班监控：已在 React 内重建（组件化 + antd 表格）' },
-          { color: 'green', children: '114 挂号：已迁入（原 /guahao 页面，去掉 iframe 嵌套）' },
-          { color: 'blue', children: `${title}：迁移中，当前仍由旧版页面提供` },
-        ]}
-      />
-      <Paragraph type="secondary">
-        迁移期间旧版页面照常可用：
-        {' '}
-        <a href={`/?tab=${legacyTab}`}>打开旧版 {title}</a>
-        {' '}（旧版入口在全部 tab 迁移完成后下线）
-      </Paragraph>
-    </Card>
-  )
-}
+const TONE_COLOR = { info: 'default', ok: 'green', warn: 'orange', err: 'red' }
 
 export default function App() {
-  const [tab, setTab] = useState(() => {
-    const q = new URLSearchParams(window.location.search).get('tab')
-    return TABS.some((t) => t.key === q) ? q : 'monitor'
-  })
+  const { message } = AntApp.useApp()
+  const [logs, setLogs] = useState([])
+  const [logOpen, setLogOpen] = useState(false)
 
-  // 与旧版 index.html 的 switchTab 行为对齐：切 tab 写进 URL，可刷新/分享
-  const onTab = (key) => {
-    setTab(key)
-    const url = new URL(window.location.href)
-    url.searchParams.set('tab', key)
-    window.history.replaceState(null, '', url.toString())
-  }
+  const pushLog = useCallback((msg, tone = 'info') => {
+    const time = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+    setLogs((prev) => [{ time, msg, tone, key: `${Date.now()}-${Math.random()}` }, ...prev].slice(0, 200))
+    if (tone === 'err') message.error(msg)
+  }, [message])
 
-  const bodyRef = useRef(null)
-  useEffect(() => {
-    bodyRef.current?.scrollTo?.({ top: 0, behavior: 'smooth' })
-  }, [tab])
+  const clearLogs = useCallback(() => setLogs([]), [])
+  const logValue = useMemo(() => ({ logs, pushLog, clearLogs }), [logs, pushLog, clearLogs])
+
+  const items = [
+    { key: 'monitor', label: '出诊监控', children: <MonitorTab /> },
+    { key: 'booking', label: '挂号与预约', children: <BookingTab /> },
+    { key: 'brief', label: '病历资料', children: <BriefTab /> },
+    { key: 'orders', label: '预约记录', children: <OrdersTab /> },
+    { key: 'session', label: '114 会话', children: <SessionTab /> },
+  ]
 
   return (
-    <div style={{ maxWidth: 1240, margin: '0 auto', padding: '16px 16px 48px' }} ref={bodyRef}>
-      <Space direction="vertical" size={4} style={{ marginBottom: 12 }}>
-        <Title level={4} style={{ margin: 0 }}>
-          MedBrief · 挂号与问诊资料工作台
-        </Title>
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          面向白血病与重大血液病患者 · 目标：北京朝阳医院 血液科 主鸿鹄
-        </Text>
-      </Space>
+    <LogContext.Provider value={logValue}>
+      <Layout style={{ minHeight: '100vh', background: '#f5f6f8' }}>
+        <Header
+          style={{
+            background: 'linear-gradient(90deg,#0f172a,#1e293b)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingInline: 20,
+          }}
+        >
+          <Space size={12} align="center">
+            <span style={{ color: '#fff', fontSize: 18, fontWeight: 700, letterSpacing: 1 }}>MedBrief</span>
+            <Tag color="red">北京朝阳医院 · 血液内科 · 主鸿鹄</Tag>
+            <Text style={{ color: '#94a3b8', fontSize: 12 }}>挂号与问诊资料整理工作台</Text>
+          </Space>
+          <Space>
+            <Button
+              size="small"
+              onClick={() => setLogOpen(true)}
+            >
+              事件日志
+              <Badge count={logs.length} size="small" style={{ marginLeft: 6 }} showZero={false} />
+            </Button>
+          </Space>
+        </Header>
 
-      <Segmented
-        block
-        value={tab}
-        onChange={onTab}
-        options={TABS.map((t) => ({
-          value: t.key,
-          label: (
-            <Space size={6}>
-              <span>{t.label}</span>
-              <Badge status={t.state === 'done' ? 'success' : 'processing'} />
+        <Content style={{ padding: '16px 20px 32px' }}>
+          <Tabs defaultActiveKey="monitor" items={items} destroyOnHidden={false} />
+        </Content>
+
+        <Footer style={{ textAlign: 'center', color: '#94a3b8', fontSize: 12, padding: 12 }}>
+          仅为自己挂号，不代挂、不并发抢号 · 每日 07:00 放第 14 天号源 · 资料整理不构成诊断建议
+        </Footer>
+
+        <Drawer
+          title={
+            <Space>
+              事件日志
+              <Button size="small" onClick={clearLogs}>
+                清空
+              </Button>
             </Space>
-          ),
-        }))}
-        style={{ marginBottom: 16 }}
-      />
-
-      {tab === 'monitor' && <MonitorPane />}
-      {tab === 'guahao' && <BookingPage />}
-      {tab === 'brief' && <TodoPane title="病历整理" legacyTab="brief" />}
-      {tab === 'orders' && <TodoPane title="预约凭证" legacyTab="orders" />}
-      {tab === 'auth' && <TodoPane title="登录凭据" legacyTab="sniper" />}
-    </div>
+          }
+          placement="bottom"
+          height={360}
+          open={logOpen}
+          onClose={() => setLogOpen(false)}
+        >
+          {logs.length === 0 ? (
+            <Text type="secondary">暂无事件</Text>
+          ) : (
+            <div style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12 }}>
+              {logs.map((l) => (
+                <div key={l.key} style={{ padding: '3px 0', borderBottom: '1px dashed #eee' }}>
+                  <Text type="secondary">{l.time}</Text>{' '}
+                  <Tag color={TONE_COLOR[l.tone] || 'default'} style={{ marginInline: 6 }}>
+                    {l.tone}
+                  </Tag>
+                  <span>{l.msg}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Drawer>
+      </Layout>
+    </LogContext.Provider>
   )
 }
