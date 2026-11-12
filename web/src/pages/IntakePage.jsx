@@ -280,10 +280,18 @@ export default function IntakePage() {
         chunkAspect: body.chunkAspect ?? null,
         chunkMerged: body.chunkMerged || 0,
         chunkValueConflicts: body.chunkValueConflicts || 0,
+        // 倾斜矫正：歪拍会让行聚类崩（实测 2° 就掉 27% 行）。界面不为它加任何东西——
+        // 用户不关心我们转了几度，只在事件日志留一行，排障时能对上。
+        deskewed: !!body.deskewed,
+        deskewAngle: body.deskewAngle ?? null,
+        deskewMs: body.deskewMs ?? null,
       })
       const deduped = body.stitchedDeduped || 0
       pushLog(
         `「${item.name}」识别完成，得到 ${(body.rows || []).length} 行` +
+          (body.deskewed
+            ? `（图像倾斜 ${body.deskewAngle > 0 ? '+' : ''}${Number(body.deskewAngle).toFixed(1)}°，已自动回正，耗时 ${body.deskewMs}ms）`
+            : '') +
           (body.chunked
             ? `（拼图过高 h/w ${body.chunkAspect}，已切 ${body.chunks} 块识别：原始 ${body.rawRowCount} 行 → 合并 ${body.chunkMerged || 0} 行` +
               `${body.chunkValueConflicts ? `，边界残值冲突 ${body.chunkValueConflicts} 行` : ''}）`
