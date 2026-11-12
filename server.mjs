@@ -878,7 +878,7 @@ function getNextReleaseCountdown() {
     sendJson(res, 200, {
       ok: true,
       total: store.reports.length,
-      reports: store.reports.map((r) => ({ ...r, images: undefined, text: undefined })),
+      reports: store.reports.map((r) => ({ ...r, images: undefined, text: undefined, hasImage: !!r.sha256 })),
     })
     return
   }
@@ -987,8 +987,9 @@ function getNextReleaseCountdown() {
         parts = sliced.parts
       }
 
-      const results = []
-      for (const part of parts) results.push(await ocrOnce(part))
+      // 并发跑各块（2026-11-12 实测 8008 可并发：12 路并行时单份延迟 1.7s、吞吐仍线性上升；
+      // 超高图 h/w 3.06 切 2 块时，串行 1.7s → 并行约 0.9s）。Promise.all 保序，不影响后续合并逻辑。
+      const results = await Promise.all(parts.map((part) => ocrOnce(part)))
 
       const text = results.map((r) => r.text).filter(Boolean).join('\n')
       const layoutLines = results.flatMap((r) => r.layoutLines)
@@ -1061,14 +1062,28 @@ function getNextReleaseCountdown() {
         const sameContent = store.reports.find((r) => r.fingerprint === fingerprint)
         if (sameContent) return sendJson(res, 200, { ok: false, duplicate: { dup: true, kind: 'content', of: sameContent.id }, hint: '同一份报告（内容一致）' })
       }
+      // 报告级字段对齐 MedData 的 record 模型（records[] = { date, report_type, notes, data_points }）：
+      //   reportDate→date、reportType→report_type、rows→data_points。
+      // 其余为「单据抬头」事实字段，一律照抄原报告，读不到就空串（不填默认值）。
       const rec = {
         id: `rep_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`,
         createdAt: new Date().toISOString(),
+        // 来源标记：没有原图的记录（纯文本录入/测试）必须可识别 ——
+        // 2026-11-12 出过一条无 sha256/dhash/imageRef、只有一行手打文本的记录（rep_mwddww4ooys），
+        // 混在真实报告里让人误以为是导入的化验单。无原图 = 无法核对、无法查重，只能当草稿。
+        source: imageBuf ? 'image' : 'text-only',
         sha256, dhash, fingerprint,
         kind: meta.kind || 'lab',
+        reportType: meta.reportType || '',
         reportDate: meta.reportDate || '',
         hospital: meta.hospital || '',
+        labName: meta.labName || '',
+        barcode: meta.barcode || '',
+        sampledAt: meta.sampledAt || '',
+        receivedAt: meta.receivedAt || '',
+        clinicalDiagnosis: meta.clinicalDiagnosis || '',
         patientName: meta.patientName || '',
+        sourceFile: meta.sourceFile || '',
         imageRef: imageBuf ? `sha256:${sha256}` : '',
         text: String(body.text || ''),
         rows,
