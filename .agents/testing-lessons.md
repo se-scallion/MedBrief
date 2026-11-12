@@ -42,3 +42,71 @@
 排查 114 时曾把「请求挂死 40–150s」误判为站点故障/配额。
 **正确做法**：先用不消耗资源的接口（`GET /v2/models`、`countTokens`、静态资源）验证 key/网络是否正常，
 再判断重接口失败是配额、限流还是环境问题。轻量通 + 重接口挂 = 额度或环境，不是 key 失效。
+
+## 2026-11-12 · 浏览器选型：Playwright 过不了瑞数，ego lite 可以
+
+- **实测矩阵**（同一 UA `MicroMessenger`、同一 URL）：
+  Playwright 自带 Chromium（headless / headed）、系统 Chrome（headless / headed）
+  → 文档层 **202 挑战页**，7 秒后 body 仍为空，后续接口一律 **462**。
+  ego lite（ego-browser CLI）→ 首页正常渲染，`/user/get`、`/department/list` 均 200。
+- **判据**：202 是挑战页、462 是挑战未通过的拒绝；两者都指向「浏览器环境被识别」，
+  不是 UA 或参数问题。此时不要再换 header 试，直接换驱动。
+- **代价**：先按「有 Playwright 依赖就复用它」的直觉写了整套实现，实测全灭后重写为 ego-browser 驱动。
+
+## 2026-11-12 · 同一 WAF 下不同接口的可达性并不一致
+
+- `department/list/{hosCode}` 经页面内 fetch 直接 200 `code 0000`；
+  同一上下文里 `hospital/list` 也是 HTTP 200，但业务层固定回 `code 8888 系统繁忙`。
+- **判据**：**HTTP 200 ≠ 业务可用**。8888 属于业务层拒绝（该接口需要站点自身注入的瑞数令牌参数），
+  与 462/461 是不同层的问题，解法也不同：前者只能让站点自己发，后者要换浏览器环境。
+- **处理**：医院列表改为手填医院编码；科室树仍自动加载，并可用它验证编码有效性。
+
+## 2026-11-12 · 图形验证码：两条 OCR 路径都可能命中，别只留一条
+
+- 同一批样本里，「逐色分离 + 单字识别」与「整图放大 + psm8」交替命中（`2051`/`4630` 逐色命中、
+  `9976` 仅整图命中）。只保留一种会在换一批验证码时全灭。
+- **AI 视觉兜底已验证可用**：本地 DSH 模型网关 `127.0.0.1:8045/v1/messages`
+  （Anthropic Messages 协议，模型 `gemini-3.5-flash-lite`）对 2/2 张已知样本返回正确 4 位数字。
+  注意该网关 **不支持** `/v1/chat/completions`（404），必须走 `/v1/messages` + `image` content block。
+- **顺序**：逐色 OCR → 整图 OCR → AI 视觉 → 人工兜底（保留，因为样本量不足以宣称识别率）。
+
+## 2026-11-12 · 想在页面里挂 XHR 钩子：必须用 addScriptToEvaluateOnNewDocument
+
+- **踩了两次同一个坑**：用 `page.evaluate(() => { 替换 XMLHttpRequest.prototype })` 装钩子，
+  然后 `page.goto(...)` —— 钩子随旧文档一起销毁，新页面里一行都抓不到（表现为 `keys: []`、`calendarStatus: null`）。
+- **正解**：`page.cdp("Page.addScriptToEvaluateOnNewDocument", { source })`，钩子在每次新文档创建前注入，跨导航存活。
+- **判据**：抓到「什么都没拦截」时，先怀疑钩子装晚了/装错层，再怀疑接口没被调用。
+  同一个 URL，换注入方式后立刻抓到 21KB 的 `hospital/list`（309 家）。
+
+## 2026-11-12 · `product/calendar` 的 461 已确认是稳定复现，不是偶发
+
+在 ego lite 真实浏览器里做三组对照（同一账号、同一科室 H02110002/4011301）：
+
+| 条件 | 结果 |
+|---|---|
+| 微信 UA 覆盖 + 深链进预约页 | `calendar` **461**，页面标题与「有号」筛选正常渲染 |
+| 不做 UA 覆盖（原生 Mac UA） | 页面只渲染「关注/全部/有号」，`calendar` **根本没发出** |
+| 先逛首页养 cookie 再进预约页 | 同上，461 |
+
+→ 结论：**登录链路可自动化，号源接口不可**。工具的正确终态是 `waf_blocked` + 把已登录页面交接给人，
+让人在窗口里手动选号（用户 14:31 的真实预约成功就是这样完成的）。
+
+## 2026-11-12 · 「6 项 e2e 全绿」不等于链路打通：先看它到底打谁
+
+- `tests/verify-e2e.mjs` 6/6 通过，但实测耗时 **0.14s**，且排班/下单来自 `lib/guahaoCore.js`
+  里写死的 `doctorsState` 种子数据 + 本地 `data/guahao-orders.json`，**完全不触 114，也不起 Playwright**。
+  它守护的是「本地业务逻辑 + 接口形状」，不是「真实挂号能成」。
+- 同理，`GET /api/guahao/monitor/realtime` 才是真爬朝阳官网（本次实测返回 11 个槽位，含 7 出诊 / 4 停诊、
+  血液科本部 + 常营院区 + 国际医疗部）。**「真实」与「模拟」要在测试名里写清，别让绿灯背书没测的东西。**
+- 判据：声称端到端通过前，必须能说出「断言里是否发生了真实网络请求」。说不出来就是单元测试。
+
+## 2026-11-12 · 跨项目跑测试会被文件沙箱打穿：EPERM 不是回归
+
+在 MedBrief 会话（workspace-write，只允许 `projects/MedBrief`）里跑 MedData `npm test`：
+**44 通过 / 33 失败**，失败清一色形如
+`EPERM: operation not permitted, open '.../MedData/node_modules/.vite-temp/...'`。
+
+- **判据**：报错里出现 `EPERM` + 路径在会话工作区外 → 是沙箱权限，不是代码坏了。
+  这类失败必须标注「未核实」，不能写成「MedData 门禁红了」。
+- 要真跑 MedData 门禁，到 MedData 自己的会话里跑（77 个脚本，`node scripts/run-unit.mjs`）。
+

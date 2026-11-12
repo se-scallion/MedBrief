@@ -69,3 +69,42 @@ https://www.114yygh.com/newhlwyl/mobile/appointmentRegisterHome?pathchannel=jt
 - 自动化操作可能违反《预约挂号服务协议》；**仅为自己挂号，不代挂、不并发抢号**。
 - 短信与图形验证码有频率限制，重试要留间隔。
 - 站点结构随时可能调整（渠道表、接口前缀、验证流程），改动后按 `architecture.md` 的抓包方法重新取证，不要沿用旧结论。
+
+---
+
+## 自动化执行（已固化，推荐优先用它）
+
+手工步骤以上各节仍然有效，但日常操作请直接用脚本，不要重复手工：
+
+```bash
+# 1) 拉科室树（免登录，可用来验证医院编码）
+node tools/browser-guahao.mjs --list-depts H02110002
+
+# 2) 验证码识别自检（给一张图，看三级识别各自结果）
+node tools/browser-guahao.mjs --solver-check path/to/captcha.png
+
+# 3) 跑完整挂号（会真实发短信、真实下单）
+node tools/browser-guahao.mjs \
+  --phone <11位手机号> \
+  --hos-code H02110002 \
+  --dept1-code yygh_NK_4d2b43fd_vir \
+  --dept2-code 4011301 \
+  --patient-name 代聪 --doctor 张三 --date 2026-11-20
+```
+
+网页表单等价入口：`http://127.0.0.1:5174` → 「就诊人与预约」→「114 真实挂号（浏览器自动流程）」。
+
+### 行为约定
+
+| 场景 | 行为 |
+|---|---|
+| 指定了医生 | **直接提交**（114 预约不扣费；加 `--no-auto-submit` 可改为停下确认） |
+| 未指定医生 | 停在确认环节，等人点头 |
+| 图形验证码 | 逐色 OCR → 整图 OCR → AI 视觉 → 表单/终端手动填 |
+| 短信验证码 | 必须人工抄录填入（脚本无法代收） |
+| 号源接口被 WAF 拦（461） | 报 `waf_blocked`，页面保持登录态，转人工或等 30–60 分钟 |
+| 未绑定就诊人 | 报 `need_patient`，需本人身份证完成实名认证 |
+
+### 退出码（命令行）
+
+`0` 成功 · `1` 失败 · `2` 被 WAF 拦截 · `3` 需人工处理（就诊人/确认/验证码）

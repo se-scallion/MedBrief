@@ -4,3 +4,6 @@ data/114-auth.json
 .DS_Store
 *.log
 data/tmp/
+data/114-flow/
+# 前端构建产物（按需 npx vite build --config web/vite.config.js）
+web/dist/

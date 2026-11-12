@@ -275,6 +275,7 @@
   <div class="tabs" style="margin-bottom:16px; border-bottom:1px solid var(--gray-200);">
     <button class="tab-btn active" onclick="switchTab('monitor', this)">号源与出诊监控</button>
     <button class="tab-btn" onclick="switchTab('guahao', this)">就诊人与预约</button>
+    <a class="tab-btn" href="/guahao/" target="_blank" style="text-decoration:none; display:inline-flex; align-items:center;">114 挂号（新版表单）↗</a>
     <button class="tab-btn" onclick="switchTab('brief', this)">代诊 · 病历资料整理</button>
     <button class="tab-btn" onclick="switchTab('orders', this)">预约记录</button>
     <button class="tab-btn" onclick="switchTab('sniper', this)">渠道与放号规则</button>
@@ -411,6 +412,20 @@
           <div class="mt12">
             <button class="btn btn-primary full-w" onclick="querySchedule()">查询号源</button>
           </div>
+        </div>
+
+        <!-- 114 真实挂号：内嵌新版表单（React + antd），不再跳转 -->
+        <div class="card mt12">
+          <div class="flex-between" style="margin-bottom:10px;">
+            <span class="card-title" style="margin:0;">114 真实挂号（内嵌表单）</span>
+            <a href="/guahao/" target="_blank" style="font-size:12px; color:var(--brand);">新窗口打开 ↗</a>
+          </div>
+          <iframe
+            src="/guahao/"
+            title="114 挂号表单"
+            style="width:100%; height:1500px; border:1px solid var(--gray-200); border-radius:10px; background:#fff;"
+            loading="lazy"
+          ></iframe>
         </div>
 
         <!-- 凭证展示区 -->
@@ -1365,6 +1380,229 @@
       loadLiveMonitor(false)
     }, sec * 1000)
     appendLog(`[INFO] 自动巡检频率已更新为: 每 ${sec} 秒`, 'log-info')
+  }
+
+  // ===== 114 真实挂号流程（浏览器自动） =====
+  let flow114Id = null
+  let flow114Timer = null
+
+  function b114(name) { return document.getElementById('b' + '114-' + name) }
+
+  function setBadge114(text, tone) {
+    const el = document.getElementById('b114-badge')
+    if (!el) return
+    el.textContent = text
+    el.style.background = tone === 'ok' ? '#dcfce7' : tone === 'bad' ? '#fee2e2' : tone === 'warn' ? '#fef3c7' : '#f1f5f9'
+    el.style.color = tone === 'ok' ? '#166534' : tone === 'bad' ? '#991b1b' : tone === 'warn' ? '#92400e' : '#475569'
+  }
+
+  async function load114Depts() {
+    const hosCode = document.getElementById('f-114-hos-code').value.trim()
+    const d1 = document.getElementById('f-114-dept1')
+    const d2 = document.getElementById('f-114-dept2')
+    d1.innerHTML = '<option value="">加载中…</option>'
+    d2.innerHTML = '<option value="">先选一级科室</option>'
+    if (!hosCode) { d1.innerHTML = '<option value="">请先填写医院码</option>'; return }
+    setBadge114('加载科室…', 'warn')
+    try {
+      const r = await fetch(BASE + '/api/guahao/114/catalog/depts?hosCode=' + encodeURIComponent(hosCode))
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || '加载失败')
+      d1.innerHTML = '<option value="">请选择一级科室</option>'
+      for (const x of j.list || []) {
+        const o = document.createElement('option')
+        o.value = x.code
+        o.textContent = `${x.name}（可提前 ${x.advanceDay ?? '-'} 天）`
+        o.dataset.subs = JSON.stringify(x.subs || [])
+        d1.appendChild(o)
+      }
+      const total = (j.list || []).reduce((n, x) => n + (x.subs || []).length, 0)
+      setBadge114(`科室 ${j.list.length} 类 / ${total} 项`, 'ok')
+      appendLog(`[INFO] 医院 ${hosCode} 科室树已加载：${j.list.length} 个一级科室`, 'log-info')
+    } catch (e) {
+      d1.innerHTML = '<option value="">加载失败</option>'
+      setBadge114('科室加载失败', 'bad')
+      appendLog(`[ERR] 114 科室加载失败：${e.message}`, 'log-err')
+      alert('科室加载失败：' + e.message)
+    }
+  }
+
+  function on114Dept1Change() {
+    const d1 = document.getElementById('f-114-dept1')
+    const d2 = document.getElementById('f-114-dept2')
+    const opt = d1.options[d1.selectedIndex]
+    d2.innerHTML = '<option value="">请选择二级科室</option>'
+    if (!opt || !opt.dataset.subs) return
+    let subs = []
+    try { subs = JSON.parse(opt.dataset.subs) } catch { subs = [] }
+    for (const s of subs) {
+      const o = document.createElement('option')
+      o.value = s.code
+      o.textContent = s.name
+      d2.appendChild(o)
+    }
+  }
+
+  function render114Log(logs) {
+    const el = b114('log')
+    if (el) { el.textContent = (logs || []).join('\n'); el.scrollTop = el.scrollHeight }
+  }
+
+  async function start114Flow() {
+    const phone = document.getElementById('f-114-phone').value.trim()
+    const hosCode = document.getElementById('f-114-hos-code').value.trim()
+    const hosName = document.getElementById('f-114-hos-name').value.trim()
+    const d1 = document.getElementById('f-114-dept1')
+    const d2 = document.getElementById('f-114-dept2')
+    const patientName = document.getElementById('f-name').value.trim()
+    const doctor = document.getElementById('f-doctor').value.trim()
+    const date = document.getElementById('f-date').value
+
+    if (!/^1\d{10}$/.test(phone)) { alert('请填写 11 位 114 登录手机号'); return }
+    if (!hosCode || !d1.value || !d2.value) { alert('请先填写医院码、加载科室并选择一级/二级科室'); return }
+
+    const deptName = d2.options[d2.selectedIndex]?.textContent || ''
+
+    setBadge114('启动中…', 'warn')
+    b114('progress').classList.remove('hidden')
+    b114('abort').classList.remove('hidden')
+    document.getElementById('btn-114-start').disabled = true
+
+    try {
+      const r = await fetch(BASE + '/api/guahao/114/flow/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone,
+          hospital: hosName,
+          hosCode,
+          dept1Code: d1.value,
+          dept2Code: d2.value,
+          deptName,
+          patientName,
+          doctor,
+          date,
+        }),
+      })
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || '启动失败')
+      flow114Id = j.flowId
+      appendLog(`[INFO] 114 真实挂号流程已启动：${flow114Id}`, 'log-info')
+      poll114Flow()
+    } catch (e) {
+      setBadge114('启动失败', 'bad')
+      appendLog(`[ERR] 114 流程启动失败：${e.message}`, 'log-err')
+      document.getElementById('btn-114-start').disabled = false
+    }
+  }
+
+  async function poll114Flow() {
+    if (!flow114Id) return
+    clearTimeout(flow114Timer)
+    try {
+      const r = await fetch(BASE + '/api/guahao/114/flow/' + encodeURIComponent(flow114Id))
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || '查询失败')
+      const f = j.flow
+      render114FlowState(f)
+      if (!f.terminal) flow114Timer = setTimeout(poll114Flow, 1500)
+      else { document.getElementById('btn-114-start').disabled = false; b114('abort').classList.add('hidden') }
+    } catch (e) {
+      flow114Timer = setTimeout(poll114Flow, 3000)
+    }
+  }
+
+  const STAGE_LABEL = {
+    idle: '待启动', launching: '启动浏览器', login_page: '打开登录页',
+    captcha_solving: '识别图形验证码', captcha_manual: '需人工填图形码',
+    sms_sent: '短信已发出', waiting_sms: '等待短信验证码',
+    logged_in: '登录成功', checking_patient: '检查就诊人',
+    need_patient: '需先绑定就诊人', patient_ok: '就诊人就绪',
+    loading_schedule: '加载号源', slots_ready: '号源已获取',
+    need_confirm: '等待你确认号源', booking: '提交中',
+    booked: '预约成功', waf_blocked: '被 WAF 拦截', failed: '失败', aborted: '已中止',
+  }
+  const TERMINAL = ['booked', 'waf_blocked', 'failed', 'aborted', 'need_patient']
+  const TONE = { booked: 'ok', failed: 'bad', waf_blocked: 'warn', need_patient: 'warn', aborted: 'warn', need_confirm: 'warn', slots_ready: 'warn', captured: 'warn' }
+
+  function render114FlowState(f) {
+    document.getElementById('b114-stage').textContent = STAGE_LABEL[f.stage] || f.stage
+    document.getElementById('b114-detail').textContent = f.error ? ('— ' + (f.error.message || '')) : ''
+    setBadge114(STAGE_LABEL[f.stage] || f.stage, TONE[f.stage] || '')
+    render114Log(f.logs)
+
+    b114('sms-box').classList.toggle('hidden', f.stage !== 'waiting_sms')
+    b114('captcha-box').classList.toggle('hidden', f.stage !== 'captcha_manual')
+    if (f.stage === 'captcha_manual' && flow114Id) {
+      const img = b114('captcha-img')
+      img.src = BASE + '/api/guahao/114/flow/' + encodeURIComponent(flow114Id) + '/captcha.png?t=' + Date.now()
+    }
+
+    const showConfirm = f.stage === 'need_confirm' && f.slots && f.slots.length
+    b114('confirm-box').classList.toggle('hidden', !showConfirm)
+    if (showConfirm && f.slots[0]) {
+      const s = f.slots[0]
+      const d = (s.doctors && s.doctors[0]) || {}
+      b114('confirm-slot').textContent = `${s.date || '日期待定'} ${d.doctorName || ''} ${d.title || ''} ${d.remaining != null ? '（余 ' + d.remaining + '）' : ''}`
+    }
+
+    const res = b114('result')
+    if (f.stage === 'booked' || f.stage === 'waf_blocked' || f.stage === 'need_patient' || f.stage === 'failed') {
+      res.classList.remove('hidden')
+      if (f.stage === 'booked') {
+        const pt = (f.result && f.result.pageText || '').replace(/\s+/g, ' ').slice(0, 300)
+        res.innerHTML = `<div class="alert alert-success"><strong>✅ 预约成功</strong><div style="font-size:12px; margin-top:6px;">${pt}</div>${f.orderPersist && f.orderPersist.order ? `<div style="font-size:12px; margin-top:6px;">订单号：${f.orderPersist.order.orderId}</div>` : ''}</div>`
+        appendLog('[INFO] 114 预约成功', 'log-info')
+      } else if (f.stage === 'waf_blocked') {
+        res.innerHTML = `<div class="alert alert-warn"><strong>⚠ 号源接口被瑞数 WAF 拦截</strong><div style="font-size:12px; margin-top:6px;">${f.error ? f.error.message : ''}<br/>建议：直接用已登录的浏览器手动选号，或等 30–60 分钟风控冷却后重试。</div></div>`
+      } else if (f.stage === 'need_patient') {
+        res.innerHTML = `<div class="alert alert-warn"><strong>需先绑定就诊人</strong><div style="font-size:12px; margin-top:6px;">该 114 账号下未找到匹配的就诊人。绑定需本人身份证实名认证，请先在 114 完成后再重试。</div></div>`
+      } else {
+        res.innerHTML = `<div class="alert alert-warn"><strong>流程失败</strong><div style="font-size:12px; margin-top:6px;">${f.error ? f.error.message : ''}</div></div>`
+      }
+    } else {
+      res.classList.add('hidden')
+    }
+  }
+
+  async function submit114Sms() {
+    const code = document.getElementById('f-114-sms').value.trim()
+    if (!/^\d{6}$/.test(code)) { alert('请输入 6 位短信验证码'); return }
+    const r = await fetch(BASE + '/api/guahao/114/flow/' + encodeURIComponent(flow114Id) + '/sms', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }),
+    })
+    const j = await r.json()
+    if (!j.ok) { alert(j.error || '提交失败'); return }
+    document.getElementById('f-114-sms').value = ''
+    poll114Flow()
+  }
+
+  async function submit114Captcha() {
+    const code = document.getElementById('f-114-captcha').value.trim()
+    if (!/^\d{4}$/.test(code)) { alert('请输入 4 位图形验证码'); return }
+    const r = await fetch(BASE + '/api/guahao/114/flow/' + encodeURIComponent(flow114Id) + '/captcha', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }),
+    })
+    const j = await r.json()
+    if (!j.ok) { alert(j.error || '提交失败'); return }
+    document.getElementById('f-114-captcha').value = ''
+    poll114Flow()
+  }
+
+  async function confirm114(approve) {
+    await fetch(BASE + '/api/guahao/114/flow/' + encodeURIComponent(flow114Id) + '/confirm', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approve }),
+    })
+    poll114Flow()
+  }
+
+  async function abort114() {
+    if (!flow114Id) return
+    await fetch(BASE + '/api/guahao/114/flow/' + encodeURIComponent(flow114Id) + '/abort', { method: 'POST' })
+    clearTimeout(flow114Timer)
+    document.getElementById('btn-114-start').disabled = false
+    b114('abort').classList.add('hidden')
+    poll114Flow()
   }
 
   // 初始化

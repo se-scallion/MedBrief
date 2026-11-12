@@ -1,6 +1,6 @@
 {
   "name": "medbrief",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "MedBrief - 专为白血病与重大疾病就医设计的独立号源监控与病历整理工作台",
   "type": "module",
   "main": "server.mjs",

@@ -1,0 +1,716 @@
+{
+  "hosCode": "H02110002",
+  "fetchedAt": "2026-11-12T07:14:07.920Z",
+  "list": [
+    {
+      "code": "yygh_NK_4d2b43fd_vir",
+      "name": "内科",
+      "advanceDay": 0,
+      "nationalKeyDept": false,
+      "subs": [
+        {
+          "code": "1010404",
+          "name": "风湿免疫科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000026",
+          "name": "风湿免疫科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "4020102",
+          "name": "肝病科门诊（西直门）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000027",
+          "name": "肝病科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1000118",
+          "name": "感染科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000028",
+          "name": "感染科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1000724",
+          "name": "高血压科门诊(西直门)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1010308",
+          "name": "呼吸睡眠医学科门诊（西直门）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1590103",
+          "name": "呼吸睡眠医学科门诊（通州）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000020",
+          "name": "呼吸与危重症医学科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1010307",
+          "name": "呼吸与危重症医学科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1010703",
+          "name": "老年科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000029",
+          "name": "老年科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1010604",
+          "name": "内分泌科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000025",
+          "name": "内分泌科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "6000308",
+          "name": "全科医学科(综合内科)门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000002",
+          "name": "全科医学科(综合内科)门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1030400",
+          "name": "神经内科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000030",
+          "name": "神经内科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1010504",
+          "name": "肾内科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000023",
+          "name": "肾内科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1010205",
+          "name": "消化内科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000021",
+          "name": "消化内科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1400101",
+          "name": "心内科门诊（西直门院区）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000022",
+          "name": "心血管内科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "4011301",
+          "name": "血液科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000024",
+          "name": "血液科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        }
+      ]
+    },
+    {
+      "code": "yygh_WK_5c767793_vir",
+      "name": "外科",
+      "advanceDay": 0,
+      "nationalKeyDept": false,
+      "subs": [
+        {
+          "code": "1050802",
+          "name": "创伤骨科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1300102",
+          "name": "肝胆外科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000031",
+          "name": "肝胆外科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1060300",
+          "name": "骨关节科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000039",
+          "name": "骨关节科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1050700",
+          "name": "骨科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000076",
+          "name": "骨科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1650101",
+          "name": "骨肿瘤一科门诊（西直门）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1660101",
+          "name": "骨肿瘤二科门诊（西直门）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1660102",
+          "name": "骨肿瘤二科门诊（通州）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1050601",
+          "name": "脊柱外科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000041",
+          "name": "脊柱外科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1020206",
+          "name": "泌尿外科门诊（西直门）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000140",
+          "name": "泌尿外科门诊（通州）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1020207",
+          "name": "男科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1020100",
+          "name": "普通外科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000120",
+          "name": "普通外科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1300404",
+          "name": "乳腺外科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000034",
+          "name": "乳腺外科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1800004",
+          "name": "疝和腹壁外科门诊（西直门）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1600103",
+          "name": "疝和腹壁外科门诊（通州）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1020602",
+          "name": "神经外科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000063",
+          "name": "神经外科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1020702",
+          "name": "疼痛科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000044",
+          "name": "疼痛医学科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1300202",
+          "name": "胃肠外科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000032",
+          "name": "胃肠外科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1400201",
+          "name": "心外科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000035",
+          "name": "心外科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1020302",
+          "name": "胸外科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000037",
+          "name": "胸外科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1400301",
+          "name": "血管外科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000036",
+          "name": "血管外科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1410100",
+          "name": "医疗美容科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1420100",
+          "name": "整形外科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1440302",
+          "name": "重症医学科门诊（西直门）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1640101",
+          "name": "腹膜后肿瘤外科门诊（西直门）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1640103",
+          "name": "腹膜后肿瘤外科门诊（通州）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000074",
+          "name": "创伤救治中心门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        }
+      ]
+    },
+    {
+      "code": "yygh_FCK_bd926ff4_vir",
+      "name": "妇产科",
+      "advanceDay": 0,
+      "nationalKeyDept": false,
+      "subs": [
+        {
+          "code": "1070108",
+          "name": "产科专业门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1070107",
+          "name": "妇科专业门诊（西直门）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000149",
+          "name": "妇科专业门诊（通州）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1070109",
+          "name": "计划生育专业门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1070110",
+          "name": "生殖医学专业门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        }
+      ]
+    },
+    {
+      "code": "yygh_EK_10d2eab1_vir",
+      "name": "儿科",
+      "advanceDay": 0,
+      "nationalKeyDept": false,
+      "subs": [
+        {
+          "code": "1080400",
+          "name": "儿科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000059",
+          "name": "儿科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        }
+      ]
+    },
+    {
+      "code": "yygh_WGK_0f9aef6d_vir",
+      "name": "五官科",
+      "advanceDay": 0,
+      "nationalKeyDept": false,
+      "subs": [
+        {
+          "code": "1110100",
+          "name": "耳鼻咽喉头颈外科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000046",
+          "name": "耳鼻咽喉头颈外科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1120200",
+          "name": "口腔科门诊（西直门）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000047",
+          "name": "口腔科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1100100",
+          "name": "眼科门诊（西直门）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000045",
+          "name": "眼科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1100500",
+          "name": "眼科门诊（白塔寺）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        }
+      ]
+    },
+    {
+      "code": "yygh_QTK_157eb437_vir",
+      "name": "其他科",
+      "advanceDay": 0,
+      "nationalKeyDept": false,
+      "subs": [
+        {
+          "code": "1150400",
+          "name": "中医科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000049",
+          "name": "中医科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "2060000",
+          "name": "病理科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000148",
+          "name": "病理科门诊（通州）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1130300",
+          "name": "放疗科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "2070902",
+          "name": "放疗科门诊（通州）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "2040400",
+          "name": "核医学科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "2090103",
+          "name": "核医学科门诊（通州）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "2160400",
+          "name": "检验科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1160100",
+          "name": "康复医学科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "5000010",
+          "name": "临床营养科门诊（西直门院区）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000019",
+          "name": "临床营养科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1020701",
+          "name": "麻醉科门诊（西直门院区）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1470104",
+          "name": "麻醉科门诊（通州）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "2080000",
+          "name": "输血科（西直门）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1600000",
+          "name": "医学心理科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000051",
+          "name": "医学心理科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1610105",
+          "name": "日间综合病区门诊（西直门）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "2070100",
+          "name": "超声医学科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "2040103",
+          "name": "超声医学科门诊（通州）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "2090001",
+          "name": "药学门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "2190101",
+          "name": "内镜中心门诊（西直门）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "2190201",
+          "name": "内镜中心门诊（通州）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "2200205",
+          "name": "健康管理中心门诊（西直门）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "2030800",
+          "name": "放射科门诊（西直门）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "33522",
+          "name": "术前管理中心",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        }
+      ]
+    },
+    {
+      "code": "yygh_PK_ed02cd26_vir",
+      "name": "皮科",
+      "advanceDay": 0,
+      "nationalKeyDept": false,
+      "subs": [
+        {
+          "code": "1140500",
+          "name": "皮科门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "1220104",
+          "name": "皮科美容门诊（西直门）",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "9000048",
+          "name": "皮科门诊(通州)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        }
+      ]
+    }
+  ]
+}

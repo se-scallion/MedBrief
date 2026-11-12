@@ -10,6 +10,16 @@
 //   - POST /api/brief/bundle         问诊病历录入并打包为 MedData 标准交换包 (.meddata)
 //   - GET  /api/guahao/sniper/status 114 会话与时钟差校准状态
 //   - POST /api/guahao/reset         排班与订单重置（供自动化测试隔离用）
+//   - GET  /api/guahao/114/catalog/hospitals        114 医院目录（免登录）
+//   - GET  /api/guahao/114/catalog/depts?hosCode=   114 科室树（免登录）
+//   - POST /api/guahao/114/flow/start               启动真实浏览器挂号流程
+//   - GET  /api/guahao/114/flow/:id                 轮询流程状态
+//   - GET  /api/guahao/114/flow/latest              最近一次流程
+//   - GET  /api/guahao/114/flow/:id/captcha.png     图形验证码图（手动兜底用）
+//   - POST /api/guahao/114/flow/:id/sms             提交 6 位短信验证码
+//   - POST /api/guahao/114/flow/:id/captcha         提交 4 位图形验证码
+//   - POST /api/guahao/114/flow/:id/confirm         确认 / 放弃待确认号源
+//   - POST /api/guahao/114/flow/:id/abort           中止流程
 //   - 静态托管：apps/medbrief-web/index.html 及静态资源
 
 import http from 'node:http'
@@ -21,6 +31,7 @@ import { chromium } from 'playwright'
 import { createGuahaoManager } from './lib/guahaoCore.js'
 import { buildMedDataBundle, parseMedDataBundle } from './lib/meddataBundle.js'
 import { fetchLiveDoctorSchedule } from './lib/bjcyhScraper.js'
+import { createGuahao114Service } from './lib/guahao114Service.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -34,6 +45,7 @@ if (!fs.existsSync(DATA_DIR)) {
 const STORAGE_FILE = path.join(DATA_DIR, 'guahao-orders.json')
 const AUTH_FILE = path.join(DATA_DIR, '114-auth.json')
 const guahaoManager = createGuahaoManager({ storageFile: STORAGE_FILE, fs })
+const guahao114 = createGuahao114Service({ dataDir: DATA_DIR, ordersFile: STORAGE_FILE })
 
 let activeLoginBrowser = null
 
@@ -54,7 +66,13 @@ function saveStoredAuth(data) {
 
 function runBridge(payload) {
   return new Promise((resolve) => {
-    const bridgeScript = path.join(__dirname, '..', '..', 'tools', 'guahao', 'bridge.py')
+    // 历史遗留通道：票据直连（已被瑞数 WAF 证伪，仅保留给 /api/guahao/sniper/status 的兼容展示）。
+    // 真实挂号请走 /api/guahao/114/flow/*（浏览器流程）。
+    const bridgeScript = path.join(__dirname, 'tools', 'bridge.py')
+    if (!fs.existsSync(bridgeScript)) {
+      resolve({ ok: false, error: `bridge 脚本缺失：${bridgeScript}` })
+      return
+    }
     const py = spawn('python3', [bridgeScript])
     let out = ''
     let err = ''
@@ -197,6 +215,113 @@ function getNextReleaseCountdown() {
     return
   }
 
+  // ===== 114 真实浏览器挂号：查询类接口 =====
+  // GET /api/guahao/114/catalog/hospitals?force=1
+  if (req.method === 'GET' && pathname === '/api/guahao/114/catalog/hospitals') {
+    try {
+      const force = parsedUrl.searchParams.get('force') === '1'
+      const data = await guahao114.fetchHospitals({ force })
+      sendJson(res, 200, { ok: true, ...data })
+    } catch (e) {
+      sendJson(res, e.code === 'WAF_BLOCKED' ? 503 : 500, { ok: false, code: e.code || 'ERROR', error: e.message })
+    }
+    return
+  }
+
+  // GET /api/guahao/114/catalog/depts?hosCode=xxx&force=1
+  if (req.method === 'GET' && pathname === '/api/guahao/114/catalog/depts') {
+    try {
+      const hosCode = parsedUrl.searchParams.get('hosCode') || ''
+      if (!hosCode) {
+        sendJson(res, 400, { ok: false, error: '缺少 hosCode' })
+        return
+      }
+      const force = parsedUrl.searchParams.get('force') === '1'
+      const data = await guahao114.fetchDepts(hosCode, { force })
+      sendJson(res, 200, { ok: true, ...data })
+    } catch (e) {
+      sendJson(res, e.code === 'WAF_BLOCKED' ? 503 : 500, { ok: false, code: e.code || 'ERROR', error: e.message })
+    }
+    return
+  }
+
+  // GET /api/guahao/114/session —— 浏览器里现有登录态（不触发短信）
+  if (req.method === 'GET' && pathname === '/api/guahao/114/session') {
+    try {
+      const r = await guahao114.checkSession()
+      if (!r.ok) {
+        sendJson(res, 200, { ok: true, loggedIn: false, error: r.error })
+        return
+      }
+      const u = r.result.user || {}
+      sendJson(res, 200, {
+        ok: true,
+        loggedIn: !!r.result.loggedIn,
+        user: r.result.loggedIn
+          ? {
+              mobile: u.mobileConfound || null,
+              name: u.nameConfound || null,
+              idCard: u.idCardNoConfound || null,
+              authStatus: u.authStatus,
+              authStatusView: u.authStatusView || null,
+            }
+          : null,
+      })
+    } catch (e) {
+      sendJson(res, 500, { ok: false, error: e.message })
+    }
+    return
+  }
+
+  // GET /api/guahao/114/catalog/stats —— 目录缓存体检
+  if (req.method === 'GET' && pathname === '/api/guahao/114/catalog/stats') {
+    try {
+      sendJson(res, 200, { ok: true, ...guahao114.catalogStats() })
+    } catch (e) {
+      sendJson(res, 500, { ok: false, error: e.message })
+    }
+    return
+  }
+
+  // GET /api/guahao/114/flow/latest
+  if (req.method === 'GET' && pathname === '/api/guahao/114/flow/latest') {
+    const flow = guahao114.latestFlow()
+    sendJson(res, 200, { ok: true, flow })
+    return
+  }
+
+  // GET /api/guahao/114/flow/:id/captcha.png
+  {
+    const m = pathname.match(/^\/api\/guahao\/114\/flow\/([^/]+)\/captcha\.png$/)
+    if (req.method === 'GET' && m) {
+      const img = guahao114.captchaImagePath(m[1])
+      if (!img || !fs.existsSync(img)) {
+        sendJson(res, 404, { ok: false, error: '验证码图片不存在或已过期' })
+        return
+      }
+      setCors(res)
+      res.statusCode = 200
+      res.setHeader('Content-Type', 'image/png')
+      res.setHeader('Cache-Control', 'no-store')
+      fs.createReadStream(img).pipe(res)
+      return
+    }
+  }
+
+  // GET /api/guahao/114/flow/:id
+  {
+    const m = pathname.match(/^\/api\/guahao\/114\/flow\/([^/]+)$/)
+    if (req.method === 'GET' && m) {
+      const flow = guahao114.getFlow(m[1])
+      if (!flow) {
+        sendJson(res, 404, { ok: false, error: '流程不存在' })
+        return
+      }
+      sendJson(res, 200, { ok: true, flow })
+      return
+    }
+  }
+
   // 2. GET /api/guahao/schedule
   if (req.method === 'GET' && pathname === '/api/guahao/schedule') {
     try {
@@ -286,6 +411,44 @@ function getNextReleaseCountdown() {
     } catch (e) {
       sendJson(res, 400, { ok: false, error: '无效的 JSON 请求体: ' + e.message })
       return
+    }
+
+    // ===== 114 真实浏览器挂号：动作类接口 =====
+    // POST /api/guahao/114/flow/start
+    if (pathname === '/api/guahao/114/flow/start') {
+      try {
+        const result = guahao114.startFlow(payload)
+        sendJson(res, result.ok ? 200 : 409, result)
+      } catch (e) {
+        sendJson(res, 500, { ok: false, error: e.message })
+      }
+      return
+    }
+
+    // POST /api/guahao/114/flow/:id/{sms,captcha,confirm,abort}
+    {
+      const m = pathname.match(/^\/api\/guahao\/114\/flow\/([^/]+)\/(sms|captcha|confirm|abort)$/)
+      if (m) {
+        const [, id, action] = m
+        try {
+          if (action === 'sms') {
+            const r = await guahao114.submitSms(id, payload.code)
+            sendJson(res, r.ok ? 200 : 400, r)
+          } else if (action === 'captcha') {
+            const r = guahao114.submitCaptcha(id, payload.code)
+            sendJson(res, r.ok ? 200 : 400, r)
+          } else if (action === 'confirm') {
+            const r = guahao114.submitConfirm(id, payload.approve)
+            sendJson(res, r.ok ? 200 : 400, r)
+          } else {
+            const r = await guahao114.abortFlow(id)
+            sendJson(res, r.ok ? 200 : 400, r)
+          }
+        } catch (e) {
+          sendJson(res, 500, { ok: false, error: e.message })
+        }
+        return
+      }
     }
 
     // 5. POST /api/guahao/book
@@ -502,6 +665,24 @@ function getNextReleaseCountdown() {
       }
       return
     }
+  }
+
+  // 8b. React + antd 前端（web/dist，构建命令：npx vite build --config web/vite.config.js）
+  if (req.method === 'GET' && (pathname === '/guahao' || pathname.startsWith('/guahao/'))) {
+    const distDir = path.join(__dirname, 'web', 'dist')
+    const rel = pathname.replace(/^\/guahao\/?/, '')
+    const target = rel ? path.join(distDir, rel) : path.join(distDir, 'index.html')
+    if (fs.existsSync(target) && fs.statSync(target).isFile()) {
+      serveStatic(req, res, target)
+      return
+    }
+    const spaIndex = path.join(distDir, 'index.html')
+    if (fs.existsSync(spaIndex)) {
+      serveStatic(req, res, spaIndex)
+      return
+    }
+    sendJson(res, 503, { ok: false, error: '前端未构建，请先执行 npx vite build --config web/vite.config.js' })
+    return
   }
 
   // 9. 静态页面请求
