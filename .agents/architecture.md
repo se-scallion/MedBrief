@@ -20,6 +20,33 @@
 
 ---
 
+## 问诊资料卡（**主功能**，2026-11-12 用户定根本需求）
+
+一句话需求：「导入病友的病例、报告单图片 → 识别 → 校对 → 生成给门诊医生一页看懂的资料卡」。
+**数据只来自用户导入的图片，不读 MedData 任何库**（MedData 仅作本机 OCR 引擎，走 8008）。
+
+```
+图片（批量/粘贴/两张拼接）
+  → lib/visionLayout.mjs      版式重建：Vision 的 boundingBox 按 y 聚类成行、行内按 x 排、序列表头还原
+  → lib/reportIntake.mjs      解析与判重：parseLabRows（含双栏切分/续行归位/单位规范化）、sha256+dhash+内容指纹、
+                              stitchVertically、groupForDoctorCard（医生阅读顺序分组）
+  → lib/intakeCard.js         渲染：病友档案（不收身份证/手机号、姓名默认脱敏）+ 一页 A4 卡
+  → server.mjs /api/intake/*  上传/识别/解析/拼接/入库/资料卡
+  → web/src/pages/IntakePage.jsx（导入页，默认 tab）
+```
+
+**实测能力（真实单据）**：单栏血常规 20/23（有值项 100% 正确、0 错值）；双栏血常规 26/26；
+合成单 11/11。缺项是 OCR 未吐出结果值，靠人工补录。
+**已知边界**：骨穿报告 / 出院小结 / 外院单据**未验证**（自由文本，解析路径不同）；
+「拼大图再识别」疑因 Vision 降采样掉行（29→17、40→6），待曲线定性后可能改为「分别识别再合并指标」。
+
+**红线（改动前先看）**：
+1. 卡片只陈述数值/日期/趋势/出处，**不写诊断结论与治疗建议**；
+2. 缺项必须写「未提供」（没查 ≠ 没给我）；
+3. 不编造：拿不到就留空；按标准序号插值补的名称必须打 `nameInferred`；
+4. 隐私：病友是他人医疗数据 → 只落本机 `data/intake/`、`data/reports.json`（gitignore），不出网；
+   fixture 必须过 `assertRedacted()`（token 黑名单 + 「含『地址』须有占位符」的结构不变量）。
+
 ## 模块职责
 
 | 文件 | 职责 |
@@ -165,9 +192,11 @@ ego lite 的 Chromium（真实指纹 + 独立 profile）可通过。故 `lib/ego
 | # | 事项 | 验收标准 |
 |---|---|---|
 | 1 | **114 号源接口 461**：已确认与医院无关（朝阳、北大人民都 461）；`/order` 确认页可直连、`auth/patient/list` 200，但 `product/confirmV2` 缺 `product/calendar` 下发的 `uniqueProductKey/uniqueProductTimeKey` → 200 `8888`。**当前定位固定为半自动**（`waf_blocked` + 人工接管四步，见 playbook） | 只剩一条没测：放号时刻（每日 07:00）重打 calendar 是否解 461。测完即结案 |
-| 2 | MedData `GET /api/summary` 只读接口未落地（现只有 `/api/health`、`/api/state`、`/api/blobs`） | 8787 返回 `{latest:{WBC,PLT,HGB,...}}`，MedBrief 前端能一键回填 |
-| 3 | 工作台缺「从本地 MedData 载入近期指标」按钮与「就诊后一键导出 .meddata」完整交互 | `index.html` 两个按钮可用，走 8787 或 .meddata 文件降级 |
-| 4 | 回归分层：`tests/verify-e2e.mjs` 打的是 `guahaoCore.js` 静态种子 + 本地订单，实测 0.14s，**不覆盖 114 真链路** | 拆成 `unit`（种子/校验）与 `live`（真浏览器，需人工短信）两档，CI 只跑 unit |
+| 2 | ~~MedData `GET /api/summary` 未落地~~ → **已完成并入库**（MedData `a148d3d`，含 aliases） | — |
+| 3 | ~~工作台缺载入指标/导出交互~~ → **已完成**；但**用户已明确不做 MedData 取数**，该通道降为可选，主链路改为导入病友图片 | — |
+| 4 | ~~回归分层~~ → **已完成**：`test:unit` / `test:live` / `test:intake`（含 card）/ `test:ui` 四档 | — |
+| 6 | **新单据类型验证**：骨穿报告 / 出院小结 / 外院化验单均未验证（解析路径不同） | 每种类型给 1 张真实截图 → 一份脱敏 fixture + 一组断言（含 `assertRedacted()`） |
+| 7 | **拼大图掉行**：两张真实报告 29 → 17 行，相同图 40 → 6 行，疑为 Vision 降采样 | 高度曲线取证；若成立则改为「分别识别再合并指标」（后端换算法、UI 多图分组） |
 | 5 | 图形验证码识别率无样本支撑（AI 视觉仅 2/2 张），人工兜底不可撤 | 攒 ≥50 张样本给出通过率；未达标前保留人工弹窗 |
 
 ---
