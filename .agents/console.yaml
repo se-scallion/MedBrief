@@ -1,0 +1,57 @@
+# MedBrief —— 向 Project-Console 暴露的能力声明
+#
+# 本文件控制台只读、绝不写入；契约规范：Project-Console/docs/08-跨项目控制平面与AI设计.md §4
+#
+# 2026-11-12 新建（用户要求「把本项目加到 Project-Console 上」）。
+# 定位：面向白血病/重大血液病患者的挂号与问诊资料整理工作台，独立于 MedData。
+# 运行前提：前端是 Vite 构建产物（web/dist-next 不入库），**启动前必须 npm run build:web**，
+#          否则 / 会回退到旧单文件工作台 /legacy（服务不会 500）。
+
+version: 1
+
+id: medbrief
+name: MedBrief
+root: /Users/scallion/Documents/projects/MedBrief
+kind: node
+
+processes:
+  - name: medbrief
+    label: 工作台
+    port: 5174
+    command: "${NODE_BIN}/node server.mjs"
+    working_dir: /Users/scallion/Documents/projects/MedBrief
+    match: MedBrief/server.mjs
+    entries:
+      - label: 挂号与问诊工作台
+        path: /
+        kind: ui
+        primary: true
+      - label: 旧版工作台（回滚位）
+        path: /legacy
+        kind: ui
+    health:
+      path: /api/health
+      expect: 2xx
+    note: >
+      单进程 node server.mjs（纯 node:http，无框架），端口取 PORT 环境变量、默认 5174。
+      前端 = web/dist-next（React + antd），构建命令 npm run build:web；未构建时 / 回退旧 index.html。
+      **依赖（不归本项目管理）**：MedData 8787 只读数据服务（近期指标，挂掉自动降级为导入 .meddata 文件）、
+      MedData 8008 API 中枢（launchd com.user.meddata.api 托管，OCR/AI 用）、
+      ego lite 浏览器（114 登录与官网排班抓取，非常驻）。
+      114 平台仅剩「登录 + 就诊人」可自动化，号源接口稳定 461，工具终态 = waf_blocked + 人工选号。
+
+app:
+  order:
+    - medbrief
+
+control:
+  mode: managed
+  reason: ""
+  stop_cmd: "pkill -f 'MedBrief/server.mjs'"
+
+schedules: []
+
+ai:
+  wants: []
+  # ⚠️ MedBrief 涉患者医疗与身份数据，默认不授权任何文档给控制台 AI，也不申请 AI 能力。
+  context_docs: []
