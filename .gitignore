@@ -7,3 +7,4 @@ data/tmp/
 data/114-flow/
 # 前端构建产物（按需 npx vite build --config web/vite.config.js）
 web/dist/
+web/dist-next/

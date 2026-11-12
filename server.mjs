@@ -233,34 +233,37 @@ const server = http.createServer(async (req, res) => {
   }
 
 function getNextReleaseCountdown() {
-  const now = new Date()
-  const utc = now.getTime() + now.getTimezoneOffset() * 60000
-  const beijingNow = new Date(utc + 3600000 * 8)
-  
-  const target = new Date(beijingNow)
-  target.setHours(7, 0, 0, 0)
-  if (beijingNow.getTime() >= target.getTime()) {
-    target.setDate(target.getDate() + 1)
+  // 全部用「epoch 毫秒 + 固定 +08:00」计算，再用 getUTC* 读北京墙上时间。
+  // 旧实现用 toISOString() 打印位移后的 Date，会把 UTC 当成北京时间（显示 09:30 而非 17:30）；
+  // 且放号对应就诊日错用了「今天 +14」，与院方口径「次日 07:00 放第 14 天号源」差一天。
+  const BJ = 8 * 3600 * 1000
+  const pad = (n) => String(n).padStart(2, '0')
+  const fmtBj = (ms) => {
+    const d = new Date(ms + BJ)
+    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`
   }
-  
-  const diffMs = target.getTime() - beijingNow.getTime()
+  const nowMs = Date.now()
+  const bj = new Date(nowMs + BJ) // 其 getUTC* 即北京墙上时间
+  let targetMs = Date.UTC(bj.getUTCFullYear(), bj.getUTCMonth(), bj.getUTCDate(), 7, 0, 0) - BJ
+  if (nowMs >= targetMs) targetMs += 24 * 3600 * 1000
+
+  const diffMs = targetMs - nowMs
   const totalSeconds = Math.max(0, Math.floor(diffMs / 1000))
   const hours = Math.floor(totalSeconds / 3600)
   const minutes = Math.floor((totalSeconds % 3600) / 60)
   const seconds = totalSeconds % 60
 
-  const targetReleaseDate = new Date(beijingNow)
-  targetReleaseDate.setDate(targetReleaseDate.getDate() + 14)
-  const yyyy = targetReleaseDate.getFullYear()
-  const mm = String(targetReleaseDate.getMonth() + 1).padStart(2, '0')
-  const dd = String(targetReleaseDate.getDate()).padStart(2, '0')
+  // 放号日当天释放的是「放号日 + 14 天」的就诊号源
+  const releaseBj = new Date(targetMs + BJ)
+  const bookDay = new Date(Date.UTC(releaseBj.getUTCFullYear(), releaseBj.getUTCMonth(), releaseBj.getUTCDate() + 14))
+  const targetDateForBooking = `${bookDay.getUTCFullYear()}-${pad(bookDay.getUTCMonth() + 1)}-${pad(bookDay.getUTCDate())}`
 
   return {
-    nowBeijing: beijingNow.toISOString().replace('T', ' ').slice(0, 19),
-    targetReleaseTime: target.toISOString().replace('T', ' ').slice(0, 19),
-    targetDateForBooking: `${yyyy}-${mm}-${dd}`,
+    nowBeijing: fmtBj(nowMs),
+    targetReleaseTime: fmtBj(targetMs),
+    targetDateForBooking,
     diffMs,
-    countdown: `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`,
+    countdown: `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`,
     hours,
     minutes,
     seconds,
@@ -801,6 +804,25 @@ function getNextReleaseCountdown() {
       return
     }
     sendJson(res, 503, { ok: false, error: '前端未构建，请先执行 npx vite build --config web/vite.config.js' })
+    return
+  }
+
+  // 8c. 新版整站 React 壳（web/dist-next，迁移期预览，构建：MEDBRIEF_WEB_BASE=/next/ MEDBRIEF_WEB_OUT=dist-next npx vite build --config web/vite.config.js）
+  //     迁移完成后把 base 改回 /，本条与 8b 合并，旧 index.html 下线。
+  if (req.method === 'GET' && (pathname === '/next' || pathname.startsWith('/next/'))) {
+    const distDir = path.join(__dirname, 'web', 'dist-next')
+    const rel = pathname.replace(/^\/next\/?/, '')
+    const target = rel ? path.join(distDir, rel) : path.join(distDir, 'index.html')
+    if (fs.existsSync(target) && fs.statSync(target).isFile()) {
+      serveStatic(req, res, target)
+      return
+    }
+    const spaIndex = path.join(distDir, 'index.html')
+    if (fs.existsSync(spaIndex)) {
+      serveStatic(req, res, spaIndex)
+      return
+    }
+    sendJson(res, 503, { ok: false, error: '新版前端未构建，请先执行 npm run build:next' })
     return
   }
 

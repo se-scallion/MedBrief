@@ -5,7 +5,7 @@ import zhCN from 'antd/locale/zh_CN'
 import 'antd/dist/reset.css'
 import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
-import BookingPage from './BookingPage.jsx'
+import App from './App.jsx'
 
 dayjs.locale('zh-cn')
 
@@ -21,7 +21,7 @@ createRoot(document.getElementById('root')).render(
     }}
   >
     <AntApp>
-      <BookingPage />
+      <App />
     </AntApp>
   </ConfigProvider>,
 )

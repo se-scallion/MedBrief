@@ -6,14 +6,14 @@ import path from 'node:path'
 // node_modules 在项目根（软链到 MedData），因此不另外安装依赖。
 export default defineConfig({
   root: path.resolve(__dirname),
-  base: '/guahao/',
+  base: process.env.MEDBRIEF_WEB_BASE || '/guahao/',
   cacheDir: path.resolve(__dirname, '.vite'),
   plugins: [react()],
   resolve: {
     modules: [path.resolve(__dirname, '..', 'node_modules'), 'node_modules'],
   },
   build: {
-    outDir: path.resolve(__dirname, 'dist'),
+    outDir: path.resolve(__dirname, process.env.MEDBRIEF_WEB_OUT || 'dist'),
     emptyOutDir: true,
     sourcemap: false,
   },

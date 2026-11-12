@@ -172,6 +172,34 @@ ego lite 的 Chromium（真实指纹 + 独立 profile）可通过。故 `lib/ego
 
 ---
 
+## 前端合并（方案 C，2026-11-12 用户拍板：整站 React 化 + 视觉重构）
+
+目标：**一套前端**。旧 `index.html`（手写 CSS + 表格，视觉不统一）最终下线，功能按 tab 逐个迁进 `web/src/`。
+迁移期两套并存，`/next/` 是预览入口，`/` 仍是旧版（不为半成品承担回归风险）。
+
+| 阶段 | 内容 | 状态 |
+|---|---|---|
+| 0 | 壳：`web/src/App.jsx`（主题 token 统一 `#c8102e`、Segmented 切 tab、tab 写进 URL）+ `/next/` 预览托管 + `npm run build:next` | ✅ 2026-11-12 |
+| 1 | **排班监控**：`MonitorPane`，antd Table/Tag/Statistic 重建 | ✅ |
+| 2 | **114 挂号**：`BookingPage.jsx` 直接挂进 shell（不再 iframe 嵌套） | ✅（待与阶段 4 合并入口） |
+| 3 | **病历整理**：表单 + 近期指标载入 + .meddata 导出 | ⏳ 待迁 |
+| 4 | **预约凭证**：凭证卡 + 打印（`@media print` 需单独写，antd 默认打印会散架） | ⏳ 待迁 |
+| 5 | **登录凭据**：一键唤起登录窗口 + 会话状态（最敏感，最后迁） | ⏳ 待迁 |
+| 6 | 收尾：`base` 改回 `/`、删除旧 `index.html`、`/guahao` 301 到 `/`、删 8b/8c 两条重复静态托管 | ⏳ |
+
+**护栏（阶段 0 确立，不许跳）**：
+1. **API 一行不改**：迁移只动前端，`npm run test:live` 6/6 必须始终绿。
+2. **UI 冒烟要有**：`verify-ui`（Playwright，依赖已在 MedData node_modules）断言 5 个 tab 可切、关键按钮存在、无 console error。
+   否则「迁一个 tab 断一个按钮」不会红。
+3. **定时器陷阱**：倒计时/轮询迁到 React 后必须 `useRef` 守卫 effect 双跑与 stale closure —— 抢号关键时刻静默失效最致命。
+4. **迁移完成前不删旧版**：旧版 `index.html` 是回滚位，`/` 一直指向它。
+5. 构建产物不入库（`web/dist/`、`web/dist-next/` 已 ignore），`npm start` 前记得 build。
+
+**已修的真实 bug（迁移时发现）**：`getNextReleaseCountdown()` 用 `toISOString()` 打印位移后的 Date，
+把 UTC 当北京时间显示（17:30 显示成 09:30）；且放号对应就诊日错用「今天 +14」，与院方「次日 07:00 放第 14 天」差一天。
+现改为「epoch + 固定 +08:00，getUTC* 读墙上时间」，`targetDateForBooking` 以放号日 +14 计算：17:30 实测返回
+`nowBeijing 2026-11-12 17:32:07` / `targetReleaseTime 2026-11-13 07:00:00` / `targetDateForBooking 2026-11-27`（与院方页面一致）。
+
 ## 合并触发条件（到时再动，当前维持分离）
 
 满足任一条件时，考虑合并进 MedData monorepo：

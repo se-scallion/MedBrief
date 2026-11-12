@@ -9,7 +9,9 @@
     "dev": "node server.mjs",
     "test": "npm run test:unit",
     "test:unit": "node tests/verify-unit.mjs",
-    "test:live": "node tests/verify-e2e.mjs"
+    "test:live": "node tests/verify-e2e.mjs",
+    "build:web": "npx vite build --config web/vite.config.js",
+    "build:next": "MEDBRIEF_WEB_BASE=/next/ MEDBRIEF_WEB_OUT=dist-next npx vite build --config web/vite.config.js"
   },
   "keywords": [
     "guahao",
