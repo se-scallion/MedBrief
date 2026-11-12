@@ -45,6 +45,7 @@ import {
 } from './lib/reportIntake.mjs'
 import { loadPatient, savePatient, buildCard } from './lib/intakeCard.js'
 import { planChunks, cropChunks, imageSize } from './lib/imageChunker.mjs'
+import { autoDeskew } from './lib/deskew.mjs'
 import { summarizeState, formatSummaryText } from './lib/metricsSummary.js'
 import { buildVisitBrief } from './lib/visitBrief.js'
 import { fetchLiveDoctorSchedule } from './lib/bjcyhScraper.js'
@@ -940,14 +941,19 @@ function getNextReleaseCountdown() {
         return { text, layoutLines, rows: parseLabRows(text), layout: hasBoxes ? 'reconstructed' : 'raw-text', upstream: j.ok === false ? j.error : undefined }
       }
 
+      // 倾斜矫正（真机第一号杀手）：整页一倾斜，「同一行 y 相近」的行聚类就崩（实测旋转 2° 掉 27%）。
+      // 先估角再回正；|angle| < 0.5° 不动（二次插值本身会糊字）。不调 OCR，实测 22–33ms。
+      const skew = await autoDeskew(image)
+      const workImage = skew.applied && skew.image ? skew.image : image
+
       // 超高图自动切块：h/w ≤ 2.8 走单块路径（与未引入切块时逐像素一致）；
       // h/w > 2.8 时 Vision 会内部降采样，中间带成片丢行（挂号实测 48→35），故按块分别 OCR 再合并。
       let dim = null
-      try { dim = await imageSize(image) } catch { dim = null }
+      try { dim = await imageSize(workImage) } catch { dim = null }
       const plan = planChunks(dim || {}, {})
-      let parts = [image]
+      let parts = [workImage]
       if (plan.chunked) {
-        const cropped = await cropChunks(image, plan.chunks)
+        const cropped = await cropChunks(workImage, plan.chunks)
         parts = cropped.parts
       }
 
@@ -976,6 +982,10 @@ function getNextReleaseCountdown() {
         chunksPlanned: plan.planned,
         chunkHeights: plan.chunks.map((c) => c.h),
         chunkAspect: Number(plan.aspect.toFixed(2)),
+        deskewAngle: skew.angle,
+        deskewed: skew.applied,
+        deskewMs: skew.ms,
+        deskewConfidence: skew.confidence,
         chunkMerged: chunkMerge.merged || 0,
         chunkValueConflicts: chunkMerge.conflicts || 0,
         stitchedDeduped: stitchedDedupe.merged || 0,
