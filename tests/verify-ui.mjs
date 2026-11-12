@@ -15,9 +15,28 @@ const TABS = [
   { label: '114 会话', probe: /登录|会话/ },
 ]
 
+// 服务刚重启时前端资源可能还没就绪：先等 /api/health 再开浏览器（2026-11-12 实测：
+// 紧接重启那一次连报 8 项失败、再跑就全过 —— 属就绪竞态，不是产品问题，别让它变成噪音）。
+async function waitServer(timeoutMs = 20000) {
+  const t0 = Date.now()
+  while (Date.now() - t0 < timeoutMs) {
+    try {
+      const r = await fetch(BASE + '/api/health')
+      if (r.ok) return true
+    } catch { /* 还没起来 */ }
+    await new Promise((r) => setTimeout(r, 400))
+  }
+  return false
+}
+
 let failed = 0
 const pass = (m) => console.log(`PASS  ${m}`)
 const fail = (m) => { failed++; console.log(`FAIL  ${m}`) }
+
+if (!(await waitServer())) {
+  console.log('FAIL  服务未就绪（20s 内 /api/health 未返回 2xx）—— 先 npm start / node server.mjs')
+  process.exit(1)
+}
 
 const browser = await chromium.launch({ headless: true })
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
