@@ -57,13 +57,19 @@ const __dirname = path.dirname(__filename)
 const PORT = parseInt(process.env.PORT || '5174', 10)
 // 进程启动信息：用于判断「长驻进程是否落后于代码」（配合 /api/health.head 比对 git HEAD）
 const SERVER_STARTED_AT = new Date().toISOString()
-const SERVER_HEAD = (() => {
+const SERVER_GIT = (() => {
   try {
-    return execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: __dirname, encoding: 'utf8' }).trim()
+    const head = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: __dirname, encoding: 'utf8' }).trim()
+    // 启动时工作树是否干净：head 只是「启动那一刻的提交」，若当时工作树有未提交改动，
+    // head 会落后于实际加载的代码（2026-11-12 实测踩到：行为已是新版，head 却显示旧提交）。
+    const dirty = execFileSync('git', ['status', '--porcelain'], { cwd: __dirname, encoding: 'utf8' }).trim()
+    const dirtyCount = dirty ? dirty.split('\n').filter(Boolean).length : 0
+    return { head, dirty: dirtyCount > 0, dirtyCount }
   } catch {
-    return 'unknown'
+    return { head: 'unknown', dirty: null, dirtyCount: null }
   }
 })()
+const SERVER_HEAD = SERVER_GIT.head
 const DATA_DIR = path.join(__dirname, 'data')
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true })
@@ -177,6 +183,10 @@ const server = http.createServer(async (req, res) => {
     sendJson(res, 200, {
       ok: true,
       head: SERVER_HEAD,
+      // 判据：head ≠ git HEAD 时先看 dirty —— dirty:true 表示「启动时工作树有未提交改动」，
+      // 那种情况下 head 会落后于实际加载的代码，属无害错位；dirty:false 且仍不一致才是进程真的落后。
+      dirty: SERVER_GIT.dirty,
+      dirtyCount: SERVER_GIT.dirtyCount,
       startedAt: SERVER_STARTED_AT,
       app: 'medbrief',
       name: 'MedBrief Standalone Workbench',
