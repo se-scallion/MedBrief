@@ -44,7 +44,7 @@ import {
   parseLabRows, buildReportFingerprint, groupForDoctorCard, summarizeForCard, dedupeStitchRows, mergeChunkRows,
 } from './lib/reportIntake.mjs'
 import { loadPatient, savePatient, buildCard } from './lib/intakeCard.js'
-import { planChunks, cropChunks, imageSize } from './lib/imageChunker.mjs'
+import { planChunks, cropChunks, imageSize, cropToContent } from './lib/imageChunker.mjs'
 import { autoDeskew } from './lib/deskew.mjs'
 import { summarizeState, formatSummaryText } from './lib/metricsSummary.js'
 import { buildVisitBrief } from './lib/visitBrief.js'
@@ -960,15 +960,21 @@ function getNextReleaseCountdown() {
       const skew = await autoDeskew(image)
       const workImage = skew.applied && skew.image ? skew.image : image
 
+      // 顺序铁律：deskew → cropToContent → planChunks。deskew 旋转会补白边把宽度撑大（内容没变宽），
+      // 不先归一到墨迹 bbox，planChunks 会拿「回正后」的尺寸把超重图误判成不超高
+      // （实测 2223×6490 h/w 2.92 → 回正后 2448×6564 h/w 2.68 → 判不切 → 48 行只出 43 行）。
+      const crop = await cropToContent(workImage).catch(() => null)
+      const sizedImage = crop && crop.cropped && crop.image ? crop.image : workImage
+
       // 超高图自动切块：h/w ≤ 2.8 走单块路径（与未引入切块时逐像素一致）；
       // h/w > 2.8 时 Vision 会内部降采样，中间带成片丢行（挂号实测 48→35），故按块分别 OCR 再合并。
       let dim = null
-      try { dim = await imageSize(workImage) } catch { dim = null }
+      try { dim = await imageSize(sizedImage) } catch { dim = null }
       const plan = planChunks(dim || {}, {})
-      let parts = [workImage]
+      let parts = [sizedImage]
       if (plan.chunked) {
-        const cropped = await cropChunks(workImage, plan.chunks)
-        parts = cropped.parts
+        const sliced = await cropChunks(sizedImage, plan.chunks)
+        parts = sliced.parts
       }
 
       const results = []
@@ -996,6 +1002,10 @@ function getNextReleaseCountdown() {
         chunksPlanned: plan.planned,
         chunkHeights: plan.chunks.map((c) => c.h),
         chunkAspect: Number(plan.aspect.toFixed(2)),
+        cropped: !!(crop && crop.cropped),
+        cropBox: crop && crop.cropped ? crop.box : null,
+        contentWidth: dim ? dim.width : null,
+        contentHeight: dim ? dim.height : null,
         deskewAngle: skew.angle,
         deskewed: skew.applied,
         deskewMs: skew.ms,

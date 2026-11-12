@@ -10,7 +10,7 @@
 
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { planChunks, MAX_ASPECT, DEFAULT_OVERLAP_PX } from '../lib/imageChunker.mjs'
+import { planChunks, cropToContent, MAX_ASPECT, DEFAULT_OVERLAP_PX } from '../lib/imageChunker.mjs'
 
 let pass = 0
 const fails = []
@@ -84,6 +84,58 @@ it('块数随长宽比增长，且单调不降', () => {
   assert.ok(b >= a, `更高的图不应切更少块：${b} < ${a}`)
 })
 
+// ---------- 1b. cropToContent：deskew 撑大的白边必须先裁掉，否则尺寸类阈值失真 ----------
+// 真实 bug：2223×6490（h/w 2.92，该切）→ deskew 后 2448×6564（h/w 2.68，被判不切）→ 48 行只出 43 行。
+const TILT = process.env.MEDBRIEF_TILT_SAMPLE || '/tmp/tilt2-tall.png'
+const TRIMMED = process.env.MEDBRIEF_TRIMMED_SAMPLE || '/tmp/tilt2-tall-trimmed.png'
+
+it('cropToContent：纯白图不裁、不抛错', async () => {
+  const { createCanvas } = await import('@napi-rs/canvas')
+  const c = createCanvas(400, 600)
+  const ctx = c.getContext('2d')
+  ctx.fillStyle = '#fff'
+  ctx.fillRect(0, 0, 400, 600)
+  const url = 'data:image/png;base64,' + (await c.encode('png')).toString('base64')
+  const r = await cropToContent(url)
+  assert.equal(r.cropped, false)
+  assert.equal(r.width, 400)
+})
+
+it('cropToContent：整页铺满墨迹（bbox 异常）时不裁', async () => {
+  const { createCanvas } = await import('@napi-rs/canvas')
+  const c = createCanvas(200, 300)
+  const ctx = c.getContext('2d')
+  ctx.fillStyle = '#000'
+  ctx.fillRect(0, 0, 200, 300)
+  const url = 'data:image/png;base64,' + (await c.encode('png')).toString('base64')
+  const r = await cropToContent(url)
+  assert.equal(r.cropped, false, '铺满墨迹时不应裁（否则等于把内容切掉）')
+})
+
+if (!fs.existsSync(TILT) || !fs.existsSync(TRIMMED)) {
+  skip.push('cropToContent 真实样本断言')
+  console.log('SKIP  cropToContent 真实样本断言（样本不在本机）')
+} else {
+  const fileUrl = (f) => 'data:image/png;base64,' + fs.readFileSync(f).toString('base64')
+  const tiltUrl = fileUrl(TILT)
+  const trimUrl = fileUrl(TRIMMED)
+
+  it('cropToContent：padding 生效（裁出框 = 墨迹 bbox 外扩 padding）', async () => {
+    const r0 = await cropToContent(tiltUrl, { padding: 0 })
+    const r10 = await cropToContent(tiltUrl, { padding: 10 })
+    assert.equal(r0.cropped, true)
+    assert.equal(r10.cropped, true)
+    assert.equal(r10.box.w, r0.box.w + 20, `w 应多 2×padding：${r10.box.w} vs ${r0.box.w}`)
+    assert.equal(r10.box.h, r0.box.h + 20, `h 应多 2×padding：${r10.box.h} vs ${r0.box.h}`)
+    assert.ok(r10.box.x <= r0.box.x && r10.box.y <= r0.box.y, 'padding 应向外扩')
+  })
+
+  it('cropToContent：本来就贴边（已裁过的图）不重复裁', async () => {
+    const r = await cropToContent(trimUrl)
+    assert.equal(r.cropped, false, `已贴边的图不该再裁，实际裁了 ${JSON.stringify(r.box)}`)
+  })
+}
+
 // ---------- 2. 真实超高图 e2e（样本不在则跳过，不假红） ----------
 const TALL = process.env.MEDBRIEF_TALL_SAMPLE || '/tmp/height-4x-stitched.png'
 const SAFE = process.env.MEDBRIEF_SAFE_SAMPLE || '/tmp/height-3x-stitched.png'
@@ -119,6 +171,22 @@ if (!fs.existsSync(TALL) || !fs.existsSync(SAFE)) {
       assert.equal(tall.chunks, 2, `应切 2 块，实际 ${tall.chunks}`)
       assert.equal(tall.rawRowCount, 48, `rawRowCount 应为 48（切块前实测 35），实际 ${tall.rawRowCount}`)
     })
+    if (fs.existsSync(TILT)) {
+      const tilt = await post('/api/intake/ocr', { image: durl(TILT) })
+      it('e2e：歪 2° + 超高图 → deskew 撑出的白边被裁掉，切块判据恢复（rawRowCount 48）', () => {
+        assert.equal(tilt.deskewed, true, '歪 2° 应被回正')
+        assert.equal(tilt.cropped, true, 'deskew 的白边必须被裁')
+        assert.ok(tilt.chunked, `裁完应按内容 bbox 判超高并切块，实际 chunked=${tilt.chunked}`)
+        assert.ok(tilt.chunkAspect > 2.8, `chunkAspect 应按内容 bbox 算（>2.8），实际 ${tilt.chunkAspect}`)
+        assert.equal(tilt.rawRowCount, 48, `rawRowCount 应为 48（修前 43），实际 ${tilt.rawRowCount}`)
+        assert.equal(tilt.rows.length, 12, `合并后应 12 行，实际 ${tilt.rows.length}`)
+        assert.equal(tilt.contentWidth, tilt.cropBox.w, 'contentWidth 应与 cropBox 一致')
+        // 裁白边只会让内容变小：原图 2223×6490 → 内容 1884×6314（宽高都必须 ≤ 原图，且至少一边明显变小）
+        assert.ok(tilt.contentWidth <= 2223 && tilt.contentHeight <= 6490, `裁后不应变大：${tilt.contentWidth}×${tilt.contentHeight}`)
+        assert.ok(tilt.contentWidth < 2223 || tilt.contentHeight < 6490, '至少一边应明显变小（deskew 补的白边被裁掉）')
+      })
+    }
+
     it('e2e：响应字段齐全且类型正确（chunked/chunks/chunkHeights/chunkValueConflicts）', () => {
       for (const [label, r] of [['超高图', tall], ['安全图', safe]]) {
         assert.equal(typeof r.chunked, 'boolean', `${label}: chunked 应为布尔`)
@@ -130,13 +198,21 @@ if (!fs.existsSync(TALL) || !fs.existsSync(SAFE)) {
         assert.equal(typeof r.chunkValueConflicts, 'number', `${label}: chunkValueConflicts 应为数字`)
         assert.equal(typeof r.chunkMerged, 'number', `${label}: chunkMerged 应为数字`)
       }
-      // 安全图（h/w 2.41）必须是单块且高度等于原图，证明单块路径没被切
+      // 安全图（h/w 2.41）必须是单块，证明单块路径没被切。
+      // ⚠️ 高度要拿 contentHeight 比，不能写死原图高：链上多了 cropToContent 之后，
+      //    「裁白边」会让内容高 < 原图高（实测 4816 → 4706）。尺寸类断言必须跟着归一，否则这里会假红。
       assert.equal(safe.chunks, 1)
-      assert.deepEqual(safe.chunkHeights, [4816], `安全图应为单块且高 4816，实际 ${JSON.stringify(safe.chunkHeights)}`)
+      assert.equal(safe.chunkHeights.length, 1)
+      assert.equal(safe.chunkHeights[0], safe.contentHeight, `单块高度应等于内容高 ${safe.contentHeight}，实际 ${safe.chunkHeights[0]}`)
+      assert.ok(safe.contentHeight <= 4816, `裁白边后内容高不应变大：${safe.contentHeight}`)
       assert.equal(safe.chunkMerged, 0, '不切块就不该有切块合并')
-      // 超高图：块高之和 > 原图高（重叠使然），且每块 h/w 落在安全区
-      assert.ok(tall.chunkHeights.reduce((a, b) => a + b, 0) > 6424, '块高之和应大于原图高（因重叠）')
-      for (const h of tall.chunkHeights) assert.ok(h / 2000 <= 2.4 + 0.01, `块 h/w 越界：${(h / 2000).toFixed(2)}`)
+      // 超高图：块高之和 > 内容高（重叠使然），且每块 h/w 落在安全区。
+      // 同样用 contentWidth/contentHeight 而非原图尺寸——裁白边后两者都会变（尺寸类断言必须归一）。
+      assert.ok(tall.chunkHeights.reduce((a, b) => a + b, 0) > tall.contentHeight, '块高之和应大于内容高（因重叠）')
+      for (const h of tall.chunkHeights) {
+        const aspect = h / tall.contentWidth
+        assert.ok(aspect <= 2.4 + 0.01, `块 h/w 越界：${aspect.toFixed(2)}`)
+      }
     })
 
     it('e2e：切块合并后行数不虚高（12 项就该 12 行），且合并留痕', () => {
