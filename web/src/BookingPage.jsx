@@ -382,7 +382,7 @@ export default function BookingPage() {
               }
               description={
                 sessionLoading ? null : (
-                  <Space direction="vertical" size={4}>
+                  <Space orientation="vertical" size={4}>
                     <Text type="secondary" style={{ fontSize: 12 }}>
                       {session?.loggedIn && !forceLogin
                         ? '登录态保存在 ego lite 浏览器里，无需每次都发短信。如需换账号，勾选下面的「强制重新登录」。'
@@ -569,7 +569,7 @@ export default function BookingPage() {
                 style={{ marginBottom: 16 }}
                 message={intent.title}
                 description={
-                  <Space direction="vertical" size={2}>
+                  <Space orientation="vertical" size={2}>
                     <Text>{intent.body}</Text>
                     <Text strong={intent.autoSubmit} type={intent.autoSubmit ? 'success' : 'secondary'}>
                       {intent.autoSubmit ? '执行方式：命中后自动提交' : '执行方式：停下等你点确认'}
@@ -616,7 +616,7 @@ export default function BookingPage() {
                 {['captcha_manual'].includes(flow.stage) && flowIdRef.current && (
                   <Card size="small" style={{ marginTop: 12, borderColor: '#faad14' }}
                     title={<Space>图形验证码需人工辨认</Space>}>
-                    <Space direction="vertical" style={{ width: '100%' }}>
+                    <Space orientation="vertical" style={{ width: '100%' }}>
                       <Image
                         src={`/api/guahao/114/flow/${encodeURIComponent(flowIdRef.current)}/captcha.png?t=${Date.now()}`}
                         width={160} style={{ borderRadius: 6, border: '1px solid #eee' }}
@@ -661,7 +661,7 @@ export default function BookingPage() {
                 {flow.stage === 'booked' && (
                   <Result status="success" title="预约成功"
                     subTitle={
-                      <Space direction="vertical" size={0}>
+                      <Space orientation="vertical" size={0}>
                         {flow.result?.slot?.doctorName && <Text>医生：{flow.result.slot.doctorName}</Text>}
                         {flow.result?.slot?.date && <Text>日期：{flow.result.slot.date}</Text>}
                         {flow.orderPersist?.order?.orderId && <Text code>{flow.orderPersist.order.orderId}</Text>}
@@ -675,7 +675,7 @@ export default function BookingPage() {
                   <Alert style={{ marginTop: 12 }} type="warning" showIcon
                     message="号源接口被瑞数 WAF 拦截"
                     description={
-                      <Space direction="vertical" size={2}>
+                      <Space orientation="vertical" size={2}>
                         <Text>浏览器已登录成功，页面仍在。你可以直接在浏览器里手动选号；或等 30–60 分钟风控冷却后重试。</Text>
                         <Text type="secondary">{flow.error?.message}</Text>
                       </Space>

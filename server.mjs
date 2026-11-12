@@ -707,9 +707,10 @@ function getNextReleaseCountdown() {
         // 构造 MedData 规范的 state 结构
         const stateToBundle = {
           patientMeta: {
-            name: patient.name || '代聪',
-            idCard: patient.idCard || '511025199605011511',
-            phone: patient.phone || '13800100114',
+            // 不写死任何真实就诊人：由前端表单提供，缺就留空（旧版默认值把真实姓名/身份证/手机号打进每个包，隐私隐患）
+            name: patient.name || '',
+            idCard: patient.idCard || '',
+            phone: patient.phone || '',
             diagnosis,
             stage,
             hospital: patient.hospital || '北京朝阳医院',
