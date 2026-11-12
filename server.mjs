@@ -8,6 +8,8 @@
 //   - GET  /api/guahao/orders        历史预约与凭证列表
 //   - POST /api/guahao/cancel        取消预约并回滚释放号源
 //   - POST /api/brief/bundle         问诊病历录入并打包为 MedData 标准交换包 (.meddata)
+//   - GET  /api/meddata/summary      就诊前从本机 MedData 数据服务(8787)载入近期指标（不可用则 ok:false，前端降级导入 .meddata）
+//   - POST /api/brief/import         导入 .meddata 交换包并解析出近期指标（通道 2 的降级路径）
 //   - GET  /api/guahao/sniper/status 114 会话与时钟差校准状态
 //   - POST /api/guahao/reset         排班与订单重置（供自动化测试隔离用）
 //   - GET  /api/guahao/114/catalog/hospitals        114 医院目录（免登录）
@@ -30,6 +32,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { createGuahaoManager } from './lib/guahaoCore.js'
 import { buildMedDataBundle, parseMedDataBundle } from './lib/meddataBundle.js'
+import { summarizeState, formatSummaryText } from './lib/metricsSummary.js'
 import { fetchLiveDoctorSchedule } from './lib/bjcyhScraper.js'
 import { createGuahao114Service } from './lib/guahao114Service.js'
 
@@ -150,6 +153,35 @@ const server = http.createServer(async (req, res) => {
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
     })
+    return
+  }
+
+  // 1a. GET /api/meddata/summary — 就诊前从本机 MedData 数据服务（8787）载入近期指标
+  // 口径见 INTERFACE.md 通道 2。8787 不可用时**不报错**，回 ok:false + unavailable:true，
+  // 前端据此自动降级到「导入 .meddata 文件」。token 只从环境变量取，绝不下发前端。
+  if (req.method === 'GET' && pathname === '/api/meddata/summary') {
+    const dataUrl = process.env.MEDDATA_DATA_URL || 'http://127.0.0.1:8787'
+    const token = process.env.MEDDATA_SYNC_TOKEN || ''
+    try {
+      const r = await fetch(`${dataUrl}/api/summary`, {
+        headers: token ? { 'x-sync-token': token } : {},
+        signal: AbortSignal.timeout(2500),
+      })
+      if (!r.ok) throw new Error(`8787 返回 HTTP ${r.status}`)
+      const j = await r.json()
+      if (!j || j.ok !== true) throw new Error(j?.error || '8787 返回内容异常')
+      sendJson(res, 200, { ...j, source: 'live', sourceUrl: dataUrl, text: formatSummaryText(j) })
+    } catch (e) {
+      sendJson(res, 200, {
+        ok: false,
+        unavailable: true,
+        source: 'unavailable',
+        sourceUrl: dataUrl,
+        reason: e.name === 'TimeoutError' ? '8787 超时未响应' : e.message,
+        fallback: 'import',
+        hint: '本机 MedData 数据服务未启动；改用「导入 .meddata 文件」即可，功能不受影响。',
+      })
+    }
     return
   }
 
@@ -384,7 +416,7 @@ function getNextReleaseCountdown() {
     return
   }
 
-  // 4b. GET /api/guahao/114/auth
+  // 4b. GET /api/guahao/114/auth（仅排障，见 7b 说明；正常流程用 /api/guahao/114/session）
   if (req.method === 'GET' && pathname === '/api/guahao/114/auth') {
     const auth = getStoredAuth()
     const ticket = auth.ticket || ''
@@ -491,6 +523,9 @@ function getNextReleaseCountdown() {
     }
 
     // 7b. POST /api/guahao/114/auth
+    // ⚠️ 仅排障通道：要求用户从 F12 手工复制 cmi-user-ticket，与「面向普通患者、禁止 F12」的产品原则冲突，
+    //    且票据直连在瑞数 WAF 下实测返回 462（见 .agents/MEMORY.md）。
+    //    正常登录请走 /api/guahao/114/flow/*（ego 浏览器复用登录态），不要给患者暴露本接口。
     if (pathname === '/api/guahao/114/auth') {
       try {
         const ticket = String(payload.ticket || '').trim()
@@ -662,6 +697,43 @@ function getNextReleaseCountdown() {
         })
       } catch (e) {
         sendJson(res, 500, { ok: false, error: e.message })
+      }
+      return
+    }
+
+    // 8c. POST /api/brief/import — 导入 .meddata 交换包（通道 2 的降级路径）
+    // 解析放在服务端：lib/meddataBundle.js 是 ESM，index.html 是 classic script，
+    // 前端不重复实现一份解析器（避免两份实现漂移）。
+    if (pathname === '/api/brief/import') {
+      try {
+        const input = payload.bundle ?? payload.content ?? payload
+        if (!input) throw new Error('缺少 bundle 或 content 字段')
+        const state = parseMedDataBundle(input) // 指纹不匹配会 throw
+        const summary = summarizeState(state)
+        const patientMeta = state.patient_meta || {}
+        sendJson(res, 200, {
+          ok: true,
+          source: 'bundle',
+          sha256: state._manifest?.fingerprint || null,
+          schemaVersion: state._manifest?.schemaVersion || null,
+          exportedAt: state._manifest?.exportedAt || null,
+          patient: {
+            name: patientMeta.name || '',
+            diagnosis: patientMeta.diagnosis || '',
+            age: patientMeta.age ?? null,
+            gender: patientMeta.gender ?? null,
+          },
+          counts: {
+            ...summary.counts,
+            events: (state.events || []).length,
+            courses: (state.courses || []).length,
+          },
+          latest: summary.latest,
+          aliases: summary.aliases,
+          text: formatSummaryText(summary),
+        })
+      } catch (e) {
+        sendJson(res, 400, { ok: false, error: `交换包校验失败：${e.message}` })
       }
       return
     }

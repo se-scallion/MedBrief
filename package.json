@@ -7,7 +7,9 @@
   "scripts": {
     "start": "node server.mjs",
     "dev": "node server.mjs",
-    "test": "node tests/verify-e2e.mjs"
+    "test": "npm run test:unit",
+    "test:unit": "node tests/verify-unit.mjs",
+    "test:live": "node tests/verify-e2e.mjs"
   },
   "keywords": [
     "guahao",

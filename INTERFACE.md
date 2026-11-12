@@ -95,19 +95,43 @@ GET http://localhost:8787/api/health
 → { "ok": true, "version": 3780, "counts": { "records": 45, "docs": 28, "events": 51, ... },
     "blobs": { "total": 107, "referenced": 72, "missing": 0 } }
 
-# 当前 8787 **只有**这三个路由（已核实 data-server.mjs）：
+# 8787 现有路由（已核实 data-server.mjs）
 GET  /api/health        探活 + 计数 + 原件体检
+GET  /api/summary       近期指标摘要（只读，2026-11-12 落地；口径见下表）
 GET  /api/state         全量状态
 GET  /api/blobs         附件清单
 PUT  /api/state         写入（MedBrief 禁止调用）
 ```
 
+**`GET /api/summary` 契约（2026-11-12 落地，实跑验证）**
+
+```
+GET http://localhost:8787/api/summary
+→ { "ok": true, "version": 3780, "generatedAt": "2026-11-12T09:14:21.905Z",
+    "patient": { "age": 30, "gender": "Male", "diagnosis": "B-cell ALL" },
+    "latest": { "WBC": { "code":"WBC", "label":"白细胞", "value":"6.83", "unit":"10^9/L",
+                          "date":"2026-09-20", "reportType":"CBC", "status":"NORMAL",
+                          "refRange":"3.5-9.5", "numeric":true, "num":6.83 }, ... },
+    "aliases": { "HGB": "Hb", ... },
+    "counts": { "records": 45, "diseaseMetrics": 8 } }
+```
+
+取值口径（**唯一实现两处各一份**：MedData `data-server.mjs` 的 `summarizeLatest()` 与 MedBrief `lib/metricsSummary.js` 的 `summarizeState()`，改一处必须同步另一处）：
+
+| 规则 | 说明 |
+|---|---|
+| 化验指标 | 遍历 `records[].data_points`，取 `records[].date` 最新的**非空**值；同一天取 `created_at` 更晚者 |
+| 疾病指标 | 取 `diseaseMetrics[]` 每个 `code` 日期最新的有值记录；`value: null` 视为未测，跳过 |
+| 键名 | `WBC / PLT / **Hb** / RBC / NEUT_ABS / LYM_ABS / HS_CRP / BM_BLAST_PCT / FCM_MRD_PCT / BCR_ABL1_RATIO` |
+| ⚠️ 别名 | 库内血红蛋白 code 是 **`Hb`**，不是 `HGB`；`HGB`/`HB`/`HEMOGLOBIN` → `Hb`（见 `aliases`），不要按 `HGB` 去查库 |
+| 身份字段 | 摘要**不含**姓名/身份证/手机号；身份只随 `.meddata` 包走 |
+
 **MedBrief 侧使用原则**：
-- 8787 不可用时，自动切换到「导入 .meddata 文件」方式，不报错；
+- 走**服务端代理** `GET http://127.0.0.1:5174/api/meddata/summary`（`server.mjs`），token 由 env `MEDDATA_SYNC_TOKEN` 注入 `x-sync-token`，**永不下发前端**；
+- 8787 不可用时该端点返回 `{ ok:false, unavailable:true, reason, fallback:"import" }`（HTTP 200，不抛错），前端据此自动降级为「导入 .meddata 文件」；
 - 读取是只读操作，MedBrief **永远不向 8787 写数据**（MedData 是数据权威）。
 
-> ⚠️ **未落地**：`/api/records`、`/api/summary` **都不存在**（早期本文档写的前者也不存在）。
-> 当前阶段只能用通道 3（.meddata 文件）。落地后再回来补本节。
+> `GET /api/records` **仍不存在**（早期本文档写过，从未落地）；要取历史明细请用 `/api/state` 或 .meddata 包。
 
 ---
 
@@ -115,21 +139,31 @@ PUT  /api/state         写入（MedBrief 禁止调用）
 
 **正向（问诊前，MedData → MedBrief）**：
 1. MedData 点击「导出就诊交换包」→ 生成 `MedData-姓名-日期.meddata`；
-2. MedBrief 页面导入该文件，自动解包展示病史时间线与最新指标。
+2. MedBrief 页面「导入 .meddata 文件」→ `POST http://127.0.0.1:5174/api/brief/import`（body `{ content: "<包文本>" }`）
+   → 返回 `{ ok, sha256, patient, counts, latest, text }`，前端把 `text` 填进「近期指标」文本框（追加，不覆盖用户输入）。
 
 **逆向（问诊后，MedBrief → MedData）**：
-1. 代诊/家属在 MedBrief 拍摄新报告 → 点击「导出为 MedData 归档」；
-2. MedData 页面导入，增量无损合并（同 SHA-256 的原件不重复导入）。
+1. 代诊/家属在 MedBrief 录入/拍摄新报告 → 点「就诊后导出 .meddata」（`POST /api/brief/bundle` 后下载）；
+2. MedData 侧按增量协议 `PUT http://localhost:8787/api/state`，body `{ changes: { upserts: <包 payload> }, baseVersion }`，由 `src/utils/mergeState.js` 按实体 `id` 合并 —— 同 id 取更新者、不同 id 追加、原有实体一个不丢。
 
-**.meddata 包结构（已实现，`lib/meddataBundle.js`）**：
-```json
-{
-  "version": 1,
-  "patient": { "name": "代聪", "idCard": "511025...", "exportedAt": "..." },
-  "records": [...],
-  "docs": [...],
-  "sha256": "<包体内容的 SHA-256 指纹>"
-}
+> ⚠️ **现状（2026-11-12 核实）**：MedData **没有** `.meddata` 导入 UI/解析器（`src/utils/` 下无 `meddataBundle.js`），只有 `PUT /api/state` 增量协议。所以「导入」= 把包里的 `payload` 各实体数组作为 `upserts` 提交。
+> **包结构以 `lib/meddataBundle.js` 实际产出为准**（早期本节画的 `{version, patient, records, sha256}` 是错的，已按实测改写）：`{ manifest: { format:"meddata-bundle", version:"1.0.0", schemaVersion, fingerprint, exportedAt, typingSummary }, payload: { patient_meta, records, docs, diseaseMetrics, events, courses, invoices, stays, drugPrices, customFields, typeCatalog, feverThresholds } }`，`fingerprint` 是 payload 的 SHA-256。
+
+**「增量无损」的可复跑验收**（2026-11-12 实跑通过：原有 45/28/8/51/3/3 条 → 合并后 46/29/8/51/3/3，丢失 0，二次合并增长 0）：
+
+```bash
+cd /Users/scallion/Documents/projects/MedData && node -e "
+const fs=require('node:fs');
+(async()=>{
+  const { mergeState } = await import('./src/utils/mergeState.js');
+  const base=(await (await fetch('http://127.0.0.1:8787/api/state')).json()).state;
+  const bundle=JSON.parse(fs.readFileSync('/path/to/x.meddata','utf8'));
+  const merged=mergeState(base, bundle.payload);
+  const ids=k=>(merged[k]||[]).map(x=>x.id);
+  const lost=['records','docs','diseaseMetrics','events','courses','invoices']
+    .reduce((n,k)=>n+(base[k]||[]).filter(x=>!ids(k).includes(x.id)).length,0);
+  console.log({ lost, idempotent: mergeState(merged,bundle.payload).records.length===merged.records.length });
+})()"
 ```
 
 ---

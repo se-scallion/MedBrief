@@ -110,3 +110,15 @@
   这类失败必须标注「未核实」，不能写成「MedData 门禁红了」。
 - 要真跑 MedData 门禁，到 MedData 自己的会话里跑（77 个脚本，`node scripts/run-unit.mjs`）。
 
+
+## 2026-11-12 · 测试分两层：`test:unit`（CI 必跑）与 `test:live`（人工触发），别混成一个门禁
+
+- **分层口径**：`npm run test:unit` = `tests/verify-unit.mjs`（纯函数：身份证/入参校验、种子排班预约与回滚、
+  `.meddata` build→parse→指纹篡改拒绝、近期指标聚合），**零网络、零磁盘写入**，任何环境都能跑；
+  `npm run test:live` = `tests/verify-e2e.mjs`（起 5174 打真实 HTTP 接口 + 本地订单落盘），需要服务在跑。
+  `npm test` 指向 `test:unit`（CI 门禁 = 纯函数层，绝不因环境缺服务而红）。
+- **为什么不能只留一个**：分层前那次 6/6 全绿只用 0.14s、零真实网络，被当成"端到端通过"（见上一条）；
+  反过来把 HTTP/浏览器断言塞进 CI，又会因 5174 没起而假红。**分工是：单元层守逻辑，live 层守链路。**
+- **`tests/verify-meddata-bundle.mjs` 不适用本仓**：它是从 MedData 抄来的，import 写的 `../src/utils/meddataBundle.js`（本仓无此路径），
+  且 4 条断言的期待值属于 MedData 版 `typingCard.js`（本仓 `lib/typingCard.js` 是 50 行纯函数副本）。
+  其覆盖面（格式/指纹/篡改拒绝）已由 `tests/verify-unit.mjs` 的 6 条断言守住，故从门禁中排除。

@@ -467,6 +467,19 @@
 
   <!-- Tab 2: 代诊 · 病历资料整理 -->
   <div id="tab-brief" class="tab-panel">
+    <div class="card" style="margin-bottom:12px;">
+      <div class="card-title">就诊前 · 从 MedData 载入近期指标</div>
+      <div class="alert alert-info" style="margin-bottom:10px;">
+        优先读本机 MedData 数据服务（8787，只读）；读不到会自动降级为「导入 .meddata 文件」，不用你手动切换，也不会报错卡住。
+      </div>
+      <div class="flex" style="gap:8px; flex-wrap:wrap;">
+        <button class="btn btn-primary btn-sm" onclick="loadFromMedData()">从本地 MedData 载入近期指标</button>
+        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('meddata-file').click()">导入 .meddata 文件</button>
+        <input id="meddata-file" type="file" accept=".meddata,application/json" style="display:none" onchange="importMedDataFile(this)" />
+      </div>
+      <div id="meddata-status" class="mt12" style="font-size:12px; color:var(--gray-400);">尚未载入</div>
+      <div id="meddata-latest" class="hidden mt12" style="font-size:12px; line-height:1.8;"></div>
+    </div>
     <div class="grid2">
       <div>
         <div class="card">
@@ -511,7 +524,7 @@
           <div class="card">
             <div class="card-title">标准交换包 (.meddata)</div>
             <div class="alert alert-info" style="margin-bottom:12px;">
-              此包可直接导入 MedData 个人档案系统，完整还原指标趋势与分型卡。
+              此包可直接导入 MedData 个人档案系统（增量无损合并：同 SHA-256 的原件不会重复导入），完整还原指标趋势与分型卡。
             </div>
             <div class="form-row"><label>患者</label><span id="bd-name" style="font-weight:600;"></span></div>
             <div class="form-row"><label>疾病</label><span id="bd-disease"></span></div>
@@ -521,7 +534,7 @@
               <span id="bd-sha256" style="font-size:11px; color:var(--gray-400); word-break:break-all; flex:1;"></span>
             </div>
             <div class="mt12 flex" style="gap:8px;">
-              <button class="btn btn-primary btn-sm" onclick="downloadBundle()">下载 .meddata 文件</button>
+              <button class="btn btn-primary btn-sm" onclick="downloadBundle()">就诊后导出 .meddata</button>
               <button class="btn btn-secondary btn-sm" onclick="copyBundleSha()">复制 SHA-256</button>
             </div>
           </div>
@@ -581,13 +594,18 @@
           </div>
           <div id="login-popup-status" class="mt12 hidden alert alert-info" style="font-size:12px;"></div>
 
-          <!-- 高级/备用选项：折叠展示 -->
+          <!-- 开发者调试区：默认折叠。普通患者不需要也不应该打开（产品原则：面向患者，禁止 F12 抄凭据） -->
           <details style="margin-top:16px; font-size:12px; color:var(--gray-600); border-top:1px dashed var(--gray-200); padding-top:10px;">
-            <summary style="cursor:pointer; color:var(--brand); font-weight:500;">高级选项：手动填入票据或 Cookie（备用）</summary>
+            <summary style="cursor:pointer; color:var(--gray-500); font-weight:500;">开发者调试区（普通患者请忽略）</summary>
             <div style="margin-top:10px;">
+              <div class="alert alert-warn" style="font-size:12px; line-height:1.6; margin-bottom:10px;">
+                <strong>这不是给患者用的。</strong>正常使用只需点击上方「一键唤起 114 登录窗口」。
+                下面这些字段要求从浏览器开发者工具手工复制凭据，已被产品口径禁止；
+                保留仅为排障，且票据直连在瑞数 WAF 下已实测不可用（462）。
+              </div>
               <div class="form-row">
                 <label style="min-width:90px;">用户票据</label>
-                <input type="text" id="cfg-ticket" placeholder="cmi-user-ticket（留空则优先使用弹窗自动登录）" />
+                <input type="text" id="cfg-ticket" placeholder="仅排障用：cmi-user-ticket（正常流程请留空）" />
               </div>
               <div class="form-row" style="align-items:flex-start;">
                 <label style="min-width:90px; padding-top:6px;">完整 Cookie</label>
@@ -949,6 +967,99 @@
   }
 
   // ===== 生成 MedData 交换包 =====
+  // ===== 就诊前：从 MedData 载入 / 导入 .meddata（通道 2 与其降级路径）=====
+  function setMedDataStatus(text, color) {
+    const el = document.getElementById('meddata-status')
+    el.textContent = text
+    el.style.color = color || 'var(--gray-400)'
+  }
+
+  function renderMedDataLatest(summary) {
+    const box = document.getElementById('meddata-latest')
+    const latest = summary.latest || {}
+    const order = ['WBC', 'PLT', 'Hb', 'RBC', 'NEUT_ABS', 'LYM_ABS', 'HS_CRP', 'BM_BLAST_PCT', 'FCM_MRD_PCT', 'BCR_ABL1_RATIO']
+    const rows = order.filter(c => latest[c]).map(c => {
+      const it = latest[c]
+      return `<div class="session-row"><span class="session-key">${it.label}</span>
+        <span><b>${it.value}</b> ${it.unit || ''}
+        <span style="color:var(--gray-400);">· ${it.date || '日期未知'}</span></span></div>`
+    })
+    if (!rows.length) {
+      box.innerHTML = '<div style="color:var(--gray-400);">该数据源里没有可用的近期指标</div>'
+    } else {
+      box.innerHTML = rows.join('')
+    }
+    box.classList.remove('hidden')
+  }
+
+  // 把载入到的最新指标写进「近期指标」文本框（已有内容则追加，绝不覆盖用户输入）
+  function applySummaryToForm(summary) {
+    const text = summary.text || ''
+    const recentEl = document.getElementById('b-recent')
+    if (text) {
+      const prev = recentEl.value.trim()
+      recentEl.value = prev ? `${prev}\n${text}` : text
+    }
+    // 患者姓名 / 疾病类型（仅当来源包里有，且当前为空时才填）
+    const p = summary.patient || {}
+    const nameEl = document.getElementById('b-name')
+    if (p.name && !nameEl.value.trim()) nameEl.value = p.name
+    const diseaseEl = document.getElementById('b-disease')
+    const diag = String(p.diagnosis || '').toUpperCase()
+    if (diag) {
+      if (diag.includes('B-ALL') || diag.includes('B CELL')) diseaseEl.value = 'B-ALL'
+      else if (diag.includes('T-ALL')) diseaseEl.value = 'T-ALL'
+      else if (diag.includes('AML')) diseaseEl.value = 'AML'
+      else if (diag.includes('CML')) diseaseEl.value = 'CML'
+      else if (diag.includes('LYMPHOMA') || diag.includes('NHL')) diseaseEl.value = 'NHL'
+    }
+  }
+
+  async function loadFromMedData() {
+    setMedDataStatus('正在读取本机 MedData（8787）…')
+    try {
+      const r = await fetch(BASE + '/api/meddata/summary')
+      const j = await r.json()
+      if (j.ok) {
+        renderMedDataLatest(j)
+        applySummaryToForm(j)
+        const c = j.counts || {}
+        setMedDataStatus(`已从本机 MedData 载入：化验 ${c.records ?? '-'} 份 · 疾病指标 ${c.diseaseMetrics ?? '-'} 条（只读）`, 'var(--success, #16a34a)')
+        return
+      }
+      // 8787 不可用 → 自动降级到文件导入，不报错卡死
+      setMedDataStatus(`本机 MedData 未就绪（${j.reason || '未知原因'}），已自动切到「导入 .meddata 文件」，请选择文件…`, 'var(--warning, #d97706)')
+      document.getElementById('meddata-file').click()
+    } catch (e) {
+      setMedDataStatus(`读取失败（${e.message}），已自动切到「导入 .meddata 文件」，请选择文件…`, 'var(--warning, #d97706)')
+      document.getElementById('meddata-file').click()
+    }
+  }
+
+  async function importMedDataFile(input) {
+    const file = input.files && input.files[0]
+    if (!file) return
+    setMedDataStatus(`正在解析 ${file.name} …`)
+    try {
+      const content = await file.text()
+      const r = await fetch(BASE + '/api/brief/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+      })
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || '解析失败')
+      renderMedDataLatest(j)
+      applySummaryToForm(j)
+      const c = j.counts || {}
+      setMedDataStatus(`已从 ${file.name} 载入：化验 ${c.records ?? 0} 份 · 文书 ${c.docs ?? 0} 份 · 疾病指标 ${c.diseaseMetrics ?? 0} 条 · 指纹 ${String(j.sha256 || '').slice(0, 12)}…`, 'var(--success, #16a34a)')
+    } catch (e) {
+      setMedDataStatus(`导入失败：${e.message}`, 'var(--danger, #dc2626)')
+    } finally {
+      input.value = ''  // 允许重复选同一个文件
+    }
+  }
+
   async function generateBundle() {
     const name = document.getElementById('b-name').value.trim()
     const disease = document.getElementById('b-disease').value
