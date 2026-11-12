@@ -7,7 +7,7 @@
 //   测试 4：预约主鸿鹄普通空号，断言凭证完整性
 //   测试 5：病历录入与 MedData 标准交换包生成及 SHA-256 校验
 //   测试 6：取消订单与号源回滚
-// 运行：node scripts/verify-medbrief-standalone.mjs
+// 运行：npm run test:live（= node tests/verify-e2e.mjs）；需 5174 已启动
 
 import { strict as assert } from 'node:assert'
 import http from 'node:http'
