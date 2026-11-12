@@ -619,8 +619,10 @@ export default function IntakePage() {
             multiple
             accept="image/*"
             showUploadList={false}
-            beforeUpload={(file, fileList) => {
-              addFiles(fileList)
+            // 注意：antd 对每个文件都会调用一次 beforeUpload，且第二个参数是「整个批次」。
+            // 若在这里 addFiles(fileList)，选 2 张就会被加进 2×2=4 条（重复导入）。
+            beforeUpload={(file) => {
+              addFiles([file])
               return false
             }}
           >

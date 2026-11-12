@@ -14,9 +14,30 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { buildCard } from '../lib/intakeCard.js'
 import { blocksToLines } from '../lib/visionLayout.mjs'
-import { parseLabRows } from '../lib/reportIntake.mjs'
+import { parseLabRows, detectCbcCode, normalizeUnit } from '../lib/reportIntake.mjs'
 
 const FIXTURE = JSON.parse(fs.readFileSync(new URL('./fixtures/vision-blocks-lab.json', import.meta.url), 'utf8'))
+const REAL = JSON.parse(fs.readFileSync(new URL('./fixtures/vision-blocks-real-cbc.json', import.meta.url), 'utf8'))
+
+function scoreReal() {
+  const rows = parseLabRows(blocksToLines(REAL.blocks).join('\n'))
+  const used = new Set()
+  const hit = []
+  const wrong = []
+  const miss = []
+  const noValue = []
+  for (const e of REAL._expected) {
+    if (String(e.value) === '') { noValue.push(e.code); continue } // 报告本身无结果值，不算解析失败
+    const idx = rows.findIndex((r, i) => !used.has(i) && detectCbcCode(r.name) === e.code)
+    if (idx < 0) { miss.push(e.code); continue }
+    used.add(idx)
+    const ev = Number(String(e.value).replace(/[^\d.\-]/g, ''))
+    const gv = Number(rows[idx].num)
+    if (Number.isFinite(ev) && Math.abs(ev - gv) <= Math.max(0.02, Math.abs(ev) * 0.005)) hit.push(e.code)
+    else wrong.push(`${e.code}: ${rows[idx].value} ≠ ${e.value}`)
+  }
+  return { rows, hit, wrong, miss, noValue }
+}
 
 let pass = 0
 const fails = []
@@ -174,6 +195,42 @@ it('判定与参考区间：11 项的高低判定全对', () => {
     RBC: 'low', ALT: 'high', LDH: 'high', CRP: 'high', CREA: 'normal', 'RET%': 'normal',
   }
   assert.deepEqual(got, want)
+})
+
+// ---------- 5. 真实图回归（真实朝阳血常规，已脱敏） ----------
+it('真实血常规 fixture（已脱敏）：解析出 20/23 行（有值 20 项全对、0 错值）', () => {
+  assert.equal(REAL.blocks.length, 123, `真实 fixture 应含 123 个 block，实际 ${REAL.blocks.length}`)
+  const { rows, hit, wrong, miss, noValue } = scoreReal()
+  const inferred = rows.filter((r) => r.nameInferred)
+  console.log(`      真实图：解析 ${rows.length} 行 / 有值项命中 ${hit.length}/${REAL._expected.length - noValue.length} / 推定名称 ${inferred.length} 行（${inferred.map((r) => r.name).join('、')}）/ 值错 ${wrong.length} / 漏 ${miss.join(',') || '无'} / 报告本身无值 ${noValue.join(',')}`)
+  assert.ok(hit.length >= 20, `命中数退化：${hit.length}（基线 20，只升不降）`)
+  assert.deepEqual(wrong, [], `出现错误值（比漏行严重得多）：${wrong.join('；')}`)
+  assert.ok(inferred.length > 0 && inferred.every((r) => r.nameInferred === true), '按序号推定的名称必须带 nameInferred 标记，不得冒充识别结果')
+})
+
+it('真实图关键项不得漏：WBC / Hb / PLT / RBC / HCT / MCHC / RDW / hsCRP / NEUT_PCT / MONO_ABS 必须命中', () => {
+  const { hit } = scoreReal()
+  // NEUT_PCT / MONO_ABS 曾是「名称块没被识别」的已知缺口（74% 基线时靠序号插值修好），现已转为必须有
+  const must = ['WBC', 'Hb', 'PLT', 'RBC', 'HCT', 'MCHC', 'RDW_CV', 'HS_CRP', 'NEUT_PCT', 'MONO_ABS']
+  const missing = must.filter((c) => !hit.includes(c))
+  assert.deepEqual(missing, [], `关键项漏解析：${missing.join('、')}`)
+})
+
+it('真实图单位规范化：不得出现 `*10 9/L` / `£1` / `gL&` 这类 OCR 噪声单位', () => {
+  const { rows } = scoreReal()
+  const dirty = rows.filter((r) => /[*£~°&]/.test(r.unit || ''))
+  assert.deepEqual(dirty.map((r) => `${r.name}:${r.unit}`), [], '单位未规范化')
+  const rbc = rows.find((r) => detectCbcCode(r.name) === 'RBC')
+  assert.equal(rbc.unit, '10^12/L', `RBC 单位应为 10^12/L，实际 ${rbc.unit}`)
+  assert.equal(normalizeUnit('*10 9/L'), '10^9/L')
+  assert.equal(normalizeUnit('*109/L'), '10^9/L')
+  assert.equal(normalizeUnit('£1'), '')
+})
+
+it('真实 fixture 已脱敏：不含姓名 / 病历号 / 条码 / 床号 / 医生 / 医院原值', () => {
+  const dump = JSON.stringify(REAL)
+  const leaks = ['代惠', '2094933', '0024379684', 'F3266470935', '血液二^12', '史庭', '首都医科大学附属北京朝阳医院'].filter((k) => dump.includes(k))
+  assert.deepEqual(leaks, [], `fixture 里仍有真实信息：${leaks.join('、')}`)
 })
 
 console.log('\n' + '='.repeat(46))
