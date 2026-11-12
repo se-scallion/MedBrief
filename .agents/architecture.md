@@ -189,6 +189,42 @@ ego lite 的 Chromium（真实指纹 + 独立 profile）可通过。故 `lib/ego
 
 **暂不引入 react-router-dom**：整站目前用 tab 状态 + URL query（`?tab=`），够用；等真的出现多级页面再引，避免过度设计。
 
+## 前端选型：React（2026-11-12 决策，不选 Vue）
+
+**结论：React。** 不是性能之争（用户原话：这点损耗很少），是升级与管理的成本之争。
+
+| 维度 | React（采用） | Vue（否决） |
+|---|---|---|
+| 与 MedData 同栈 | ✅ MedData 是 **React 19.2.7 + antd 6.6.6 + react-router-dom 6 + vite 8 + echarts 6 + tailwind**，59 个文件 import react | ❌ MedData 全仓 **零 Vue**（`grep vue` 无命中） |
+| 依赖成本 | ✅ `node_modules` 软链到 MedData，react/antd/dayjs 现成，`vue` 未安装 → 选 Vue 要新装一套 | ❌ 需新增 vue/vue-router/pinia/element-plus |
+| 组件与视觉 | ✅ antd 6 直接与 MedData 一致，主题 token 可对齐；echarts 可直接复用于指标趋势图 | ❌ 换 element-plus，两套视觉规范 |
+| 知识可复用 | ✅ MedData 的 `.agents/testing-lessons.md` 里的 React/antd 坑能直接用 | ❌ 经验不可迁移 |
+| 未来合并 | ✅ INTERFACE.md 已定「触发条件到了就并 monorepo」，同栈才是零摩擦 | ❌ 并库要重写一遍 |
+| 上手直观性 | 中（JSX + hooks 心智） | ✅ 略优（模板语法更直白）—— 这是 Vue 唯一优势，但不足以抵消上面五条 |
+
+**Vue 翻盘条件**（写清，别以后凭感觉反复）：MedData 迁到 Vue，或本项目要独立团队接手且他们只熟 Vue。二者都没有 → 保持 React。
+
+**路由**：用 MedData 现成的 `react-router-dom@6`（不再自己写 Segmented 切 tab），因为「监控是挂号的子页」需要嵌套路由。
+
+---
+
+## 信息架构：5 个 tab → 3 个一级页（2026-11-12 用户要求「该合并合并」）
+
+```
+/guahao                     挂号（一级）
+  ├─ /guahao                 选医生（医生库：最近 / 搜索 / 收藏）
+  ├─ /guahao/:doctorId/monitor   该医生的排班监控（14 天出诊/停诊、07:00 倒计时、预警）  ← 原「排班监控」tab
+  ├─ /guahao/:doctorId/flow      该医生的 114 流程（验证码/短信/waf_blocked 人工接管）  ← 原「114 挂号」页
+  └─ /guahao/orders              我的预约与凭证（打印/取消）                            ← 原「预约凭证」tab
+/records                    病历（一级）：录入、近期指标载入、一页速览、.meddata 导入导出  ← 原「病历整理」tab
+/settings                   设置（一级）：114 账号登录态、轮询/预警偏好、开发者调试区（折叠） ← 原「登录凭据」tab
+```
+
+**合并规则**：
+1. 一级页 ≤ 3；新增能力先问「挂在哪个一级页下」，回答不了才允许新开一级页。
+2. 一切「按医生」的视图必须带 `:doctorId`，不允许再有「默认医生」的隐式行为。
+3. 旧 `index.html` 的 5 个 tab 与上述 3 页一一折旧，不做一对一搬运。
+
 ## 前端合并（方案 C，2026-11-12 用户拍板：整站 React 化 + 视觉重构）
 
 目标：**一套前端**。旧 `index.html`（手写 CSS + 表格，视觉不统一）最终下线，功能按 tab 逐个迁进 `web/src/`。
@@ -197,12 +233,13 @@ ego lite 的 Chromium（真实指纹 + 独立 profile）可通过。故 `lib/ego
 | 阶段 | 内容 | 状态 |
 |---|---|---|
 | 0 | 壳：`web/src/App.jsx`（主题 token 统一 `#c8102e`、Segmented 切 tab、tab 写进 URL）+ `/next/` 预览托管 + `npm run build:next` | ✅ 2026-11-12 |
-| 1 | **排班监控**：`MonitorPane`，antd Table/Tag/Statistic 重建 | ✅ |
+| 1 | **排班监控（→ 归属 `/guahao/:doctorId/monitor`）**：`MonitorPane`，antd Table/Tag/Statistic 重建 | ✅ 待参数化 |
 | 2 | **114 挂号**：`BookingPage.jsx` 直接挂进 shell（不再 iframe 嵌套） | ✅（待与阶段 4 合并入口） |
-| 3 | **病历整理**：表单 + 近期指标载入 + .meddata 导出 | ⏳ 待迁 |
-| 4 | **预约凭证**：凭证卡 + 打印（`@media print` 需单独写，antd 默认打印会散架） | ⏳ 待迁 |
-| 5 | **登录凭据**：一键唤起登录窗口 + 会话状态（最敏感，最后迁） | ⏳ 待迁 |
-| 6 | 收尾：`base` 改回 `/`、删除旧 `index.html`、`/guahao` 301 到 `/`、删 8b/8c 两条重复静态托管 | ⏳ |
+| 3 | **病历页 `/records`**：表单 + 近期指标载入 + 一页速览 + .meddata 导出（原 index.html 的 tab-brief） | ⏳ 待迁 |
+| 4 | **预约与凭证 `/guahao/orders`**：凭证卡 + 打印（`@media print` 需单独写，antd 默认打印会散架） | ⏳ |
+| 5 | **设置页 `/settings`**：114 登录态 + 轮询/预警偏好 + 开发者调试区（折叠） | ⏳ |
+| 6 | **医生库与子路由**：`/guahao` 选医生 → `/:doctorId/monitor` / `/:doctorId/flow`，`react-router-dom@6` 接管 | ⏳ |
+| 7 | 收尾：`base` 改回 `/`、删除旧 `index.html`、`/guahao` 旧页 301、删 8b/8c 两条重复静态托管 | ⏳ |
 
 **护栏（阶段 0 确立，不许跳）**：
 1. **API 一行不改**：迁移只动前端，`npm run test:live` 6/6 必须始终绿。
