@@ -16,7 +16,7 @@
 | 浏览器自动化 | **ego-browser（ego lite）**，不可换 Playwright（见下方「关键判据」） |
 | 依赖 | `node_modules` 软链接到 `MedData/node_modules`（省磁盘；`web/node_modules` 仅存 vite 临时目录） |
 | 端口 | `5174`（固定，可用 `PORT` 覆盖） |
-| 进程管理 | 手动启动 `node server.mjs`（尚未接入 launchd） |
+| 进程管理 | 5174 手动 `node server.mjs`（尚未接入 launchd）；8787 是**裸 node 进程**（不是 launchd，重启需手动）；8008 由 launchd `gui/501/com.user.meddata.api` 常驻 |
 
 ---
 
@@ -164,7 +164,7 @@ ego lite 的 Chromium（真实指纹 + 独立 profile）可通过。故 `lib/ego
 
 | # | 事项 | 验收标准 |
 |---|---|---|
-| 1 | **114 号源接口 461 的解法未找到** —— 登录可自动化，`product/calendar` 稳定 461，当前终态是 `waf_blocked` + 人工选号 | 能跑出一次自动化「选号 → 提交」并在 114 端查到订单；做不到则必须在文档里固定「半自动」定位 |
+| 1 | **114 号源接口 461**：已确认与医院无关（朝阳、北大人民都 461）；`/order` 确认页可直连、`auth/patient/list` 200，但 `product/confirmV2` 缺 `product/calendar` 下发的 `uniqueProductKey/uniqueProductTimeKey` → 200 `8888`。**当前定位固定为半自动**（`waf_blocked` + 人工接管四步，见 playbook） | 只剩一条没测：放号时刻（每日 07:00）重打 calendar 是否解 461。测完即结案 |
 | 2 | MedData `GET /api/summary` 只读接口未落地（现只有 `/api/health`、`/api/state`、`/api/blobs`） | 8787 返回 `{latest:{WBC,PLT,HGB,...}}`，MedBrief 前端能一键回填 |
 | 3 | 工作台缺「从本地 MedData 载入近期指标」按钮与「就诊后一键导出 .meddata」完整交互 | `index.html` 两个按钮可用，走 8787 或 .meddata 文件降级 |
 | 4 | 回归分层：`tests/verify-e2e.mjs` 打的是 `guahaoCore.js` 静态种子 + 本地订单，实测 0.14s，**不覆盖 114 真链路** | 拆成 `unit`（种子/校验）与 `live`（真浏览器，需人工短信）两档，CI 只跑 unit |
