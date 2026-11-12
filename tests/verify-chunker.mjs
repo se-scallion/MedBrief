@@ -119,6 +119,26 @@ if (!fs.existsSync(TALL) || !fs.existsSync(SAFE)) {
       assert.equal(tall.chunks, 2, `应切 2 块，实际 ${tall.chunks}`)
       assert.equal(tall.rawRowCount, 48, `rawRowCount 应为 48（切块前实测 35），实际 ${tall.rawRowCount}`)
     })
+    it('e2e：响应字段齐全且类型正确（chunked/chunks/chunkHeights/chunkValueConflicts）', () => {
+      for (const [label, r] of [['超高图', tall], ['安全图', safe]]) {
+        assert.equal(typeof r.chunked, 'boolean', `${label}: chunked 应为布尔`)
+        assert.equal(typeof r.chunks, 'number', `${label}: chunks 应为数字`)
+        assert.ok(Array.isArray(r.chunkHeights), `${label}: chunkHeights 应为数组`)
+        assert.equal(r.chunkHeights.length, r.chunks, `${label}: chunkHeights 长度应等于 chunks`)
+        assert.ok(r.chunkHeights.every((h) => typeof h === 'number' && h > 0), `${label}: chunkHeights 应为正数`)
+        assert.equal(typeof r.rawRowCount, 'number', `${label}: rawRowCount 应为数字`)
+        assert.equal(typeof r.chunkValueConflicts, 'number', `${label}: chunkValueConflicts 应为数字`)
+        assert.equal(typeof r.chunkMerged, 'number', `${label}: chunkMerged 应为数字`)
+      }
+      // 安全图（h/w 2.41）必须是单块且高度等于原图，证明单块路径没被切
+      assert.equal(safe.chunks, 1)
+      assert.deepEqual(safe.chunkHeights, [4816], `安全图应为单块且高 4816，实际 ${JSON.stringify(safe.chunkHeights)}`)
+      assert.equal(safe.chunkMerged, 0, '不切块就不该有切块合并')
+      // 超高图：块高之和 > 原图高（重叠使然），且每块 h/w 落在安全区
+      assert.ok(tall.chunkHeights.reduce((a, b) => a + b, 0) > 6424, '块高之和应大于原图高（因重叠）')
+      for (const h of tall.chunkHeights) assert.ok(h / 2000 <= 2.4 + 0.01, `块 h/w 越界：${(h / 2000).toFixed(2)}`)
+    })
+
     it('e2e：切块合并后行数不虚高（12 项就该 12 行），且合并留痕', () => {
       assert.equal(tall.rows.length, 12, `合并后应为 12 行，实际 ${tall.rows.length}`)
       const merged = tall.rows.filter((r) => r.chunkMerged)
