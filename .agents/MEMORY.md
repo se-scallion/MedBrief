@@ -46,9 +46,21 @@
 - 「北京大学人民医院 血液科门诊」（`H02110002` / `yygh_NK_4d2b43fd_vir` / `4011301`）只是**链路联调用的历史目标**，
   不是业务目标；相关的 461 记录仍有效（WAF 判据与医院无关），但排班/下单都要指回朝阳。
 - **1220 是朝阳官网页面编号，不是 114 医生 ID**：`Index_1220.html`，项目内部 id 用 `doc_zhuhonghu`。
-- ⚠️ **当前缺口**：朝阳医院的 114 `hosCode` **还没拿到**。`data/114-catalog/hospitals.json` 只缓到 27 家
-  （309 个院区里的第一屏），里面没有朝阳。拿到后把 `hosCode` + 血液科 `dept1Code/dept2Code` 写在本节，
-  并可用 `department/list/{hosCode}` 反证编码有效。
+
+### 114 编码（2026-11-12 已取得，`department/list` 全部回 `code 0000`）
+
+| 院区 | 114 `hosCode` | 血液科 `dept1Code` / `dept2Code` | 佐证 |
+|---|---|---|---|
+| **本部（工体南路）** | **`H05110001A`** | **`NKXT` / `XY`**（内科系统 → 血液内科） | 17 个一级科室，`code 0000` |
+| 常营院区 | `H05110001C` | `NKXT` / `XY`（另有专病/国际部血液类门诊） | 15 个一级科室，`code 0000` |
+| 石景山院区 | `H05110001` | `NKXT` / `XY` | 16 个一级科室，`code 0000` |
+
+- **取编码的方法（可复跑）**：`node tools/browser-guahao.mjs --search-hospital 朝阳 --save`
+  走 `GET /search/query?keyWord=<明文URL编码中文>`，结果**增量合并**进 `data/114-catalog/hospitals.json`（现 41 条）。
+- 该接口的 `keyWord` 是**明文 URL 编码**，不是加密串（原始抓包见 `data/114-flow/evidence/p0-search-hits.json`）。
+- ⚠️ **医生级佐证仍缺**：`主鸿鹄` 无法在脚本侧确认。`/search/query` 只搜医院（中文人名回空 list），
+  医生数据只存在于 `product/calendar` 的 `detail[]`，而该接口仍 461。
+  要确认出诊，只能在已登录的浏览器窗口里人工看，或等 461 解除。
 
 ## 放号规则（项目既有口径，2026-11-12 复核仍在用）
 

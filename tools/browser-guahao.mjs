@@ -9,7 +9,8 @@
 //
 // 常用开关：
 //   --no-auto-submit    即使指定医生也停下等确认
-//   --list-hospitals    只拉医院列表（不必登录）
+//   --list-hospitals    只拉医院列表首屏（不必登录）
+//   --search-hospital <关键词>  按关键词搜医院（写本地目录，可加 --save）
 //   --list-depts <hosCode>  拉某医院科室树（不必登录）
 //   --solver-check <png>    只跑验证码识别（自检用）
 //
@@ -21,6 +22,7 @@ import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { Guahao114Flow, STAGES } from '../lib/guahao114Flow.js'
 import { egoFetchHospitals, egoFetchDepts } from '../lib/egoDriver.js'
+import { createCatalogStore } from '../lib/catalogStore.js'
 import { solveCaptcha, captchaConfig } from '../lib/captchaSolver.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -119,6 +121,28 @@ async function listDepts(hosCode) {
   return 0
 }
 
+async function searchHospital(keyword, { save = false } = {}) {
+  const store = createCatalogStore()
+  const list = await store.searchHospitals(keyword)
+  if (!list.length) {
+    console.log(`关键词「${keyword}」无匹配医院`)
+    return 3
+  }
+  console.log(`关键词「${keyword}」命中 ${list.length} 家：`)
+  for (const h of list) console.log(`${h.code}\t${h.name}`)
+  if (save) {
+    const r = store.mergeHospitals(
+      list.map((h) => ({ code: h.code, name: h.name })),
+      { source: 'search/query' },
+    )
+    console.log(`\n已合并进本地目录：新增 ${r.added.length}，补全 ${r.updated.length}，当前共 ${r.total} 条`)
+    console.log(`目录文件：${store.baseDir}/hospitals.json`)
+  } else {
+    console.log('\n（未写盘；加 --save 合并进本地目录）')
+  }
+  return 0
+}
+
 async function solverCheck(png) {
   const file = path.resolve(png)
   if (!fs.existsSync(file)) {
@@ -137,6 +161,7 @@ async function main() {
   if (args.help || args.h) { usage(); return 0 }
   if (args['list-hospitals']) return await listHospitals()
   if (args['list-depts']) return await listDepts(String(args['list-depts']))
+  if (args['search-hospital']) return await searchHospital(String(args['search-hospital']), { save: !!args.save })
   if (args['solver-check']) return await solverCheck(String(args['solver-check']))
 
   const phone = String(args.phone || process.env.MEDBRIEF_114_PHONE || '').trim()

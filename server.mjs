@@ -10,6 +10,7 @@
 //   - POST /api/brief/bundle         问诊病历录入并打包为 MedData 标准交换包 (.meddata)
 //   - GET  /api/meddata/summary      就诊前从本机 MedData 数据服务(8787)载入近期指标（不可用则 ok:false，前端降级导入 .meddata）
 //   - POST /api/brief/import         导入 .meddata 交换包并解析出近期指标（通道 2 的降级路径）
+//   - GET  /api/brief/visit-summary  本次就诊一页速览（纯文本 + 可打印 HTML；只陈述数值与趋势，不下结论）
 //   - GET  /api/guahao/sniper/status 114 会话与时钟差校准状态
 //   - POST /api/guahao/reset         排班与订单重置（供自动化测试隔离用）
 //   - GET  /api/guahao/114/catalog/hospitals        114 医院目录（免登录）
@@ -33,6 +34,7 @@ import { chromium } from 'playwright'
 import { createGuahaoManager } from './lib/guahaoCore.js'
 import { buildMedDataBundle, parseMedDataBundle } from './lib/meddataBundle.js'
 import { summarizeState, formatSummaryText } from './lib/metricsSummary.js'
+import { buildVisitBrief } from './lib/visitBrief.js'
 import { fetchLiveDoctorSchedule } from './lib/bjcyhScraper.js'
 import { createGuahao114Service } from './lib/guahao114Service.js'
 
@@ -51,6 +53,8 @@ const guahaoManager = createGuahaoManager({ storageFile: STORAGE_FILE, fs })
 const guahao114 = createGuahao114Service({ dataDir: DATA_DIR, ordersFile: STORAGE_FILE })
 
 let activeLoginBrowser = null
+// 最近一次导入的 .meddata state（内存态，仅用于生成「本次就诊一页速览」，不落盘）
+let lastImportedState = null
 
 function getStoredAuth() {
   if (fs.existsSync(AUTH_FILE)) {
@@ -180,6 +184,49 @@ const server = http.createServer(async (req, res) => {
         reason: e.name === 'TimeoutError' ? '8787 超时未响应' : e.message,
         fallback: 'import',
         hint: '本机 MedData 数据服务未启动；改用「导入 .meddata 文件」即可，功能不受影响。',
+      })
+    }
+    return
+  }
+
+  // 1c. GET /api/brief/visit-summary — 本次就诊一页速览（只陈述数值/时间/趋势，不下结论）
+  // 数据源：优先用本次会话导入的 .meddata state；否则读 8787 /api/state（只读）。两者都不可用则回 unavailable。
+  if (req.method === 'GET' && pathname === '/api/brief/visit-summary') {
+    const limit = Math.min(10, Math.max(1, parseInt(parsedUrl.searchParams.get('limit') || '3', 10) || 3))
+    const source = parsedUrl.searchParams.get('source') || 'auto'
+    try {
+      let state = null
+      let sourceLabel = ''
+      if (source !== 'live' && lastImportedState) {
+        state = lastImportedState
+        sourceLabel = '导入的 .meddata 交换包'
+      } else if (source === 'import') {
+        sendJson(res, 409, {
+          ok: false,
+          error: '本次会话还没有导入过 .meddata 包',
+          hint: '先点「导入 .meddata 文件」，再生成速览。',
+        })
+        return
+      } else {
+        const dataUrl = process.env.MEDDATA_DATA_URL || 'http://127.0.0.1:8787'
+        const token = process.env.MEDDATA_SYNC_TOKEN || ''
+        const r = await fetch(`${dataUrl}/api/state`, {
+          headers: token ? { 'x-sync-token': token } : {},
+          signal: AbortSignal.timeout(3000),
+        })
+        if (!r.ok) throw new Error(`8787 返回 HTTP ${r.status}`)
+        const j = await r.json()
+        state = j.state || j
+        sourceLabel = '本机 MedData（8787，只读）'
+      }
+      const brief = buildVisitBrief({ state, limit, sourceLabel, generatedAt: new Date().toISOString() })
+      sendJson(res, 200, { ok: true, ...brief })
+    } catch (e) {
+      sendJson(res, 200, {
+        ok: false,
+        unavailable: true,
+        reason: e.name === 'TimeoutError' ? '8787 超时未响应' : e.message,
+        hint: '本机 MedData 未启动；先「导入 .meddata 文件」再生成速览。',
       })
     }
     return
@@ -701,14 +748,14 @@ function getNextReleaseCountdown() {
       return
     }
 
-    // 8c. POST /api/brief/import — 导入 .meddata 交换包（通道 2 的降级路径）
-    // 解析放在服务端：lib/meddataBundle.js 是 ESM，index.html 是 classic script，
+    // 8c. POST /api/brief/import — 导入 .meddata 交换包（通道 2 的降级路径）    // 解析放在服务端：lib/meddataBundle.js 是 ESM，index.html 是 classic script，
     // 前端不重复实现一份解析器（避免两份实现漂移）。
     if (pathname === '/api/brief/import') {
       try {
         const input = payload.bundle ?? payload.content ?? payload
         if (!input) throw new Error('缺少 bundle 或 content 字段')
         const state = parseMedDataBundle(input) // 指纹不匹配会 throw
+        lastImportedState = state // 缓存：供 GET /api/brief/visit-summary?source=import 复用
         const summary = summarizeState(state)
         const patientMeta = state.patient_meta || {}
         sendJson(res, 200, {

@@ -110,3 +110,52 @@ node tools/browser-guahao.mjs \
 ### 退出码（命令行）
 
 `0` 成功 · `1` 失败 · `2` 被 WAF 拦截 · `3` 需人工处理（就诊人/确认/验证码）
+
+---
+
+## 目标医院：朝阳医院 114 编码（2026-11-12 取得）
+
+| 院区 | `hosCode` | 血液科 `dept1Code` / `dept2Code` |
+|---|---|---|
+| **本部（西直门）** | **`H05110001A`** | **`NKXT` / `XY`** |
+| 常营院区 | `H05110001C` | `NKXT` / `XY` |
+| 石景山院区 | `H05110001` | `NKXT` / `XY` |
+
+取证命令（可复跑）：
+
+```bash
+node tools/browser-guahao.mjs --search-hospital 朝阳 --save   # 增量合并进 data/114-catalog/hospitals.json
+node tools/browser-guahao.mjs --list-depts H05110001A          # 反证编码有效，找血液内科
+```
+
+- 搜索走 `GET /search/query?keyWord=<明文 URL 编码中文>`，`department/list` 回 `code 0000`（一级科室 17 个）。
+- 原始抓包：`data/114-flow/evidence/p0-search-hits.json`、`data/114-flow/evidence/p0-depts.json`。
+- ⚠️ 医生级（「主鸿鹄」是否出诊）**脚本侧无法佐证**：`/search/query` 只搜医院，医生数据仅在 `product/calendar`。
+
+## `product/calendar` 的三条替代路径实测（2026-11-12，目标=朝阳本部血液科）
+
+| 路径 | 做法 | 实测结果 | 截图 |
+|---|---|---|---|
+| ① 钩子复用 | `Page.addScriptToEvaluateOnNewDocument` 注入 XHR 钩子后进号源页 | 页内 9 个请求：`productDepartmentDetail`/`user/get`/`refreshTime`/`getDivertInfo` 全 `200 code 0000`；**仅 `product/calendar` = 461（空响应体）** | `p2-cy-schedule.png` |
+| ② 绕开 calendar | 直连 `/order` 确认页（参数取自 JS 包 `path:"/order"`） | **确认页能打开**，`auth/patient/list` → `200 0000`（就诊人+医保齐全），页面渲染出「立即预约」；但 `product/confirmV2` → **200 `code 8888 系统繁忙`**，因为缺 `uniqueProductKey/uniqueProductTimeKey`，而这两个键**只由 calendar 下发** | `p2-cy-order.png` |
+| ③ 触发时机 | 放号时刻重打 | **今日未测**（朝阳本部页面提示「明日 07:00 释放 11 月 27 日号源」）；触发条件：次日 07:00 后重跑 `--list-depts` + 号源页观察 calendar 是否转 200 | — |
+
+**结论**：461 与医院无关（北大人民、朝阳本部都 461），也不是「没号」（页面标题与「有号」筛选正常渲染）。
+它卡在「拿号源列表」这一环，而确认页虽然可达，却必须依赖 calendar 下发的 `uniqueProductKey`，所以**无法绕开**。
+
+## 工具终态= waf_blocked + 人工接管（操作步骤）
+
+1. 跑 `node tools/browser-guahao.mjs ...`（或网页表单）→ 自动完成登录态复用、就诊人校验、进入号源页；
+2. 日志出现 `[waf_blocked] 号源接口被瑞数 WAF 拦截（HTTP 461）` 时**不要关浏览器**；
+3. 在 ego lite 窗口里人工点「全部 / 有号」→ 选日期 → 选医生 → 确认就诊人 → 点「立即预约」；
+4. 提交成功以 114 短信 / 页面「预约成功」为准；脚本落的截图在 `data/114-flow/<flowId>_waf_blocked.png`。
+
+复跑命令：
+
+```bash
+# 号源页（观察 461 是否解除）
+node tools/browser-guahao.mjs --list-depts H05110001A
+# 完整流程
+node tools/browser-guahao.mjs --phone <11位手机号> \
+  --hos-code H05110001A --dept1-code NKXT --dept2-code XY --patient-name <就诊人姓名>
+```

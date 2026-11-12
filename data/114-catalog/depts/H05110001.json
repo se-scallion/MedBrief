@@ -1,0 +1,740 @@
+{
+  "hosCode": "H05110001",
+  "fetchedAt": "2026-11-12T09:20:05.038Z",
+  "list": [
+    {
+      "code": "ZMZJ",
+      "name": "专家团队",
+      "advanceDay": 0,
+      "nationalKeyDept": false,
+      "subs": [
+        {
+          "code": "101",
+          "name": "陈杰教授疝、腹壁外科知名专家团队",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        }
+      ]
+    },
+    {
+      "code": "ZBMZ",
+      "name": "专病门诊",
+      "advanceDay": 0,
+      "nationalKeyDept": false,
+      "subs": [
+        {
+          "code": "90B083",
+          "name": "脑积水专业门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B081",
+          "name": "口腔内科专业门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B079",
+          "name": "牙周专业门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B075",
+          "name": "高血压专业门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B074",
+          "name": "老年糖尿病专业门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B073",
+          "name": "疝外专业门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B072",
+          "name": "骨髓瘤专业门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B071",
+          "name": "痤疮专业门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B070",
+          "name": "疝外科造口专业门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B069",
+          "name": "儿童口腔",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B068",
+          "name": "生育咨询专业门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B066",
+          "name": "贫血专业门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B065",
+          "name": "关节脊柱微创专业门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B064",
+          "name": "脑积水及颅脑损伤专业门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B062",
+          "name": "老年高血压专业门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B061",
+          "name": "关节创伤微创治疗专业门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B060",
+          "name": "肛肠专业门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B059",
+          "name": "口腔正畸",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B058",
+          "name": "甲病专业门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B054",
+          "name": "心力衰竭专业门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B053",
+          "name": "孔晓川骨关节专业门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B052",
+          "name": "孕妇营养专业门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B051",
+          "name": "银屑病专业门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B041",
+          "name": "中医湿疹专病门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B038",
+          "name": "中医冠心病专病门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B036",
+          "name": "帕金森专病门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B035",
+          "name": "结石专病门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B034",
+          "name": "腰椎间盘专病门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B033",
+          "name": "慢阻肺专病门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B031",
+          "name": "结石前列腺专病门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B028",
+          "name": "李新贫血专病门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B027",
+          "name": "卒中专病门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B023",
+          "name": "尚占民胃食管反流专病门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B022",
+          "name": "李志刚慢性疼痛专病门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B021",
+          "name": "白玉芝高尿酸血症专病门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B018",
+          "name": "刘明勇眩晕专病门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B017",
+          "name": "王晶下肢水肿专病门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B016",
+          "name": "李健足踝膝关节专病门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B015",
+          "name": "肥胖专病门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B014",
+          "name": "多囊卵巢专病门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B013",
+          "name": "男科专病门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B009",
+          "name": "哮喘专病门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B008",
+          "name": "咳嗽专病门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B007",
+          "name": "呼吸睡眠障碍专病门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B006",
+          "name": "癫痫专病门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B005",
+          "name": "糖尿病肾病专病门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B004",
+          "name": "妊娠内分泌专病门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B003",
+          "name": "甲状腺专病门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B002",
+          "name": "骨质疏松专病门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "90B086",
+          "name": "王劭宏胆囊结石及胆管结石专病门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        }
+      ]
+    },
+    {
+      "code": "NKXT",
+      "name": "内科系统",
+      "advanceDay": 0,
+      "nationalKeyDept": false,
+      "subs": [
+        {
+          "code": "FS",
+          "name": "风湿免疫科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "GRK",
+          "name": "感染微生物科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "HX",
+          "name": "呼吸科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "NFM",
+          "name": "内分泌科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "QKYX",
+          "name": "全科医学科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "SJN",
+          "name": "神经内科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "SN",
+          "name": "肾内科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "XH",
+          "name": "消化内科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "XLZX",
+          "name": "临床心理科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "XY",
+          "name": "血液内科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "XN",
+          "name": "心内科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "XYJH",
+          "name": "肾内科透析室",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        }
+      ]
+    },
+    {
+      "code": "WKXT",
+      "name": "外科系统",
+      "advanceDay": 0,
+      "nationalKeyDept": false,
+      "subs": [
+        {
+          "code": "GDYP",
+          "name": "肝胆胰脾外科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "GK",
+          "name": "骨科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "MN",
+          "name": "泌尿外科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "WK",
+          "name": "普外科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "RX",
+          "name": "乳腺外科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "XWK",
+          "name": "胸外科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "MZK",
+          "name": "麻醉手术中心",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "SJW",
+          "name": "神经外科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "MZ",
+          "name": "疼痛科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "SHFB",
+          "name": "疝和腹壁外科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "JR",
+          "name": "介入科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "ZX",
+          "name": "整形外科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        }
+      ]
+    },
+    {
+      "code": "FCK",
+      "name": "妇产科",
+      "advanceDay": 0,
+      "nationalKeyDept": false,
+      "subs": [
+        {
+          "code": "JHSY",
+          "name": "计划生育",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "FK",
+          "name": "妇科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "CK",
+          "name": "产科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "FKYD",
+          "name": "妇科阴道镜",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        }
+      ]
+    },
+    {
+      "code": "SZYXZX",
+      "name": "生殖医学中心与妇科内分泌",
+      "advanceDay": 0,
+      "nationalKeyDept": false,
+      "subs": [
+        {
+          "code": "SZ",
+          "name": "生殖中心",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "FKNF",
+          "name": "妇科内分泌",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        }
+      ]
+    },
+    {
+      "code": "ENK",
+      "name": "儿内科",
+      "advanceDay": 0,
+      "nationalKeyDept": false,
+      "subs": [
+        {
+          "code": "XSEK",
+          "name": "新生儿科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "EK",
+          "name": "儿科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        }
+      ]
+    },
+    {
+      "code": "PFXBK",
+      "name": "皮肤性病与医学美容科",
+      "advanceDay": 0,
+      "nationalKeyDept": false,
+      "subs": [
+        {
+          "code": "PF",
+          "name": "皮肤性病与医学美容科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        }
+      ]
+    },
+    {
+      "code": "ZYZJLL",
+      "name": "中医针灸理疗",
+      "advanceDay": 0,
+      "nationalKeyDept": false,
+      "subs": [
+        {
+          "code": "ZY",
+          "name": "中医科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "LL",
+          "name": "推拿理疗",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        }
+      ]
+    },
+    {
+      "code": "HLMZ",
+      "name": "护理门诊",
+      "advanceDay": 0,
+      "nationalKeyDept": false,
+      "subs": [
+        {
+          "code": "LNXX",
+          "name": "老年心血管护理咨询",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "MRWY",
+          "name": "母乳喂养咨询",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "ZCS",
+          "name": "助产咨询门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "JXSS",
+          "name": "关节镜康复护理门诊",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "HMZM",
+          "name": "健康呼吸护理工作室",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        }
+      ]
+    },
+    {
+      "code": "QT",
+      "name": "其它",
+      "advanceDay": 0,
+      "nationalKeyDept": false,
+      "subs": [
+        {
+          "code": "BLK",
+          "name": "病理科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "CSYX",
+          "name": "超声医学科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "FSK",
+          "name": "放射科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "YSB",
+          "name": "药事部",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        }
+      ]
+    },
+    {
+      "code": "TJZX",
+      "name": "健康管理",
+      "advanceDay": 0,
+      "nationalKeyDept": false,
+      "subs": [
+        {
+          "code": "TJ",
+          "name": "健康管理",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        }
+      ]
+    },
+    {
+      "code": "EBYHTJWK",
+      "name": "耳鼻咽喉头颈外科",
+      "advanceDay": 0,
+      "nationalKeyDept": false,
+      "subs": [
+        {
+          "code": "EBH",
+          "name": "耳鼻咽喉头颈外科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        }
+      ]
+    },
+    {
+      "code": "YWK",
+      "name": "眼科",
+      "advanceDay": 0,
+      "nationalKeyDept": false,
+      "subs": [
+        {
+          "code": "YK",
+          "name": "眼科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        }
+      ]
+    },
+    {
+      "code": "KQYXZX",
+      "name": "口腔医学中心",
+      "advanceDay": 0,
+      "nationalKeyDept": false,
+      "subs": [
+        {
+          "code": "KQ",
+          "name": "口腔科",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        }
+      ]
+    },
+    {
+      "code": "DXKLHMZ",
+      "name": "多学科联合门诊",
+      "advanceDay": 0,
+      "nationalKeyDept": false,
+      "subs": [
+        {
+          "code": "TNBZLHMZ",
+          "name": "糖尿病足联合门诊(建议同时挂两个号)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        },
+        {
+          "code": "XZXGLHMZ",
+          "name": "心脏-血管联合门诊(建议同时挂两个号)",
+          "advanceDay": 0,
+          "nationalKeyDept": false
+        }
+      ]
+    }
+  ]
+}
