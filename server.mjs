@@ -289,6 +289,28 @@ function readReports() {
     return { reports: [] }
   }
 }
+
+// 报告原件反查（2026-11-13 v3 第 1 步）：
+// 原件字节早在 SQLite blobs 表里、且每条都写了 report_id（实测 54/54 份全覆盖），
+// 所以**不需要**向 data/reports.json 回写 fileBlobId（那是就地改真实医疗数据）；
+// 读侧按 report_id 反查即可，历史报告立刻也能点开原件。
+// 同一份报告可能有多条 blob（原图 + 转出的 PDF）：优先 image/*（原图），其次 PDF。
+function attachBlobIds(reports = []) {
+  let blobs = []
+  try { blobs = listBlobs() } catch { blobs = [] }
+  const byReport = new Map()
+  for (const b of blobs) {
+    if (!b.report_id) continue
+    const cur = byReport.get(b.report_id)
+    const isImg = String(b.type || '').startsWith('image/')
+    const curImg = cur ? String(cur.type || '').startsWith('image/') : false
+    if (!cur || (isImg && !curImg)) byReport.set(b.report_id, b)
+  }
+  return reports.map((r) => {
+    const b = byReport.get(r.id)
+    return { ...r, fileBlobId: r.fileBlobId || (b ? b.id : ''), hasOriginal: !!b }
+  })
+}
 function writeReports(store) {
   fs.mkdirSync(path.dirname(REPORTS_FILE), { recursive: true })
   fs.writeFileSync(REPORTS_FILE, JSON.stringify({ version: 1, reports: store.reports }, null, 2), 'utf8')
@@ -881,7 +903,7 @@ function getNextReleaseCountdown() {
     sendJson(res, 200, {
       ok: true,
       total: store.reports.length,
-      reports: store.reports.map((r) => ({ ...r, images: undefined, text: undefined, hasImage: !!r.sha256 })),
+      reports: attachBlobIds(store.reports).map((r) => ({ ...r, images: undefined, text: undefined, hasImage: !!r.sha256 })),
     })
     return
   }
@@ -910,7 +932,7 @@ function getNextReleaseCountdown() {
       // 2026-11-13 用户口径：默认不脱敏（给医生看），显式 mask=1 才脱敏
       const mask = parsedUrl.searchParams.get('mask') === '1'
       const { reports } = readReports()
-      const card = buildCard({ reports, mask })
+      const card = buildCard({ reports: attachBlobIds(reports), mask })
       sendJson(res, 200, card) // { ok, masked, patient, counts, summary, groups, html }
     } catch (e) {
       sendJson(res, 500, { ok: false, error: `生成资料卡失败：${e.message}` })

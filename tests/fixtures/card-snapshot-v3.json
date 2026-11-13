@@ -1,0 +1,2537 @@
+{
+ "_note": [
+  "资料卡回归快照 v3（脱敏）。由 tools/make-card-snapshot.mjs 从 data/reports.json 生成。",
+  "真实库是活数据（用户在持续导入），断言只对本快照；真实库只做人工核对与页数取证。",
+  "医院/实验室名已替换为稳定别名，姓名/条码/原文/影像指纹一律不保留。"
+ ],
+ "_meta": {
+  "generatedAt": "2026-11-13T07:14:44.872Z",
+  "reportCount": 54,
+  "rowCount": 204
+ },
+ "patient": {
+  "name": "",
+  "sex": "女",
+  "age": "30",
+  "diagnosis": "急性B淋巴细胞白血病（Common-B-ALL可能）",
+  "subtype": "",
+  "stage": "",
+  "hospital": "某院A",
+  "attending": ""
+ },
+ "reports": [
+  {
+   "id": "snap_001",
+   "kind": "pathology",
+   "reportType": "FLOW_CYTOMETRY",
+   "reportDate": "2026-07-17",
+   "sampledAt": "2026-07-15 12:51",
+   "hospital": "某院B",
+   "labName": "某实验室B",
+   "source": "image",
+   "fileBlobId": "f_snapshot_001",
+   "rows": [
+    {
+     "name": "异常细胞占有核细胞比例",
+     "value": "85.76",
+     "num": 85.76,
+     "unit": "%",
+     "refRange": "",
+     "flag": "",
+     "status": "unknown",
+     "measuredAt": "2026-07-15"
+    },
+    {
+     "name": "CD34+细胞占有核细胞比例",
+     "value": "84.42",
+     "num": 84.42,
+     "unit": "%",
+     "refRange": "",
+     "flag": "",
+     "status": "unknown",
+     "measuredAt": "2026-07-15"
+    },
+    {
+     "name": "淋巴细胞占有核细胞比例",
+     "value": "2.19",
+     "num": 2.19,
+     "unit": "%",
+     "refRange": "",
+     "flag": "",
+     "status": "unknown",
+     "measuredAt": "2026-07-15"
+    },
+    {
+     "name": "单核细胞占有核细胞比例",
+     "value": "0.27",
+     "num": 0.27,
+     "unit": "%",
+     "refRange": "",
+     "flag": "",
+     "status": "unknown",
+     "measuredAt": "2026-07-15"
+    },
+    {
+     "name": "粒细胞占有核细胞比例",
+     "value": "9.27",
+     "num": 9.27,
+     "unit": "%",
+     "refRange": "",
+     "flag": "",
+     "status": "unknown",
+     "measuredAt": "2026-07-15"
+    },
+    {
+     "name": "有核红细胞占有核细胞比例",
+     "value": "2.51",
+     "num": 2.51,
+     "unit": "%",
+     "refRange": "",
+     "flag": "",
+     "status": "unknown",
+     "measuredAt": "2026-07-15"
+    }
+   ]
+  },
+  {
+   "id": "snap_002",
+   "kind": "pathology",
+   "reportType": "染色体核型",
+   "reportDate": "2026-07-15",
+   "sampledAt": "2026-07-15 12:51",
+   "hospital": "某院B",
+   "labName": "某实验室A",
+   "source": "image",
+   "fileBlobId": "f_snapshot_002",
+   "rows": []
+  },
+  {
+   "id": "snap_003",
+   "kind": "lab",
+   "reportType": "凝血四项",
+   "reportDate": "2026-07-14",
+   "sampledAt": "",
+   "hospital": "",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_003",
+   "rows": [
+    {
+     "name": "凝血酶原时间（P12.2个T）",
+     "value": "9.8-12.1",
+     "num": 9.8,
+     "unit": "",
+     "refRange": "sec",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "国际标准化比值（INR）",
+     "value": "1.02",
+     "num": 1.02,
+     "unit": "",
+     "refRange": "0.8-1.5",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "凝血酶原时间比值（PTR）",
+     "value": "1.02",
+     "num": 1.02,
+     "unit": "",
+     "refRange": "0.84-1.17",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "活化部分凝血活酶时间（APTT）",
+     "value": "28.9",
+     "num": 28.9,
+     "unit": "seC",
+     "refRange": "25-31.3",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "纤维蛋白原（FBG）",
+     "value": "3.35",
+     "num": 3.35,
+     "unit": "g/L",
+     "refRange": "1.8-3.5",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "凝血活酶时间（TT）",
+     "value": "17.6",
+     "num": 17.6,
+     "unit": "sec",
+     "refRange": "14-21",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "D-二聚体（D-Dimer）C",
+     "value": "1.05",
+     "num": 1.05,
+     "unit": "mg/L",
+     "refRange": "0-0.55",
+     "status": "high",
+     "measuredAt": "2026-07-14"
+    }
+   ]
+  },
+  {
+   "id": "snap_004",
+   "kind": "lab",
+   "reportType": "心衰+感染标志物",
+   "reportDate": "2026-07-14",
+   "sampledAt": "",
+   "hospital": "",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_004",
+   "rows": [
+    {
+     "name": "降钙素原（PCT）",
+     "value": "0.14",
+     "num": 0.14,
+     "unit": "ng/ml",
+     "refRange": "0-0.05",
+     "status": "high",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "白介素6",
+     "value": "103.40",
+     "num": 103.4,
+     "unit": "pg/ml",
+     "refRange": "<7",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    }
+   ]
+  },
+  {
+   "id": "snap_005",
+   "kind": "lab",
+   "reportType": "ABO+RhD 血型",
+   "reportDate": "2026-07-15",
+   "sampledAt": "",
+   "hospital": "",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_005",
+   "rows": [
+    {
+     "name": "ABO血型鉴定",
+     "value": "B型",
+     "num": null,
+     "unit": "",
+     "refRange": "",
+     "status": "unknown",
+     "measuredAt": "2026-07-15"
+    },
+    {
+     "name": "ABO血型正定型",
+     "value": "B型",
+     "num": null,
+     "unit": "",
+     "refRange": "",
+     "status": "unknown",
+     "measuredAt": "2026-07-15"
+    },
+    {
+     "name": "ABO血型反定型",
+     "value": "B型",
+     "num": null,
+     "unit": "",
+     "refRange": "",
+     "status": "unknown",
+     "measuredAt": "2026-07-15"
+    },
+    {
+     "name": "ABO血型酶法鉴定",
+     "value": "B型",
+     "num": null,
+     "unit": "",
+     "refRange": "",
+     "status": "unknown",
+     "measuredAt": "2026-07-15"
+    },
+    {
+     "name": "Rh（D）血型鉴定",
+     "value": "阳性",
+     "num": null,
+     "unit": "",
+     "refRange": "*Rh血型阴性、",
+     "status": "unknown",
+     "measuredAt": "2026-07-15"
+    }
+   ]
+  },
+  {
+   "id": "snap_006",
+   "kind": "lab",
+   "reportType": "不规则抗体筛查",
+   "reportDate": "2026-07-15",
+   "sampledAt": "",
+   "hospital": "",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_006",
+   "rows": [
+    {
+     "name": "红细胞抗体筛查",
+     "value": "阴性",
+     "num": null,
+     "unit": "",
+     "refRange": "",
+     "status": "unknown",
+     "measuredAt": "2026-07-15"
+    },
+    {
+     "name": "筛选细胞I性",
+     "value": "阴性",
+     "num": null,
+     "unit": "",
+     "refRange": "*抗体筛查：阴",
+     "status": "unknown",
+     "measuredAt": "2026-07-15"
+    },
+    {
+     "name": "筛选细胞II有不规则抗体存在",
+     "value": "阴性",
+     "num": null,
+     "unit": "",
+     "refRange": "若为阳性，提示",
+     "status": "unknown",
+     "measuredAt": "2026-07-15"
+    },
+    {
+     "name": "筛选细胞|I",
+     "value": "阴性",
+     "num": null,
+     "unit": "",
+     "refRange": "",
+     "status": "unknown",
+     "measuredAt": "2026-07-15"
+    }
+   ]
+  },
+  {
+   "id": "snap_007",
+   "kind": "lab",
+   "reportType": "传染病四项",
+   "reportDate": "2026-07-15",
+   "sampledAt": "",
+   "hospital": "",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_007",
+   "rows": [
+    {
+     "name": "乙肝表面抗原（H阴性（-）BsAg）",
+     "value": "阴性",
+     "num": null,
+     "unit": "",
+     "refRange": "",
+     "status": "unknown",
+     "measuredAt": "2026-07-15"
+    },
+    {
+     "name": "梅毒螺旋体特异阴性（-）性抗体测定（Anti-TP）",
+     "value": "阴性",
+     "num": null,
+     "unit": "",
+     "refRange": "",
+     "status": "unknown",
+     "measuredAt": "2026-07-15"
+    },
+    {
+     "name": "艾滋病病毒抗体阴性（-）（Anti-HIV）",
+     "value": "阴性",
+     "num": null,
+     "unit": "",
+     "refRange": "",
+     "status": "unknown",
+     "measuredAt": "2026-07-15"
+    },
+    {
+     "name": "丙型肝炎抗体（A阴性（-）nti-HCV）",
+     "value": "阴性",
+     "num": null,
+     "unit": "",
+     "refRange": "",
+     "status": "unknown",
+     "measuredAt": "2026-07-15"
+    }
+   ]
+  },
+  {
+   "id": "snap_008",
+   "kind": "lab",
+   "reportType": "粪便常规",
+   "reportDate": "2026-07-16",
+   "sampledAt": "",
+   "hospital": "",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_008",
+   "rows": [
+    {
+     "name": "粪便外观（WG）",
+     "value": "褐色稀便",
+     "num": null,
+     "unit": "",
+     "refRange": "",
+     "status": "unknown",
+     "measuredAt": "2026-07-16"
+    },
+    {
+     "name": "脂肪球",
+     "value": "未见",
+     "num": null,
+     "unit": "",
+     "refRange": "",
+     "status": "unknown",
+     "measuredAt": "2026-07-16"
+    },
+    {
+     "name": "夏雷登氏晶体",
+     "value": "未见",
+     "num": null,
+     "unit": "",
+     "refRange": "",
+     "status": "unknown",
+     "measuredAt": "2026-07-16"
+    },
+    {
+     "name": "白细胞",
+     "value": "阴性",
+     "num": null,
+     "unit": "",
+     "refRange": "",
+     "status": "unknown",
+     "measuredAt": "2026-07-16"
+    },
+    {
+     "name": "红细胞",
+     "value": "阴性",
+     "num": null,
+     "unit": "",
+     "refRange": "",
+     "status": "unknown",
+     "measuredAt": "2026-07-16"
+    },
+    {
+     "name": "粪便隐血试验（OB）",
+     "value": "阴性",
+     "num": null,
+     "unit": "",
+     "refRange": "阴性",
+     "status": "unknown",
+     "measuredAt": "2026-07-16"
+    },
+    {
+     "name": "霉菌",
+     "value": "未见",
+     "num": null,
+     "unit": "",
+     "refRange": "",
+     "status": "unknown",
+     "measuredAt": "2026-07-16"
+    },
+    {
+     "name": "虫卵",
+     "value": "未见",
+     "num": null,
+     "unit": "",
+     "refRange": "",
+     "status": "unknown",
+     "measuredAt": "2026-07-16"
+    }
+   ]
+  },
+  {
+   "id": "snap_009",
+   "kind": "lab",
+   "reportType": "戊肝抗体",
+   "reportDate": "2026-07-16",
+   "sampledAt": "",
+   "hospital": "",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_009",
+   "rows": [
+    {
+     "name": "戊型肝炎抗体lgM（A-HEV-IgM）",
+     "value": "阴性",
+     "num": null,
+     "unit": "",
+     "refRange": "阴性",
+     "status": "unknown",
+     "measuredAt": "2026-07-16"
+    },
+    {
+     "name": "戊型肝炎抗体lgG（A-HEV-IgG）",
+     "value": "阴性",
+     "num": null,
+     "unit": "",
+     "refRange": "阴性",
+     "status": "unknown",
+     "measuredAt": "2026-07-16"
+    }
+   ]
+  },
+  {
+   "id": "snap_010",
+   "kind": "lab",
+   "reportType": "甲肝 IgM",
+   "reportDate": "2026-07-16",
+   "sampledAt": "",
+   "hospital": "",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_010",
+   "rows": [
+    {
+     "name": "甲型肝炎抗体lgM（A-HAV-IgM）",
+     "value": "阴性",
+     "num": null,
+     "unit": "",
+     "refRange": "阴性",
+     "status": "unknown",
+     "measuredAt": "2026-07-16"
+    }
+   ]
+  },
+  {
+   "id": "snap_011",
+   "kind": "lab",
+   "reportType": "呼吸道病原",
+   "reportDate": "2026-07-17",
+   "sampledAt": "",
+   "hospital": "",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_011",
+   "rows": [
+    {
+     "name": "腺病毒",
+     "value": "阴性",
+     "num": null,
+     "unit": "",
+     "refRange": "阴性",
+     "status": "unknown",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "呼吸道合胞病毒",
+     "value": "阴性",
+     "num": null,
+     "unit": "",
+     "refRange": "阴性",
+     "status": "unknown",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "甲型流感病毒PCR",
+     "value": "阴性",
+     "num": null,
+     "unit": "",
+     "refRange": "阴性",
+     "status": "unknown",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "乙型流感病毒PCR",
+     "value": "阴性",
+     "num": null,
+     "unit": "",
+     "refRange": "阴性",
+     "status": "unknown",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "肺炎支原体核酸检测",
+     "value": "阴性",
+     "num": null,
+     "unit": "",
+     "refRange": "阴性",
+     "status": "unknown",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "人鼻病毒",
+     "value": "阴性",
+     "num": null,
+     "unit": "",
+     "refRange": "阴性",
+     "status": "unknown",
+     "measuredAt": "2026-07-17"
+    }
+   ]
+  },
+  {
+   "id": "snap_012",
+   "kind": "lab",
+   "reportType": "血常规",
+   "reportDate": "2026-07-18",
+   "sampledAt": "",
+   "hospital": "",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_012",
+   "rows": [
+    {
+     "name": "白细胞计数",
+     "value": "71.90",
+     "num": 71.9,
+     "unit": "10~9/L",
+     "refRange": "3.5-9.5",
+     "status": "unknown",
+     "measuredAt": "2026-07-18"
+    },
+    {
+     "name": "红细胞计数",
+     "value": "4.08",
+     "num": 4.08,
+     "unit": "10~12/L",
+     "refRange": "3.8-5.1",
+     "status": "unknown",
+     "measuredAt": "2026-07-18"
+    },
+    {
+     "name": "血红蛋白",
+     "value": "130",
+     "num": 130,
+     "unit": "G/L",
+     "refRange": "115-150",
+     "status": "unknown",
+     "measuredAt": "2026-07-18"
+    },
+    {
+     "name": "红细胞比积",
+     "value": "35.9",
+     "num": 35.9,
+     "unit": "%",
+     "refRange": "35-45",
+     "status": "unknown",
+     "measuredAt": "2026-07-18"
+    },
+    {
+     "name": "红细胞平均体积",
+     "value": "88.0",
+     "num": 88,
+     "unit": "fl",
+     "refRange": "82-100",
+     "status": "unknown",
+     "measuredAt": "2026-07-18"
+    },
+    {
+     "name": "红细胞平均血红蛋白含量",
+     "value": "31.9",
+     "num": 31.9,
+     "unit": "PG",
+     "refRange": "27-34",
+     "status": "unknown",
+     "measuredAt": "2026-07-18"
+    },
+    {
+     "name": "红细胞平均血红蛋白浓度",
+     "value": "362",
+     "num": 362,
+     "unit": "G/L",
+     "refRange": "316-354",
+     "status": "high",
+     "measuredAt": "2026-07-18"
+    },
+    {
+     "name": "淋巴细胞百分比",
+     "value": "78.8",
+     "num": 78.8,
+     "unit": "%",
+     "refRange": "20-50",
+     "status": "high",
+     "measuredAt": "2026-07-18"
+    },
+    {
+     "name": "单核细胞百分比",
+     "value": "0.7",
+     "num": 0.7,
+     "unit": "%",
+     "refRange": "3-10",
+     "status": "unknown",
+     "measuredAt": "2026-07-18"
+    },
+    {
+     "name": "中性粒细胞百分比",
+     "value": "20.14",
+     "num": 20.14,
+     "unit": "%",
+     "refRange": "40-75",
+     "status": "unknown",
+     "measuredAt": "2026-07-18"
+    },
+    {
+     "name": "嗜酸性粒细胞百分比⑦",
+     "value": "0.34",
+     "num": 0.34,
+     "unit": "%",
+     "refRange": "0.4-8",
+     "status": "unknown",
+     "measuredAt": "2026-07-18"
+    }
+   ]
+  },
+  {
+   "id": "snap_013",
+   "kind": "lab",
+   "reportType": "凝血四项",
+   "reportDate": "2026-07-26",
+   "sampledAt": "",
+   "hospital": "",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_013",
+   "rows": [
+    {
+     "name": "凝血酶原时间（PT）",
+     "value": "10.3",
+     "num": 10.3,
+     "unit": "sec",
+     "refRange": "9.8-12.1",
+     "status": "unknown",
+     "measuredAt": "2026-07-26"
+    },
+    {
+     "name": "国际标准化比值（INR）",
+     "value": "0.86",
+     "num": 0.86,
+     "unit": "",
+     "refRange": "0.8-1.5",
+     "status": "unknown",
+     "measuredAt": "2026-07-26"
+    },
+    {
+     "name": "凝血酶原时间比值（PTR）",
+     "value": "0.86",
+     "num": 0.86,
+     "unit": "",
+     "refRange": "0.84-1.17",
+     "status": "unknown",
+     "measuredAt": "2026-07-26"
+    },
+    {
+     "name": "活化部分凝血活酶时间（APTT）",
+     "value": "25.9",
+     "num": 25.9,
+     "unit": "sec",
+     "refRange": "25-31.3",
+     "status": "unknown",
+     "measuredAt": "2026-07-26"
+    },
+    {
+     "name": "纤维蛋白原（FBG）",
+     "value": "1.49",
+     "num": 1.49,
+     "unit": "g/L",
+     "refRange": "1.8-3.5",
+     "status": "unknown",
+     "measuredAt": "2026-07-26"
+    },
+    {
+     "name": "凝血活酶时间（TT）",
+     "value": "19.7",
+     "num": 19.7,
+     "unit": "sec",
+     "refRange": "14-21",
+     "status": "unknown",
+     "measuredAt": "2026-07-26"
+    },
+    {
+     "name": "D-二聚体（D-Dimer）",
+     "value": "2.20",
+     "num": 2.2,
+     "unit": "0-0.55",
+     "refRange": "T",
+     "status": "unknown",
+     "measuredAt": "2026-07-26"
+    }
+   ]
+  },
+  {
+   "id": "snap_014",
+   "kind": "lab",
+   "reportType": "血常规",
+   "reportDate": "2026-07-27",
+   "sampledAt": "",
+   "hospital": "",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_014",
+   "rows": [
+    {
+     "name": "白细胞计数",
+     "value": "3.27上",
+     "num": 3.27,
+     "unit": "10~9/L",
+     "refRange": "3.5-9.5",
+     "status": "unknown",
+     "measuredAt": "2026-07-27"
+    },
+    {
+     "name": "红细胞计数",
+     "value": "3.44小",
+     "num": 3.44,
+     "unit": "10~12/L",
+     "refRange": "3.8-5.1",
+     "status": "unknown",
+     "measuredAt": "2026-07-27"
+    },
+    {
+     "name": "血红蛋白",
+     "value": "106",
+     "num": 106,
+     "unit": "G/L",
+     "refRange": "115-150",
+     "status": "low",
+     "measuredAt": "2026-07-27"
+    },
+    {
+     "name": "红细胞比积",
+     "value": "30.4",
+     "num": 30.4,
+     "unit": "%",
+     "refRange": "35-45",
+     "status": "unknown",
+     "measuredAt": "2026-07-27"
+    },
+    {
+     "name": "红细胞平均体积",
+     "value": "88.4",
+     "num": 88.4,
+     "unit": "fl",
+     "refRange": "82-100",
+     "status": "unknown",
+     "measuredAt": "2026-07-27"
+    },
+    {
+     "name": "红细胞平均血红蛋白含量",
+     "value": "30.8",
+     "num": 30.8,
+     "unit": "PG",
+     "refRange": "27-34",
+     "status": "unknown",
+     "measuredAt": "2026-07-27"
+    },
+    {
+     "name": "红细胞平均血红蛋白浓度",
+     "value": "349",
+     "num": 349,
+     "unit": "G/L",
+     "refRange": "316-354",
+     "status": "unknown",
+     "measuredAt": "2026-07-27"
+    },
+    {
+     "name": "淋巴细胞百分比",
+     "value": "10.84",
+     "num": 10.84,
+     "unit": "%",
+     "refRange": "20-50",
+     "status": "unknown",
+     "measuredAt": "2026-07-27"
+    },
+    {
+     "name": "单核细胞百分比",
+     "value": "0.5",
+     "num": 0.5,
+     "unit": "%",
+     "refRange": "3-10",
+     "status": "low",
+     "measuredAt": "2026-07-27"
+    },
+    {
+     "name": "中性粒细胞百分87.2个比",
+     "value": "40-75",
+     "num": 40,
+     "unit": "",
+     "refRange": "%",
+     "status": "unknown",
+     "measuredAt": "2026-07-27"
+    },
+    {
+     "name": "嗜酸性粒细胞百分比⑦",
+     "value": "0.5",
+     "num": 0.5,
+     "unit": "%",
+     "refRange": "0.4-8",
+     "status": "unknown",
+     "measuredAt": "2026-07-27"
+    }
+   ]
+  },
+  {
+   "id": "snap_015",
+   "kind": "lab",
+   "reportType": "凝血四项",
+   "reportDate": "2026-08-02",
+   "sampledAt": "",
+   "hospital": "",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_015",
+   "rows": [
+    {
+     "name": "凝血酶原时间（PT）",
+     "value": "13.7",
+     "num": 13.7,
+     "unit": "sec",
+     "refRange": "9.8-12.1",
+     "status": "high",
+     "measuredAt": "2026-08-02"
+    },
+    {
+     "name": "国际标准化比值（INR）",
+     "value": "1.14",
+     "num": 1.14,
+     "unit": "",
+     "refRange": "0.8-1.5",
+     "status": "unknown",
+     "measuredAt": "2026-08-02"
+    },
+    {
+     "name": "凝血酶原时间比值（PTR）",
+     "value": "1.14",
+     "num": 1.14,
+     "unit": "",
+     "refRange": "0.84-1.17",
+     "status": "unknown",
+     "measuredAt": "2026-08-02"
+    },
+    {
+     "name": "活化部分凝血活35.7个酶时间（APTT）",
+     "value": "25-31.3",
+     "num": 25,
+     "unit": "",
+     "refRange": "seC",
+     "status": "unknown",
+     "measuredAt": "2026-08-02"
+    },
+    {
+     "name": "纤维蛋白原（FBG）",
+     "value": "5.96",
+     "num": 5.96,
+     "unit": "g/L",
+     "refRange": "1.8-3.5",
+     "status": "high",
+     "measuredAt": "2026-08-02"
+    },
+    {
+     "name": "凝血活酶时间（TT）",
+     "value": "14.0",
+     "num": 14,
+     "unit": "seC",
+     "refRange": "14.0-21.0",
+     "status": "unknown",
+     "measuredAt": "2026-08-02"
+    },
+    {
+     "name": "D-二聚体（D-Di2.05个mer）",
+     "value": "0-0.55",
+     "num": 0,
+     "unit": "",
+     "refRange": "mg/L",
+     "status": "unknown",
+     "measuredAt": "2026-08-02"
+    },
+    {
+     "name": "抗凝血酶|I",
+     "value": "75.70",
+     "num": 75.7,
+     "unit": "%",
+     "refRange": "75-125",
+     "status": "unknown",
+     "measuredAt": "2026-08-02"
+    },
+    {
+     "name": "纤维蛋白（原）降解产物C",
+     "value": "8.70",
+     "num": 8.7,
+     "unit": "0-5",
+     "refRange": "个",
+     "status": "unknown",
+     "measuredAt": "2026-08-02"
+    }
+   ]
+  },
+  {
+   "id": "snap_016",
+   "kind": "lab",
+   "reportType": "心衰+感染标志物",
+   "reportDate": "2026-08-02",
+   "sampledAt": "",
+   "hospital": "",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_016",
+   "rows": [
+    {
+     "name": "前体NT-proBN",
+     "value": "慢性心衰",
+     "num": null,
+     "unit": "",
+     "refRange": "",
+     "status": "unknown",
+     "measuredAt": "2026-08-02"
+    },
+    {
+     "name": "P急性心衰急性心衰按年龄分层：<50岁：>450pg/ml50-75岁：900pg/ml>75岁：>1800pg/ml",
+     "value": "<300pg/ml-非",
+     "num": 300,
+     "unit": "",
+     "refRange": "",
+     "status": "unknown",
+     "measuredAt": "2026-08-02"
+    },
+    {
+     "name": "降钙素原（PCT）",
+     "value": "4.27",
+     "num": 4.27,
+     "unit": "ng/ml",
+     "refRange": "0-0.05",
+     "status": "high",
+     "measuredAt": "2026-08-02"
+    },
+    {
+     "name": "白介素6",
+     "value": "75240.00",
+     "num": 75240,
+     "unit": "pg/ml",
+     "refRange": "<7",
+     "status": "high",
+     "measuredAt": "2026-08-02"
+    }
+   ]
+  },
+  {
+   "id": "snap_017",
+   "kind": "lab",
+   "reportType": "尿常规",
+   "reportDate": "2026-08-02",
+   "sampledAt": "",
+   "hospital": "",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_017",
+   "rows": [
+    {
+     "name": "PH（CH）（PH）",
+     "value": "7.50",
+     "num": 7.5,
+     "unit": "",
+     "refRange": "4.5-8",
+     "status": "unknown",
+     "measuredAt": "2026-08-02"
+    },
+    {
+     "name": "葡萄糖（GLU）T",
+     "value": "5.6（++）",
+     "num": 5.6,
+     "unit": "mmol/L",
+     "refRange": "阴性",
+     "status": "unknown",
+     "measuredAt": "2026-08-02"
+    },
+    {
+     "name": "维生素C（VitC）",
+     "value": "neg",
+     "num": null,
+     "unit": "g/L",
+     "refRange": "阴性",
+     "status": "unknown",
+     "measuredAt": "2026-08-02"
+    },
+    {
+     "name": "尿比重（SG）",
+     "value": "1.010",
+     "num": 1.01,
+     "unit": "",
+     "refRange": "1.003-1.030",
+     "status": "unknown",
+     "measuredAt": "2026-08-02"
+    },
+    {
+     "name": "胆红素（BILI）",
+     "value": "35（++）",
+     "num": 35,
+     "unit": "wmol/L",
+     "refRange": "阴性",
+     "status": "high",
+     "measuredAt": "2026-08-02"
+    },
+    {
+     "name": "尿胆原（UBG）",
+     "value": "35（+）",
+     "num": 35,
+     "unit": "wmol/L",
+     "refRange": "阴性",
+     "status": "high",
+     "measuredAt": "2026-08-02"
+    },
+    {
+     "name": "酮体（KET）",
+     "value": "10（++）",
+     "num": 10,
+     "unit": "mmol/L",
+     "refRange": "阴性",
+     "status": "high",
+     "measuredAt": "2026-08-02"
+    },
+    {
+     "name": "白细胞（LEU）",
+     "value": "75（++）",
+     "num": 75,
+     "unit": "Cel/UL",
+     "refRange": "阴性",
+     "status": "high",
+     "measuredAt": "2026-08-02"
+    },
+    {
+     "name": "潜血（ERY）",
+     "value": "300（+++）",
+     "num": 300,
+     "unit": "Cell/UL",
+     "refRange": "阴性",
+     "status": "high",
+     "measuredAt": "2026-08-02"
+    },
+    {
+     "name": "蛋白质（PRO）",
+     "value": "1.0（++）",
+     "num": 1,
+     "unit": "g/L",
+     "refRange": "阴性",
+     "status": "high",
+     "measuredAt": "2026-08-02"
+    },
+    {
+     "name": "亚硝酸盐（NIT）",
+     "value": "neg",
+     "num": null,
+     "unit": "",
+     "refRange": "阴性",
+     "status": "unknown",
+     "measuredAt": "2026-08-02"
+    },
+    {
+     "name": "尿镜检（NS）RBC+++/HP个C",
+     "value": "WBC1-3",
+     "num": 1,
+     "unit": "",
+     "refRange": "阴性",
+     "status": "unknown",
+     "measuredAt": "2026-08-02"
+    }
+   ]
+  },
+  {
+   "id": "snap_018",
+   "kind": "lab",
+   "reportType": "血气",
+   "reportDate": "2026-08-03",
+   "sampledAt": "",
+   "hospital": "",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_018",
+   "rows": [
+    {
+     "name": "pH",
+     "value": "7.36",
+     "num": 7.36,
+     "unit": "",
+     "refRange": "7.35-7.45",
+     "status": "unknown",
+     "measuredAt": "2026-08-03"
+    },
+    {
+     "name": "PO2",
+     "value": "112.00",
+     "num": 112,
+     "unit": "mmHg",
+     "refRange": "83-108",
+     "status": "high",
+     "measuredAt": "2026-08-03"
+    },
+    {
+     "name": "pCO2",
+     "value": "22.00小",
+     "num": 22,
+     "unit": "mmHg",
+     "refRange": "35-48",
+     "status": "unknown",
+     "measuredAt": "2026-08-03"
+    },
+    {
+     "name": "Nat",
+     "value": "130.00小",
+     "num": 130,
+     "unit": "mmol/L",
+     "refRange": "136-145",
+     "status": "unknown",
+     "measuredAt": "2026-08-03"
+    },
+    {
+     "name": "K+",
+     "value": "3.80",
+     "num": 3.8,
+     "unit": "mmo/L",
+     "refRange": "3.4-4.5",
+     "status": "unknown",
+     "measuredAt": "2026-08-03"
+    },
+    {
+     "name": "Cat+",
+     "value": "1.04",
+     "num": 1.04,
+     "unit": "",
+     "refRange": "1.15-1.27 mmol/L",
+     "status": "unknown",
+     "measuredAt": "2026-08-03"
+    },
+    {
+     "name": "Hct",
+     "value": "18.00小",
+     "num": 18,
+     "unit": "%",
+     "refRange": "35-51",
+     "status": "unknown",
+     "measuredAt": "2026-08-03"
+    },
+    {
+     "name": "Glu",
+     "value": "13.50",
+     "num": 13.5,
+     "unit": "mmol/L",
+     "refRange": "3.6-5.2",
+     "status": "high",
+     "measuredAt": "2026-08-03"
+    },
+    {
+     "name": "Lac",
+     "value": "4.00",
+     "num": 4,
+     "unit": "mmol/L",
+     "refRange": "0-1.3",
+     "status": "high",
+     "measuredAt": "2026-08-03"
+    },
+    {
+     "name": "HCO3-",
+     "value": "12.40小",
+     "num": 12.4,
+     "unit": "mmol/L",
+     "refRange": "22-27",
+     "status": "unknown",
+     "measuredAt": "2026-08-03"
+    },
+    {
+     "name": "HCO3std",
+     "value": "15.60",
+     "num": 15.6,
+     "unit": "mmol/L",
+     "refRange": "22-27",
+     "status": "low",
+     "measuredAt": "2026-08-03"
+    },
+    {
+     "name": "BEecfC",
+     "value": "-13.00",
+     "num": -13,
+     "unit": "mmol/L",
+     "refRange": "-3-3",
+     "status": "low",
+     "measuredAt": "2026-08-03"
+    }
+   ]
+  },
+  {
+   "id": "snap_019",
+   "kind": "lab",
+   "reportType": "凝血四项",
+   "reportDate": "2026-08-04",
+   "sampledAt": "",
+   "hospital": "",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_019",
+   "rows": [
+    {
+     "name": "凝血酶原时间（PT）",
+     "value": "14.6",
+     "num": 14.6,
+     "unit": "SeC",
+     "refRange": "9.8-12.1",
+     "status": "high",
+     "measuredAt": "2026-08-04"
+    },
+    {
+     "name": "国际标准化比值（INR）",
+     "value": "1.21",
+     "num": 1.21,
+     "unit": "",
+     "refRange": "0.8-1.5",
+     "status": "unknown",
+     "measuredAt": "2026-08-04"
+    },
+    {
+     "name": "凝血酶原时间比值（PTR）",
+     "value": "1.22",
+     "num": 1.22,
+     "unit": "",
+     "refRange": "0.84-1.17",
+     "status": "high",
+     "measuredAt": "2026-08-04"
+    },
+    {
+     "name": "活化部分凝血活酶时间（APTT）",
+     "value": "35.0",
+     "num": 35,
+     "unit": "seC",
+     "refRange": "25-31.3",
+     "status": "high",
+     "measuredAt": "2026-08-04"
+    },
+    {
+     "name": "纤维蛋白原（FBG）",
+     "value": "5.94",
+     "num": 5.94,
+     "unit": "1.8-3.5",
+     "refRange": "个",
+     "status": "unknown",
+     "measuredAt": "2026-08-04"
+    },
+    {
+     "name": "凝血活酶时间（TT）",
+     "value": "14.8",
+     "num": 14.8,
+     "unit": "sec",
+     "refRange": "14-21",
+     "status": "unknown",
+     "measuredAt": "2026-08-04"
+    },
+    {
+     "name": "D-二聚体（D-Dimer）",
+     "value": "5.55",
+     "num": 5.55,
+     "unit": "0-0.55",
+     "refRange": "T",
+     "status": "unknown",
+     "measuredAt": "2026-08-04"
+    }
+   ]
+  },
+  {
+   "id": "snap_020",
+   "kind": "lab",
+   "reportType": "凝血四项",
+   "reportDate": "2026-08-05",
+   "sampledAt": "",
+   "hospital": "",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_020",
+   "rows": [
+    {
+     "name": "凝血酶原时间（PT）",
+     "value": "14.3",
+     "num": 14.3,
+     "unit": "SeC",
+     "refRange": "9.8-12.1",
+     "status": "high",
+     "measuredAt": "2026-08-05"
+    },
+    {
+     "name": "国际标准化比值（INR）",
+     "value": "1.19",
+     "num": 1.19,
+     "unit": "",
+     "refRange": "0.8-1.5",
+     "status": "unknown",
+     "measuredAt": "2026-08-05"
+    },
+    {
+     "name": "凝血酶原时间比值（PTR）",
+     "value": "1.19",
+     "num": 1.19,
+     "unit": "0.84-1.17",
+     "refRange": "个",
+     "status": "unknown",
+     "measuredAt": "2026-08-05"
+    },
+    {
+     "name": "活化部分凝血活酶时间（APTT）",
+     "value": "29.9",
+     "num": 29.9,
+     "unit": "seC",
+     "refRange": "25-31.3",
+     "status": "unknown",
+     "measuredAt": "2026-08-05"
+    },
+    {
+     "name": "纤维蛋白原（FBG）",
+     "value": "5.56",
+     "num": 5.56,
+     "unit": "1.8-3.5",
+     "refRange": "个",
+     "status": "unknown",
+     "measuredAt": "2026-08-05"
+    },
+    {
+     "name": "凝血活酶时间（TT）",
+     "value": "14.7",
+     "num": 14.7,
+     "unit": "sec",
+     "refRange": "14-21",
+     "status": "unknown",
+     "measuredAt": "2026-08-05"
+    },
+    {
+     "name": "D-二聚体（D-Di10.18个mer）",
+     "value": "0-0.55",
+     "num": 0,
+     "unit": "",
+     "refRange": "mg/L",
+     "status": "unknown",
+     "measuredAt": "2026-08-05"
+    }
+   ]
+  },
+  {
+   "id": "snap_021",
+   "kind": "lab",
+   "reportType": "血常规",
+   "reportDate": "2026-07-14",
+   "sampledAt": "",
+   "hospital": "",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_021",
+   "rows": [
+    {
+     "name": "白细胞计数",
+     "value": "59.16",
+     "num": 59.16,
+     "unit": "10~9/L",
+     "refRange": "3.5-9.5",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "红细胞计数",
+     "value": "4.27",
+     "num": 4.27,
+     "unit": "10~12/L",
+     "refRange": "3.8-5.1",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "血红蛋白",
+     "value": "139",
+     "num": 139,
+     "unit": "G/L",
+     "refRange": "115-150",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "红细胞比积",
+     "value": "38.0",
+     "num": 38,
+     "unit": "%",
+     "refRange": "35-45",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "红细胞平均体积",
+     "value": "89.0",
+     "num": 89,
+     "unit": "fl",
+     "refRange": "82-100",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "红细胞平均血红蛋白含量",
+     "value": "32.6",
+     "num": 32.6,
+     "unit": "PG",
+     "refRange": "27-34",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "红细胞平均血红蛋白浓度",
+     "value": "366",
+     "num": 366,
+     "unit": "316-354",
+     "refRange": "个",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "淋巴细胞百分比",
+     "value": "70.3",
+     "num": 70.3,
+     "unit": "%",
+     "refRange": "20-50",
+     "status": "high",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "单核细胞百分比",
+     "value": "0.4",
+     "num": 0.4,
+     "unit": "%",
+     "refRange": "3-10",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "中性粒细胞百分•28.7小比",
+     "value": "40-75",
+     "num": 40,
+     "unit": "",
+     "refRange": "%",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "嗜酸性粒细胞百分比⑦",
+     "value": "0.6",
+     "num": 0.6,
+     "unit": "%",
+     "refRange": "0.4-8",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "嗜酸性粒细胞百分比",
+     "value": "0.6",
+     "num": 0.6,
+     "unit": "%",
+     "refRange": "0.4-8",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "嗜碱性粒细胞百分比",
+     "value": "0.0",
+     "num": 0,
+     "unit": "%",
+     "refRange": "0-1",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "淋巴细胞计数",
+     "value": "41.59",
+     "num": 41.59,
+     "unit": "10~9/L",
+     "refRange": "1.1-3.2",
+     "status": "high",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "单核细胞计数",
+     "value": "0.24",
+     "num": 0.24,
+     "unit": "10~9/L",
+     "refRange": "0.1-0.6",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "嗜酸性粒细胞计数",
+     "value": "0.35",
+     "num": 0.35,
+     "unit": "10~9/L",
+     "refRange": "0.02-0.52",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "嗜碱性粒细胞计数",
+     "value": "0.00",
+     "num": 0,
+     "unit": "10~9/L",
+     "refRange": "0-0.06",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "红细胞分布宽度变异系数",
+     "value": "12.7",
+     "num": 12.7,
+     "unit": "fl",
+     "refRange": "＜=15%",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "血小板分布宽度",
+     "value": "16.0",
+     "num": 16,
+     "unit": "",
+     "refRange": "f",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "血小板平均体积",
+     "value": "7.9",
+     "num": 7.9,
+     "unit": "",
+     "refRange": "fl",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "血小板",
+     "value": "165",
+     "num": 165,
+     "unit": "10~9/L",
+     "refRange": "125-350",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "中性粒细胞计数16.98个",
+     "value": "1.8-6.3",
+     "num": 1.8,
+     "unit": "",
+     "refRange": "10~9/L",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "红细胞分布宽度标准差",
+     "value": "38.40",
+     "num": 38.4,
+     "unit": "",
+     "refRange": "FL",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "血小板压积",
+     "value": "0.131",
+     "num": 0.131,
+     "unit": "",
+     "refRange": "",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    }
+   ]
+  },
+  {
+   "id": "snap_022",
+   "kind": "lab",
+   "reportType": "血常规",
+   "reportDate": "2026-07-17",
+   "sampledAt": "",
+   "hospital": "",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_022",
+   "rows": [
+    {
+     "name": "白细胞计数",
+     "value": "79.67",
+     "num": 79.67,
+     "unit": "10~9/L",
+     "refRange": "3.5-9.5",
+     "status": "unknown",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "红细胞计数",
+     "value": "4.05",
+     "num": 4.05,
+     "unit": "10~12/L",
+     "refRange": "3.8-5.1",
+     "status": "unknown",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "血红蛋白",
+     "value": "128",
+     "num": 128,
+     "unit": "G/L",
+     "refRange": "115-150",
+     "status": "unknown",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "红细胞比积",
+     "value": "36.2",
+     "num": 36.2,
+     "unit": "%",
+     "refRange": "35-45",
+     "status": "unknown",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "红细胞平均体积",
+     "value": "89.4",
+     "num": 89.4,
+     "unit": "fl",
+     "refRange": "82-100",
+     "status": "unknown",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "红细胞平均血红蛋白含量",
+     "value": "31.6",
+     "num": 31.6,
+     "unit": "PG",
+     "refRange": "27-34",
+     "status": "unknown",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "红细胞平均血红蛋白浓度",
+     "value": "354",
+     "num": 354,
+     "unit": "G/L",
+     "refRange": "316-354",
+     "status": "unknown",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "淋巴细胞百分比",
+     "value": "83.3",
+     "num": 83.3,
+     "unit": "%",
+     "refRange": "20-50",
+     "status": "high",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "单核细胞百分比",
+     "value": "0.5",
+     "num": 0.5,
+     "unit": "%",
+     "refRange": "3-10",
+     "status": "low",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "中性粒细胞百分比",
+     "value": "15.8",
+     "num": 15.8,
+     "unit": "%",
+     "refRange": "40-75",
+     "status": "unknown",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "嗜酸性粒细胞百分比⑦",
+     "value": "0.34",
+     "num": 0.34,
+     "unit": "%",
+     "refRange": "0.4-8",
+     "status": "unknown",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "中性粒细胞百分15.8",
+     "value": "40-75",
+     "num": 40,
+     "unit": "",
+     "refRange": "%",
+     "status": "unknown",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "嗜酸性粒细胞百分比",
+     "value": "0.34",
+     "num": 0.34,
+     "unit": "%",
+     "refRange": "0.4-8",
+     "status": "unknown",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "嗜碱性粒细胞百分比",
+     "value": "0.1",
+     "num": 0.1,
+     "unit": "%",
+     "refRange": "0-1",
+     "status": "unknown",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "淋巴细胞计数",
+     "value": "66.37",
+     "num": 66.37,
+     "unit": "10~9/L",
+     "refRange": "1.1-3.2",
+     "status": "high",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "单核细胞计数",
+     "value": "0.40",
+     "num": 0.4,
+     "unit": "10~9/L",
+     "refRange": "0.1-0.6",
+     "status": "unknown",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "嗜酸性粒细胞计数",
+     "value": "0.24",
+     "num": 0.24,
+     "unit": "10~9/L",
+     "refRange": "0.02-0.52",
+     "status": "unknown",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "嗜碱性粒细胞计数",
+     "value": "0.08",
+     "num": 0.08,
+     "unit": "0-0.06",
+     "refRange": "个",
+     "status": "unknown",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "红细胞分布宽度变异系数",
+     "value": "12.7",
+     "num": 12.7,
+     "unit": "fl",
+     "refRange": "＜=15%",
+     "status": "unknown",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "血小板分布宽度",
+     "value": "16.5",
+     "num": 16.5,
+     "unit": "",
+     "refRange": "fl",
+     "status": "unknown",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "血小板平均体积",
+     "value": "8.3",
+     "num": 8.3,
+     "unit": "",
+     "refRange": "fI",
+     "status": "unknown",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "血小板",
+     "value": "1074",
+     "num": 1074,
+     "unit": "10~9/L",
+     "refRange": "125-350",
+     "status": "unknown",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "中性粒细胞计数12.59个",
+     "value": "1.8-6.3",
+     "num": 1.8,
+     "unit": "",
+     "refRange": "10~9/L",
+     "status": "unknown",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "红细胞分布宽度标准差",
+     "value": "38.70",
+     "num": 38.7,
+     "unit": "",
+     "refRange": "FL",
+     "status": "unknown",
+     "measuredAt": "2026-07-17"
+    },
+    {
+     "name": "血小板压积C",
+     "value": "0.089",
+     "num": 0.089,
+     "unit": "",
+     "refRange": "%",
+     "status": "unknown",
+     "measuredAt": "2026-07-17"
+    }
+   ]
+  },
+  {
+   "id": "snap_023",
+   "kind": "lab",
+   "reportType": "生化",
+   "reportDate": "2026-07-14",
+   "sampledAt": "",
+   "hospital": "",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_023",
+   "rows": [
+    {
+     "name": "总蛋白（TProt）",
+     "value": "73.2",
+     "num": 73.2,
+     "unit": "g/L",
+     "refRange": "65.0-85.0",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "白蛋白（Alb）",
+     "value": "44.9",
+     "num": 44.9,
+     "unit": "g/L",
+     "refRange": "40-55",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "球蛋白（Glob）",
+     "value": "28.3",
+     "num": 28.3,
+     "unit": "g/L",
+     "refRange": "20-40",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "白球比值（A/G）",
+     "value": "1.59",
+     "num": 1.59,
+     "unit": "",
+     "refRange": "（1.2-2.4）：1",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "总胆红素（TBili）",
+     "value": "14.5",
+     "num": 14.5,
+     "unit": "wmol/L",
+     "refRange": "0-21",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "直接胆红素（DBili）",
+     "value": "5.5",
+     "num": 5.5,
+     "unit": "wmol/L",
+     "refRange": "0-8",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "间接胆红素（IBili）",
+     "value": "9.0",
+     "num": 9,
+     "unit": "wmol/L",
+     "refRange": "0-13",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "肌酐（Creat）",
+     "value": "42",
+     "num": 42,
+     "unit": "wmol/L",
+     "refRange": "41-73",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "尿素（Urea）",
+     "value": "3.40",
+     "num": 3.4,
+     "unit": "mmol/L",
+     "refRange": "2.6-7.5",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "尿酸（UA）",
+     "value": "296",
+     "num": 296,
+     "unit": "wmol/L",
+     "refRange": "155-357",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "二氧化碳（CO2）⑦",
+     "value": "25",
+     "num": 25,
+     "unit": "mmol/L",
+     "refRange": "23-29",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "二氧化碳（CO2）",
+     "value": "25",
+     "num": 25,
+     "unit": "mmol/L",
+     "refRange": "23-29",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "葡萄糖（glu）",
+     "value": "5.38",
+     "num": 5.38,
+     "unit": "mmol/L",
+     "refRange": "3.9-6.1",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "丙氨酸氨基转移酶（alt）",
+     "value": "137",
+     "num": 137,
+     "unit": "U/L",
+     "refRange": "7-40",
+     "status": "high",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "天门冬氨酸氨基转移酶（ast）",
+     "value": "83",
+     "num": 83,
+     "unit": "U/L",
+     "refRange": "13-35",
+     "status": "high",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "y-谷氨酰基转移酶（ggt）",
+     "value": "95",
+     "num": 95,
+     "unit": "U/L",
+     "refRange": "7-45",
+     "status": "high",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "碱性磷酸酶（alp）",
+     "value": "100",
+     "num": 100,
+     "unit": "U/L",
+     "refRange": "35-100",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "肌酸激酶（ck）",
+     "value": "44",
+     "num": 44,
+     "unit": "U/L",
+     "refRange": "40-200",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "a羟基丁酸脱氢酶（a-hbdh）",
+     "value": "653",
+     "num": 653,
+     "unit": "U/L",
+     "refRange": "72-182",
+     "status": "high",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "乳酸脱氢酶（ld）",
+     "value": "1114",
+     "num": 1114,
+     "unit": "U/L",
+     "refRange": "120-250",
+     "status": "high",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "酶比值1（alt/ast）",
+     "value": "1.65",
+     "num": 1.65,
+     "unit": "",
+     "refRange": "",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "氯（CI）",
+     "value": "98.7",
+     "num": 98.7,
+     "unit": "mmol/L",
+     "refRange": "99-110",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "钾（K）",
+     "value": "4.28",
+     "num": 4.28,
+     "unit": "",
+     "refRange": "3.50-5.30 mmol/L",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "血清肌酸激酶一MB同工酶（ck_mb）",
+     "value": "9",
+     "num": 9,
+     "unit": "U/L",
+     "refRange": "0-25",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    },
+    {
+     "name": "钠（Na）",
+     "value": "137",
+     "num": 137,
+     "unit": "mmol/L",
+     "refRange": "137-147",
+     "status": "unknown",
+     "measuredAt": "2026-07-14"
+    }
+   ]
+  },
+  {
+   "id": "snap_024",
+   "kind": "imaging",
+   "reportType": "超声-床旁超声",
+   "reportDate": "2026-08-15",
+   "sampledAt": "",
+   "hospital": "某院C",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_024",
+   "rows": []
+  },
+  {
+   "id": "snap_025",
+   "kind": "imaging",
+   "reportType": "超声-床旁超声",
+   "reportDate": "2026-08-15",
+   "sampledAt": "",
+   "hospital": "某院C",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_025",
+   "rows": []
+  },
+  {
+   "id": "snap_026",
+   "kind": "imaging",
+   "reportType": "CT-头颈",
+   "reportDate": "2026-08-15",
+   "sampledAt": "",
+   "hospital": "某院C",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_026",
+   "rows": []
+  },
+  {
+   "id": "snap_027",
+   "kind": "imaging",
+   "reportType": "CT-胸部",
+   "reportDate": "2026-08-15",
+   "sampledAt": "",
+   "hospital": "某院C",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_027",
+   "rows": []
+  },
+  {
+   "id": "snap_028",
+   "kind": "imaging",
+   "reportType": "超声-床旁超声",
+   "reportDate": "2026-08-15",
+   "sampledAt": "",
+   "hospital": "某院C",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_028",
+   "rows": []
+  },
+  {
+   "id": "snap_029",
+   "kind": "imaging",
+   "reportType": "超声-床旁超声",
+   "reportDate": "2026-08-15",
+   "sampledAt": "",
+   "hospital": "某院C",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_029",
+   "rows": []
+  },
+  {
+   "id": "snap_030",
+   "kind": "imaging",
+   "reportType": "磁共振-头颈",
+   "reportDate": "2026-08-20",
+   "sampledAt": "",
+   "hospital": "某院C",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_030",
+   "rows": []
+  },
+  {
+   "id": "snap_031",
+   "kind": "imaging",
+   "reportType": "磁共振-头颈",
+   "reportDate": "2026-08-20",
+   "sampledAt": "",
+   "hospital": "某院C",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_031",
+   "rows": []
+  },
+  {
+   "id": "snap_032",
+   "kind": "imaging",
+   "reportType": "磁共振-头颈",
+   "reportDate": "2026-08-20",
+   "sampledAt": "",
+   "hospital": "某院C",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_032",
+   "rows": []
+  },
+  {
+   "id": "snap_033",
+   "kind": "imaging",
+   "reportType": "磁共振-头颈",
+   "reportDate": "2026-08-20",
+   "sampledAt": "",
+   "hospital": "某院C",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_033",
+   "rows": []
+  },
+  {
+   "id": "snap_034",
+   "kind": "imaging",
+   "reportType": "妇产科-妇科超声",
+   "reportDate": "2026-08-23",
+   "sampledAt": "",
+   "hospital": "某院C",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_034",
+   "rows": []
+  },
+  {
+   "id": "snap_035",
+   "kind": "imaging",
+   "reportType": "CT-腹部",
+   "reportDate": "2026-08-26",
+   "sampledAt": "",
+   "hospital": "某院C",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_035",
+   "rows": []
+  },
+  {
+   "id": "snap_036",
+   "kind": "imaging",
+   "reportType": "CT-胸部",
+   "reportDate": "2026-08-26",
+   "sampledAt": "",
+   "hospital": "某院C",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_036",
+   "rows": []
+  },
+  {
+   "id": "snap_037",
+   "kind": "imaging",
+   "reportType": "放射-胸部",
+   "reportDate": "2026-08-27",
+   "sampledAt": "",
+   "hospital": "某院C",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_037",
+   "rows": []
+  },
+  {
+   "id": "snap_038",
+   "kind": "imaging",
+   "reportType": "CT-胸部",
+   "reportDate": "2026-09-25",
+   "sampledAt": "",
+   "hospital": "某院C",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_038",
+   "rows": []
+  },
+  {
+   "id": "snap_039",
+   "kind": "imaging",
+   "reportType": "CT-头颈",
+   "reportDate": "2026-09-25",
+   "sampledAt": "",
+   "hospital": "某院C",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_039",
+   "rows": []
+  },
+  {
+   "id": "snap_040",
+   "kind": "imaging",
+   "reportType": "CT-胸部",
+   "reportDate": "2026-10-05",
+   "sampledAt": "",
+   "hospital": "某院C",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_040",
+   "rows": []
+  },
+  {
+   "id": "snap_041",
+   "kind": "imaging",
+   "reportType": "超声-常规超声",
+   "reportDate": "2026-10-16",
+   "sampledAt": "",
+   "hospital": "某院C",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_041",
+   "rows": []
+  },
+  {
+   "id": "snap_042",
+   "kind": "imaging",
+   "reportType": "超声-血管超声",
+   "reportDate": "2026-10-16",
+   "sampledAt": "",
+   "hospital": "某院C",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_042",
+   "rows": []
+  },
+  {
+   "id": "snap_043",
+   "kind": "imaging",
+   "reportType": "超声-血管超声",
+   "reportDate": "2026-10-16",
+   "sampledAt": "",
+   "hospital": "某院C",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_043",
+   "rows": []
+  },
+  {
+   "id": "snap_044",
+   "kind": "imaging",
+   "reportType": "心电图-普通心电",
+   "reportDate": "2026-10-16",
+   "sampledAt": "",
+   "hospital": "某院C",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_044",
+   "rows": []
+  },
+  {
+   "id": "snap_045",
+   "kind": "imaging",
+   "reportType": "磁共振-头颈",
+   "reportDate": "2026-10-16",
+   "sampledAt": "",
+   "hospital": "某院C",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_045",
+   "rows": []
+  },
+  {
+   "id": "snap_046",
+   "kind": "imaging",
+   "reportType": "磁共振-头颈",
+   "reportDate": "2026-10-16",
+   "sampledAt": "",
+   "hospital": "某院C",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_046",
+   "rows": []
+  },
+  {
+   "id": "snap_047",
+   "kind": "imaging",
+   "reportType": "磁共振-头颈",
+   "reportDate": "2026-10-16",
+   "sampledAt": "",
+   "hospital": "某院C",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_047",
+   "rows": []
+  },
+  {
+   "id": "snap_048",
+   "kind": "imaging",
+   "reportType": "磁共振-头颈",
+   "reportDate": "2026-10-16",
+   "sampledAt": "",
+   "hospital": "某院C",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_048",
+   "rows": []
+  },
+  {
+   "id": "snap_049",
+   "kind": "imaging",
+   "reportType": "CT类血管增强",
+   "reportDate": "2026-07-14",
+   "sampledAt": "",
+   "hospital": "某院A",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_049",
+   "rows": []
+  },
+  {
+   "id": "snap_050",
+   "kind": "lab",
+   "reportType": "融合基因（定性）",
+   "reportDate": "2026-07-18",
+   "sampledAt": "",
+   "hospital": "某院B",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_050",
+   "rows": [
+    {
+     "name": "BCR::ABL1（P190型）",
+     "value": "阳性",
+     "num": null,
+     "unit": "",
+     "refRange": "",
+     "status": "positive",
+     "measuredAt": "2026-07-18"
+    },
+    {
+     "name": "BCR::ABL1（P210型）",
+     "value": "阴性",
+     "num": null,
+     "unit": "",
+     "refRange": "",
+     "status": "negative",
+     "measuredAt": "2026-07-18"
+    },
+    {
+     "name": "BCR::ABL1（P230型）",
+     "value": "阴性",
+     "num": null,
+     "unit": "",
+     "refRange": "",
+     "status": "negative",
+     "measuredAt": "2026-07-18"
+    },
+    {
+     "name": "阳性对照",
+     "value": "阳性",
+     "num": null,
+     "unit": "",
+     "refRange": "",
+     "status": "positive",
+     "measuredAt": "2026-07-18"
+    },
+    {
+     "name": "内部对照",
+     "value": "阳性",
+     "num": null,
+     "unit": "",
+     "refRange": "",
+     "status": "positive",
+     "measuredAt": "2026-07-18"
+    }
+   ]
+  },
+  {
+   "id": "snap_051",
+   "kind": "imaging",
+   "reportType": "融合基因",
+   "reportDate": "2026-07-22",
+   "sampledAt": "",
+   "hospital": "某院B",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_051",
+   "rows": []
+  },
+  {
+   "id": "snap_052",
+   "kind": "imaging",
+   "reportType": "融合基因",
+   "reportDate": "2026-07-19",
+   "sampledAt": "",
+   "hospital": "某院B",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_052",
+   "rows": []
+  },
+  {
+   "id": "snap_053",
+   "kind": "imaging",
+   "reportType": "融合基因筛查",
+   "reportDate": "2026-07-24",
+   "sampledAt": "",
+   "hospital": "某院B",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_053",
+   "rows": []
+  },
+  {
+   "id": "snap_054",
+   "kind": "imaging",
+   "reportType": "病原mNGS",
+   "reportDate": "2026-08-03",
+   "sampledAt": "",
+   "hospital": "",
+   "labName": "",
+   "source": "image",
+   "fileBlobId": "f_snapshot_054",
+   "rows": []
+  }
+ ]
+}

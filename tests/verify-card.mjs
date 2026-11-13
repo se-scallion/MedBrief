@@ -123,74 +123,188 @@ function makeTrendReports() {
 }
 
 const trCount = (s) => (s.match(/<tr/g) || []).length
-const section = (html, from, to) => html.split(from)[1].split(to)[0]
+/** 按 h2 文本切片；找不到起点返回空串（宁可断言失败，也不许静默通过）。 */
+const block = (html, from, to) => {
+  const i = html.indexOf(from)
+  if (i < 0) return ''
+  const j = to ? html.indexOf(to, i + from.length) : html.length
+  return html.slice(i, j < 0 ? html.length : j)
+}
+const P1 = block
+const TODAY = new Date('2026-11-13T09:00:00')
 
-// ---------- 1. 行数完备性 ----------
+// ---------- 1. 完备性（不变量：进来的数据必须全部出现在卡上） ----------
 it('完备性：105 行输入 → counts.rows=105，35 个项目一个不少', () => {
-  const card = buildCard({ reports: makeReports(), mask: true })
+  const card = buildCard({ reports: makeReports(), mask: true, today: TODAY })
   assert.equal(card.counts.reports, 3)
   assert.equal(card.counts.rows, 105, `counts.rows 应为 105，实际 ${card.counts.rows}`)
-  assert.equal(card.counts.latest, 35, `最新指标应为 35 项，实际 ${card.counts.latest}`)
+  assert.equal(card.counts.latest, 35, `按 code 去重后应为 35 项，实际 ${card.counts.latest}（少 = 不同项目被并成同一 code）`)
   const missing = ANALYTES.filter(([n]) => !card.html.includes(n)).map(([n]) => n)
   assert.deepEqual(missing, [], `卡上缺这些项目（静默丢数据）：${missing.join('、')}`)
 })
 
-it('完备性：「全部指标」段实际渲染行数 == counts.latest（防"一组一行"复活）', () => {
-  // 2026-11-13 用户改版：取消「最新指标」段（异常项已按时间倒序，信息重复），
-  // 全部指标段移到 ③，趋势移到 ④（打印时强制最后一页）。判据不变：渲染行数必须等于项数。
-  const card = buildCard({ reports: makeReports(), mask: true })
-  const seg = section(card.html, '③ ', '④ ')
+it('完备性：第 2 页「全部指标」渲染行数 == counts.latest，且不得退化成「组数」', () => {
+  const card = buildCard({ reports: makeReports(), mask: true, today: TODAY })
+  const seg = block(card.html, '④ 全部指标', '⑤ 材料清单')
+  assert.ok(seg, '找不到「④ 全部指标」段')
   const dataRows = trCount(seg) - 2 // 两栏并排，各 1 行表头
   assert.ok(dataRows >= card.counts.latest, `全部指标段渲染 ${dataRows} 行 < 应有的 ${card.counts.latest} 行`)
   assert.notEqual(dataRows, card.counts.groups, '渲染行数退化成了"组数"（历史 bug 回归）')
 })
 
-it('版式（2026-11-13 用户口径）：异常项按时间从新到旧、且不再有「最新指标」段', () => {
-  const card = buildCard({ reports: makeReports(), mask: true })
+// ---------- 2. 第 1 页聚焦性（v3 核心：只看最新状态，不摊历史） ----------
+it('第 1 页只放「最新状态」的异常项：3 份历史 × 3 项异常 → 第 1 页只有 3 行（不是 9 行）', () => {
+  const card = buildCard({ reports: makeReports(), mask: true, today: TODAY })
+  const seg = block(card.html, '② 核心异常项', '③ 家属三问')
+  const rows = trCount(seg) - 1
+  assert.equal(card.counts.p0, 3, `P0 应为 3 项（血红蛋白/红细胞/红细胞压积各一项最新），实际 ${card.counts.p0}`)
+  assert.equal(rows, card.counts.p0, `第 1 页异常表渲染 ${rows} 行，应为 ${card.counts.p0} 行（历史重复不得进第 1 页）`)
+  // 同一项目名不得在第 1 页出现两次
+  const names = [...seg.matchAll(/<td>([^<]+)<\/td>/g)].map((m) => m[1].trim())
+  assert.equal(new Set(names).size, names.length, `第 1 页出现重复项目：${names.join('、')}`)
   assert.ok(!card.html.includes('最新指标'), '「最新指标」段应按用户要求移除')
-  const seg = section(card.html, '① ', '② ')
-  const dates = [...seg.matchAll(/(\d{4}-\d{2}-\d{2})/g)].map((m) => m[1])
-  const sorted = dates.slice().sort((a, b) => b.localeCompare(a))
-  assert.deepEqual(dates, sorted, `异常项日期应为新→旧，实际 ${dates.join(',')}`)
 })
 
-it('完备性：异常项全部进「① 异常项」段（不是只留最新一条）', () => {
-  const card = buildCard({ reports: makeReports(), mask: true })
-  const seg = section(card.html, '① ', '② ')
-  // 血红蛋白/红细胞/红细胞压积 × 3 份报告 = 9 条历史异常
-  assert.ok(trCount(seg) - 1 >= 9, `异常段只有 ${trCount(seg) - 1} 行，应 ≥9（3 项 × 3 次）`)
+it('P1 折叠：非核心异常不进第 1 页表格，只留一行摘要（不多占篇幅）', () => {
+  const reports = makeReports()
+  // 尿酮体（U_KET）属 P1：不得在 P0 表里占行，只能出现在摘要里
+  reports[0].rows.push({ name: '酮体（KET）', value: '10（++）', num: 10, unit: '', refRange: '', measuredAt: '2026-09-20', status: 'abnormal', flag: 'high' })
+  const card = buildCard({ reports, mask: true, today: TODAY })
+  assert.ok(card.counts.p1 >= 1, `应有 P1 异常，实际 ${card.counts.p1}`)
+  const seg = block(card.html, '② 核心异常项', '③ 家属三问')
+  assert.ok(!/酮体/.test(seg.replace(/另有[^\n]*非核心异常[^\n]*/g, '')), 'P1 项不得出现在第 1 页表格里')
+  assert.ok(/另有 \d+ 项非核心异常/.test(seg), '第 1 页必须有 P1 折叠摘要行')
 })
 
-// ---------- 2. 一页上限 ----------
-it('一页上限：105 行 / 35 项时 <tr> ≤ 80、HTML ≤ 24 KB（超出就该考虑再压版式）', () => {
-  const card = buildCard({ reports: makeReports(), mask: true })
-  const tr = trCount(card.html)
-  const bytes = Buffer.byteLength(card.html)
-  assert.ok(tr <= 80, `<tr> 已 ${tr} 行（上限 80），A4 会溢出到第 2 页`)
-  assert.ok(bytes <= 24 * 1024, `HTML 已 ${(bytes / 1024).toFixed(1)} KB（上限 24 KB）`)
-  console.log(`      实测：<tr> ${tr} 行 / ${(bytes / 1024).toFixed(1)} KB / counts=${JSON.stringify(card.counts)}`)
+// ---------- 3. 危急值（置顶 + 底纹，不允许只有绿标造成安全错觉） ----------
+it('危急值：命中阈值 → 置顶 + 底纹 + 「危急」标记（且低值不只是一片绿）', () => {
+  const reports = makeReports()
+  // WBC 0.6 < 1.0（危急），但参考区间判为 low —— 旧版式只会画成绿色
+  reports[0].rows.push({ name: '白细胞', value: '0.6', num: 0.6, unit: '10^9/L', refRange: '3.5-9.5', measuredAt: '2026-09-20', status: 'low', flag: 'low' })
+  const card = buildCard({ reports, mask: true, today: TODAY })
+  assert.equal(card.counts.critical, 1, `危急项应为 1，实际 ${card.counts.critical}`)
+  const seg = block(card.html, '② 核心异常项', '③ 家属三问')
+  assert.ok(/class="crit"/.test(seg), '危急行必须有底纹样式类 crit')
+  assert.ok(/危急/.test(seg), '危急行必须有「危急」标记')
+  const firstRow = seg.slice(seg.indexOf('<tbody>') + 7)
+  assert.ok(/白细胞/.test(firstRow.slice(0, 220)), '危急项必须排在 P0 表第一行')
 })
 
-// ---------- 3. 趋势截断不丢关键项 ----------
+// ---------- 4. 缺项与时效（临床安全：不能让医生把 100 天前的数当本周的） ----------
+it('缺项：ANC 缺失必须写进 missingBasics（粒缺判定不能靠百分比猜）', () => {
+  // 造一份**真的缺 ANC** 的报告集（makeReports 里是有 ANC 的，直接拿它会测不到缺失分支）
+  const reports = makeReports().map((rep) => ({ ...rep, rows: rep.rows.filter((r) => !/中性粒细胞绝对值/.test(r.name)) }))
+  const card = buildCard({ reports, mask: true, today: TODAY })
+  assert.ok(card.counts.missingBasics.some((m) => /ANC/.test(m)), `missingBasics 应含 ANC，实际 ${JSON.stringify(card.counts.missingBasics)}`)
+  assert.ok(card.html.includes('未提供：'), '卡面必须显式写「未提供」')
+})
+
+it('时效：最近一次化验超 90 天 → 卡面醒目提醒（含日期与天数）；新鲜数据不得误报', () => {
+  const old = makeReports() // 2026-09-20 为最新
+  const stale = buildCard({ reports: old, mask: true, today: new Date('2027-02-01T00:00:00') })
+  assert.ok(stale.counts.staleDays > 90, `staleDays 应 > 90，实际 ${stale.counts.staleDays}`)
+  const seg = block(stale.html, '② 核心异常项', '③ 家属三问')
+  assert.ok(/⚠️ 最近一次有指标的化验/.test(seg), '第 1 页必须有时效警示')
+  assert.ok(seg.includes(stale.counts.lastLabDate), '时效警示必须写出具体日期')
+  const fresh = buildCard({ reports: makeReports(), mask: true, today: TODAY })
+  assert.ok(!/⚠️ 最近一次有指标的化验/.test(fresh.html), '新鲜数据不得误报时效问题')
+})
+
+// ---------- 5. 材料清单与原件 ----------
+it('材料清单：0 行报告标「未结构化（仅存原件）」，绝不许标「0 项」', () => {
+  const reports = makeReports()
+  reports.push({ id: 'rep_img', reportDate: '2026-09-25', kind: 'imaging', hospital: '（脱敏）', rows: [], source: 'image', fileBlobId: 'f_test1' })
+  const card = buildCard({ reports, mask: true, today: TODAY })
+  assert.equal(card.counts.material, 4)
+  assert.equal(card.counts.unstructured, 1)
+  const seg = block(card.html, '⑤ 材料清单', '⑥ 关键趋势')
+  assert.ok(seg.includes('未结构化（仅存原件）'), '影像报告必须标「未结构化（仅存原件）」')
+  assert.ok(!/>\s*0 项\s*</.test(seg), '不得出现「0 项」（会被读成解析失败丢数据）')
+})
+
+it('材料清单：有原件 → 「查看原件」按钮（带 blob id）；无原件 → 「无原件」', () => {
+  const reports = makeReports()
+  reports[0].fileBlobId = 'f_abc123'
+  reports[1].source = 'text-only'
+  const card = buildCard({ reports, mask: true, today: TODAY })
+  const seg = block(card.html, '⑤ 材料清单', '⑥ 关键趋势')
+  assert.ok(seg.includes('/api/intake/blob/f_abc123'), '原件按钮必须指向 /api/intake/blob/<id>')
+  assert.ok(/原件<\/button>|查看原件/.test(seg), '有原件时应出现原件按钮（表格窄，按钮文字简写为「原件」）')
+  assert.ok(seg.includes('无原件'), 'text-only 的记录应标「无原件」')
+})
+
+// ---------- 6. 趋势 ----------
 it('趋势截断：10 个可比较项目 → trends ≤ 8 且 trendsAll == 10，关键项必须留', () => {
-  const card = buildCard({ reports: makeTrendReports(), mask: true })
+  const card = buildCard({ reports: makeTrendReports(), mask: true, today: TODAY })
   assert.equal(card.counts.trendsAll, 10, `trendsAll 应为 10（可比较项目总数），实际 ${card.counts.trendsAll}`)
   assert.ok(card.counts.trends <= 8, `趋势段上限 8 项，实际 ${card.counts.trends}`)
-  const seg = section(card.html, '③ ', '④ ')
+  const seg = block(card.html, '⑥ 关键趋势')
   const keep = ['骨髓原始', 'MRD', '白细胞', '中性粒', '血红蛋白', '血小板']
   const missing = keep.filter((k) => !seg.includes(k))
   assert.deepEqual(missing, [], `趋势段缺关键项：${missing.join('、')}（关键项应优先于边缘项）`)
 })
 
 it('趋势段不得谎报：段标题里的项数 == counts.trends', () => {
-  const card = buildCard({ reports: makeTrendReports(), mask: true })
-  const m = card.html.match(/关键趋势（[^）]*共 (\d+) 项）/)
+  const card = buildCard({ reports: makeTrendReports(), mask: true, today: TODAY })
+  const head = block(card.html, '⑥ 关键趋势').slice(0, 300)
+  const m = head.match(/关键趋势[\s\S]*?共 (\d+) 项/)
   assert.ok(m, '趋势段标题应带「共 N 项」')
   assert.equal(Number(m[1]), card.counts.trends, `标题写 ${m[1]} 项，实际渲染 ${card.counts.trends} 项`)
 })
 
+it('跨院参考区间不同：必须给警示，且**不得**画单一虚假绿带', () => {
+  const reports = makeTrendReports()
+  // 同项两次、参考区间不同（跨院）
+  reports[0].rows[0].refRange = '3.5-9.5'
+  reports[1].rows[0].refRange = '4.0-10.0'
+  const card = buildCard({ reports, mask: true, today: TODAY })
+  const seg = block(card.html, '⑥ 关键趋势')
+  assert.ok(/跨院参考区间不同/.test(seg), '必须输出跨院参考区间差异提示')
+  assert.ok(!/<rect/.test(seg), '跨院区间不一致时不得绘制绿色参考带（那是虚假精度）')
+})
+
+it('单位不一致不硬拼趋势：给「未绘制」说明，而不是画一条假线', () => {
+  const reports = makeTrendReports()
+  reports[0].rows[0].unit = 'g/L'
+  reports[1].rows[0].unit = 'g/dL'
+  const card = buildCard({ reports, mask: true, today: TODAY })
+  assert.ok(card.trendDroppedDetail.some((t) => t.name === reports[0].rows[0].name), '单位不可统一的项应进 dropped 明细')
+  assert.ok(/未绘制（单位不一致/.test(card.html), '卡面必须说明为什么没画')
+})
+
+// ---------- 7. 红线与体量 ----------
+it('红线：卡面不得出现诊断结论 / 用药建议词库', () => {
+  const card = buildCard({ reports: makeReports(), mask: true, today: TODAY })
+  const banned = ['建议化疗', '建议住院', '诊断为', '应服用', '可停药', '预后不良']
+  const hit = banned.filter((w) => card.html.includes(w))
+  assert.deepEqual(hit, [], `卡面出现红线词：${hit.join('、')}`)
+})
+
+it('体量上限：105 行 / 35 项 + 3 页版式时 <tr> ≤ 90、HTML ≤ 40 KB', () => {
+  const card = buildCard({ reports: makeReports(), mask: true, today: TODAY })
+  const tr = trCount(card.html)
+  const bytes = Buffer.byteLength(card.html)
+  assert.ok(tr <= 90, `<tr> 已 ${tr} 行（上限 90）`)
+  assert.ok(bytes <= 40 * 1024, `HTML 已 ${(bytes / 1024).toFixed(1)} KB（上限 40 KB）`)
+  console.log(`      实测：<tr> ${tr} 行 / ${(bytes / 1024).toFixed(1)} KB / counts=${JSON.stringify(card.counts)}`)
+})
+
+it('三段分页：第 2、3 页必须强制分页（打印时各占一页 A4）', () => {
+  const card = buildCard({ reports: makeReports(), mask: true, today: TODAY })
+  assert.ok(/\.page2 \{ page-break-before: always; \}/.test(card.html), '第 2 页必须 page-break-before: always')
+  assert.ok(/\.page3 \{ page-break-before: always; \}/.test(card.html), '第 3 页必须 page-break-before: always')
+})
+
+it('手机端：必须有 max-width 640px 的自适应（单栏 + 放大字号 + 触控按钮）', () => {
+  const card = buildCard({ reports: makeReports(), mask: true, today: TODAY })
+  assert.ok(/@media screen and \(max-width: 640px\)/.test(card.html), '缺少手机端 media query')
+  const seg = card.html.slice(card.html.indexOf('@media screen and (max-width: 640px)'))
+  assert.ok(/\.two \{ display: block/.test(seg), '手机端两栏必须拆成单栏')
+  assert.ok(/font-size: 1[34]px/.test(seg), '手机端必须放大字号')
+})
+
 it('空输入不抛错，且给出可读占位', () => {
-  const card = buildCard({ reports: [], mask: true })
+  const card = buildCard({ reports: [], mask: true, today: TODAY })
   assert.equal(card.counts.rows, 0)
   assert.ok(card.html.includes('问诊资料卡'))
 })

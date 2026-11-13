@@ -112,6 +112,9 @@ export default function IntakePage() {
           focus: j.patient.questions?.focus || '',
           confirm: j.patient.questions?.confirm || '',
           nextVisit: j.patient.questions?.nextVisit || '',
+          lastChemo: j.patient.clinicalContext?.lastChemo || '',
+          recentTxOrGcsf: j.patient.clinicalContext?.recentTxOrGcsf || '',
+          marrowSummary: j.patient.clinicalContext?.marrowSummary || '',
         })
       }
     } catch (e) {
@@ -407,6 +410,12 @@ export default function IntakePage() {
         hospital: v.hospital || '',
         attending: v.attending || '',
         questions: { focus: v.focus || '', confirm: v.confirm || '', nextVisit: v.nextVisit || '' },
+        // v3：第 1 页「临床背景与骨穿节点」区块（可选，只展示不推断；不填就显示「未录入」）
+        clinicalContext: {
+          lastChemo: v.lastChemo || '',
+          recentTxOrGcsf: v.recentTxOrGcsf || '',
+          marrowSummary: v.marrowSummary || '',
+        },
       })
       if (!body.ok) throw new Error(body.error || '保存失败')
       setPatient(body.patient)
@@ -883,6 +892,22 @@ export default function IntakePage() {
                 <Input.TextArea rows={2} placeholder="如：是否需要移植评估" />
               </Form.Item>
             </Col>
+            {/* v3 第 1 页「临床背景与骨穿节点」：可选、只展示不推断；留空卡面写「未录入」 */}
+            <Col xs={24} md={8}>
+              <Form.Item name="lastChemo" label="近期治疗节点（可选）">
+                <Input placeholder="如：VDCLP 方案第 12 天 / 上次化疗 9-20" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={8}>
+              <Form.Item name="recentTxOrGcsf" label="近期输血 / 升白针（可选）">
+                <Input placeholder="如：9-22 输血小板 1 治疗量；9-25 起 G-CSF" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={8}>
+              <Form.Item name="marrowSummary" label="骨穿 / MRD 关键原句（可选）">
+                <Input placeholder="如：7-17 流式 异常细胞 85.76%" />
+              </Form.Item>
+            </Col>
           </Row>
           <Space wrap>
             <Button onClick={savePatient} loading={patientSaving}>
@@ -953,7 +978,30 @@ export default function IntakePage() {
               },
               { title: '日期', dataIndex: 'reportDate', width: 110, render: (v) => v || '—' },
               { title: '医院', dataIndex: 'hospital', render: (v) => v || '—' },
-              { title: '指标行', dataIndex: 'rows', width: 90, render: (v) => (Array.isArray(v) ? v.length : 0) },
+              {
+                // 0 行 = 只存了原件、没解析出指标（影像报告等）——不许写「0」，否则像解析失败丢数据
+                title: '指标 / 状态',
+                dataIndex: 'rows',
+                width: 130,
+                render: (v, r) => {
+                  const n = Array.isArray(v) ? v.length : 0
+                  if (n > 0) return `${n} 项`
+                  return <Tag color="default">未结构化（仅存原件）</Tag>
+                },
+              },
+              {
+                title: '原件',
+                dataIndex: 'fileBlobId',
+                width: 90,
+                render: (v, r) =>
+                  v ? (
+                    <Button size="small" type="link" onClick={() => window.open(`/api/intake/blob/${encodeURIComponent(v)}`, '_blank')}>
+                      查看原件
+                    </Button>
+                  ) : (
+                    <span style={{ color: '#9ca3af' }}>{r.source === 'text-only' ? '无原件' : '—'}</span>
+                  ),
+              },
             ]}
           />
         )}
