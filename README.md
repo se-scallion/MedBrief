@@ -1,5 +1,9 @@
 # MedBrief · 挂号与问诊资料整理工作台
 
+> **环境前置（必须读）**：前端依赖**借自 `../MedData/node_modules`**（根 `node_modules` 是软链），
+> 版本锁定在 `package.json` 的 `medbriefFrontendDeps`，详见 [docs/前端依赖.md](docs/前端依赖.md)。
+> 换机器不装齐这棵树 → `vite build` 直接失败。
+
 独立就医辅助系统，专为白血病与重大血液病患者设计。
 
 ## 核心功能

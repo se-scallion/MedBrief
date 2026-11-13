@@ -10,14 +10,18 @@
     "test": "npm run test:unit",
     "test:unit": "node tests/verify-unit.mjs",
     "test:live": "node tests/verify-e2e.mjs",
-    "build:web": "MEDBRIEF_WEB_BASE=/ MEDBRIEF_WEB_OUT=dist-next npx vite build --config web/vite.config.js",
+    "build:web": "node web/scripts/build-meddata-css.mjs && MEDBRIEF_WEB_BASE=/ MEDBRIEF_WEB_OUT=dist-next npx vite build --config web/vite.config.js",
     "build:next": "MEDBRIEF_WEB_BASE=/ MEDBRIEF_WEB_OUT=dist-next npx vite build --config web/vite.config.js",
+    "build:meddata": "cd meddata && npx vite build --config vite.config.js",
     "dev:web": "npx vite --config web/vite.config.js",
     "test:ui": "node tests/verify-ui.mjs",
-    "test:intake": "node tests/verify-intake.mjs && node tests/verify-card.mjs && node tests/verify-chunker.mjs && node tests/verify-deskew.mjs",
+    "test:intake": "node tests/verify-intake.mjs && node tests/verify-card.mjs && node tests/verify-chunker.mjs && node tests/verify-deskew.mjs && node tests/verify-pdf.mjs && node tests/verify-import-report.mjs",
     "test:card": "node tests/verify-card.mjs",
     "test:chunker": "node tests/verify-chunker.mjs",
-    "test:deskew": "node tests/verify-deskew.mjs"
+    "test:deskew": "node tests/verify-deskew.mjs",
+    "test:import": "node tests/verify-import-report.mjs",
+    "import:report": "node tools/import-report.mjs",
+    "test:pdf": "node tests/verify-pdf.mjs"
   },
   "keywords": [
     "guahao",
@@ -29,5 +33,16 @@
   "license": "ISC",
   "dependencies": {
     "playwright": "^1.50.0"
+  },
+  "medbriefFrontendDeps": {
+    "_readme": "前端构建期依赖。MedBrief 不自己装这棵树：根 node_modules 是指向 ../MedData/node_modules 的软链，web/vite.config.js 的 resolve.modules 也指向它。下面只是**版本声明+锁定**，不参与 npm install。换机器/换目录前按 docs/前端依赖.md 把同版本装齐，否则 vite build 会炸（或版本矩阵错配）。",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "antd": "6.6.6",
+    "dayjs": "1.11.23",
+    "pdfjs-dist": "4.10.38",
+    "react-router-dom": "6.30.6",
+    "vite": "8.3.4",
+    "@vitejs/plugin-react": "6.1.2"
   }
 }
