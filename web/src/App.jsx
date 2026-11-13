@@ -5,8 +5,8 @@ import {
   Button,
   Drawer,
   Layout,
+  Menu,
   Space,
-  Tabs,
   Tag,
   Typography,
 } from 'antd'
@@ -15,9 +15,9 @@ import BookingTab from './tabs/BookingTab.jsx'
 import BriefTab from './tabs/BriefTab.jsx'
 import OrdersTab from './tabs/OrdersTab.jsx'
 import SessionTab from './tabs/SessionTab.jsx'
-import IntakePage from './pages/IntakePage.jsx'
+import IntakeWorkspace from './pages/IntakeWorkspace.jsx'
 
-const { Header, Content, Footer } = Layout
+const { Header, Content, Footer, Sider } = Layout
 const { Text } = Typography
 
 // ---------- 全局事件日志（各 tab 共用，替代旧页面的 appendLog） ----------
@@ -40,14 +40,44 @@ export default function App() {
   const clearLogs = useCallback(() => setLogs([]), [])
   const logValue = useMemo(() => ({ logs, pushLog, clearLogs }), [logs, pushLog, clearLogs])
 
-  const items = [
-    { key: 'intake', label: '资料导入', children: <IntakePage /> },
-    { key: 'monitor', label: '出诊监控', children: <MonitorTab /> },
-    { key: 'booking', label: '挂号与预约', children: <BookingTab /> },
-    { key: 'brief', label: '病历资料', children: <BriefTab /> },
-    { key: 'orders', label: '预约记录', children: <OrdersTab /> },
-    { key: 'session', label: '114 会话', children: <SessionTab /> },
+  // ---------- 导航（2026-11-13 换壳：顶部 6 tab → 左侧 Sider 两组）----------
+  // 分组按「业务流程」而不是「技术模块」：资料线（录入→整理→出片→交换）与出诊线（看号→挂号→会话）。
+  // URL 兼容：旧链接 /?merged=guahao、/#booking、/?tab=xxx 都能落到对应项（见 KEY_ALIAS）。
+  const PAGES = [
+    { key: 'intake', label: '资料录入', group: '资料', node: <IntakeWorkspace /> },
+    { key: 'brief', label: '病历交换包', group: '资料', node: <BriefTab /> },
+    { key: 'monitor', label: '出诊监控', group: '出诊', node: <MonitorTab /> },
+    { key: 'booking', label: '挂号与预约', group: '出诊', node: <BookingTab /> },
+    { key: 'orders', label: '预约记录', group: '出诊', node: <OrdersTab /> },
+    { key: 'session', label: '114 会话', group: '出诊', node: <SessionTab /> },
   ]
+  const KEY_ALIAS = { guahao: 'booking', merged: 'booking', card: 'intake', reports: 'intake', new: 'booking' }
+  const readKeyFromUrl = () => {
+    const u = new URL(window.location.href)
+    const raw = u.searchParams.get('tab') || u.hash.replace('#', '') || (u.searchParams.has('merged') ? 'guahao' : '')
+    const k = KEY_ALIAS[raw] || raw
+    return PAGES.some((p) => p.key === k) ? k : 'intake'
+  }
+  const [active, setActive] = useState(readKeyFromUrl)
+  const [collapsed, setCollapsed] = useState(false)
+  // 切页写回 URL：刷新/分享/旧链接都能回到同一页（不引 react-router）
+  const go = useCallback((key) => {
+    setActive(key)
+    try {
+      const u = new URL(window.location.href)
+      u.searchParams.set('tab', key)
+      u.searchParams.delete('merged')
+      window.history.replaceState(null, '', u)
+    } catch { /* file:// 等场景忽略 */ }
+  }, [])
+
+  const menuItems = ['资料', '出诊'].map((group) => ({
+    key: group,
+    type: 'group',
+    label: group,
+    children: PAGES.filter((p) => p.group === group).map((p) => ({ key: p.key, label: p.label })),
+  }))
+  const current = PAGES.find((p) => p.key === active) || PAGES[0]
 
   return (
     <LogContext.Provider value={logValue}>
@@ -77,9 +107,29 @@ export default function App() {
           </Space>
         </Header>
 
-        <Content style={{ padding: '16px 20px 32px' }}>
-          <Tabs defaultActiveKey="intake" items={items} destroyOnHidden={false} />
-        </Content>
+        <Layout>
+          <Sider
+            width={168}
+            collapsible
+            collapsed={collapsed}
+            onCollapse={setCollapsed}
+            breakpoint="lg"
+            collapsedWidth={56}
+            style={{ background: '#fff', borderRight: '1px solid #eef0f3' }}
+          >
+            <Menu
+              mode="inline"
+              selectedKeys={[active]}
+              items={menuItems}
+              onClick={({ key }) => go(key)}
+              style={{ borderInlineEnd: 'none', paddingTop: 8 }}
+            />
+          </Sider>
+          {/* minWidth:0 是关键：否则窄屏下内容会把容器撑出横向滚动条 */}
+          <Content style={{ padding: '16px 20px 32px', minWidth: 0 }}>
+            {current.node}
+          </Content>
+        </Layout>
 
         <Footer style={{ textAlign: 'center', color: '#94a3b8', fontSize: 12, padding: 12 }}>
           仅为自己挂号，不代挂、不并发抢号 · 每日 07:00 放第 14 天号源 · 资料整理不构成诊断建议

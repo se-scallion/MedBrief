@@ -6,11 +6,13 @@
 import { chromium } from 'playwright'
 
 const BASE = process.env.MEDBRIEF_BASE || 'http://127.0.0.1:5174'
+// 2026-11-13 换壳：顶部 6 tab → 左侧 Sider 分组菜单（资料 / 出诊）。
+// 菜单文案同时改动了两处（资料导入→资料录入、病历资料→病历交换包），这里同步。
 const TABS = [
-  { label: '资料导入', probe: /病友|导入|资料卡/ },
+  { label: '资料录入', probe: /病友|导入|资料卡/ },
+  { label: '病历交换包', probe: /近期指标|速览|病历/ },
   { label: '出诊监控', probe: /出诊中|停诊|两周总排班/ },
   { label: '挂号与预约', probe: /就诊人|医院/ },
-  { label: '病历资料', probe: /近期指标|速览|病历/ },
   { label: '预约记录', probe: /预约|订单/ },
   { label: '114 会话', probe: /登录|会话/ },
 ]
