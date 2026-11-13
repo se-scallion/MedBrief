@@ -16,6 +16,7 @@ import BriefPage from './pages/BriefPage.jsx'
 import SessionPage from './pages/SessionPage.jsx'
 import IntakePage from './pages/IntakePage.jsx'
 import ReportsPanel from './pages/intake/ReportsPanel.jsx'
+import CardPage from './pages/CardPage.jsx'
 
 const { Header, Content, Footer, Sider } = Layout
 const { Text } = Typography
@@ -43,7 +44,7 @@ export default function App() {
   // ---------- 导航（2026-11-13 换壳：顶部 6 tab → 左侧 Sider 两组）----------
   // 分组按「业务流程」而不是「技术模块」：资料线（录入→整理→出片→交换）与出诊线（看号→挂号→会话）。
   // URL 兼容：旧链接 /?merged=guahao、/#booking、/?tab=xxx 都能落到对应项（见 KEY_ALIAS）。
-  const KEY_ALIAS = { guahao: 'booking', merged: 'booking', card: 'intake', new: 'booking', orders: 'booking' }
+  const KEY_ALIAS = { guahao: 'booking', merged: 'booking', new: 'booking', orders: 'booking' }
   // 合并后的子段：?tab=orders 或 ?sub=orders 都要落到「预约记录」
   const subOf = (want) => {
     try {
@@ -54,6 +55,7 @@ export default function App() {
   const PAGES = [
     { key: 'intake', label: '资料录入', group: '资料', node: <IntakePage /> },
     { key: 'reports', label: '报告库', group: '资料', node: <ReportsPanel /> },
+    { key: 'card', label: '资料卡', group: '资料', node: <CardPage /> },
     { key: 'brief', label: '病历交换包', group: '资料', node: <BriefPage /> },
     { key: 'monitor', label: '出诊监控', group: '出诊', node: <MonitorPage /> },
     // 发起挂号 + 预约记录 = 同一件事的前后半段，合并成一项（页内两段），见 pages/BookingPage.jsx

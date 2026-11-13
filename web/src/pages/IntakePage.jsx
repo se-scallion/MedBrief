@@ -35,7 +35,6 @@ const { Dragger } = Upload
 import { ST, KIND_OPTIONS, FLAG_TEXT, uid, fmtSize, rawJson, postJson } from './intake/shared.js'
 import UploadPanel from './intake/UploadPanel.jsx'
 import ReviewPanel from './intake/ReviewPanel.jsx'
-import ProfilePanel from './intake/ProfilePanel.jsx'
 
 // MedData 四引擎工作台：原来是与本页「平级」的第二个 Segmented 入口（同一件事两条路）。
 // 2026-11-13 收敛：主路径只有本页这一套；四引擎降级为抽屉里的**实验备选**，不占导航、不并列。
@@ -50,24 +49,18 @@ export default function IntakePage() {
   const [selected, setSelected] = useState([]) // 勾选做拼接的图片 id
   const [stitching, setStitching] = useState(false)
 
-  const [patient, setPatient] = useState(null)
-  const [patientSaving, setPatientSaving] = useState(false)
-  const [form] = Form.useForm()
 
-  const [card, setCard] = useState(null)
-  const [cardLoading, setCardLoading] = useState(false)
   // 2026-11-13 用户口径：卡片是给医生看的，默认不脱敏；需要给外部转发时再打开
-  const [mask, setMask] = useState(false)
 
   const [reports, setReports] = useState([])
   const [mdOpen, setMdOpen] = useState(false) // 四引擎实验台（抽屉）
 
   // 页内分段（2026-11-13）：①②③ 原本纵向堆叠、一屏只见 ①，医生/家属要一路往下滚。
   // 这里加一条吸顶分段条：点哪段滚到哪段，滚动时高亮当前段。不动 state、不拆页面。
+  // 资料卡已独立成菜单项（pages/CardPage.jsx），录入页只管「导入 → 校对」
   const SECS = [
     { key: 'upload', label: '① 导入', id: 'sec-upload' },
     { key: 'review', label: '② 校对', id: 'sec-review' },
-    { key: 'card', label: '③ 资料卡', id: 'sec-card' },
   ]
   const [sec, setSec] = useState('upload')
   const scrollLock = useRef(0) // 点击分段后短暂锁住观察器，否则「点了③却被②抢走高亮」
@@ -95,34 +88,6 @@ export default function IntakePage() {
   }, [])
   const iframeRef = useRef(null)
 
-  // ---------- 病友档案 ----------
-  const loadPatient = useCallback(async () => {
-    try {
-      const j = await jget('/api/intake/patient')
-      setPatient(j.patient || null)
-      if (j.patient) {
-        form.setFieldsValue({
-          name: j.patient.name || '',
-          sex: j.patient.sex || undefined,
-          age: j.patient.age || '',
-          diagnosis: j.patient.diagnosis || '',
-          subtype: j.patient.subtype || '',
-          stage: j.patient.stage || '',
-          hospital: j.patient.hospital || '',
-          attending: j.patient.attending || '',
-          focus: j.patient.questions?.focus || '',
-          confirm: j.patient.questions?.confirm || '',
-          nextVisit: j.patient.questions?.nextVisit || '',
-          lastChemo: j.patient.clinicalContext?.lastChemo || '',
-          recentTxOrGcsf: j.patient.clinicalContext?.recentTxOrGcsf || '',
-          marrowSummary: j.patient.clinicalContext?.marrowSummary || '',
-        })
-      }
-    } catch (e) {
-      message.error(`病友档案读取失败：${e.message}`)
-    }
-  }, [form, message])
-
   const loadReports = useCallback(async () => {
     try {
       const j = await jget('/api/intake/reports')
@@ -133,9 +98,8 @@ export default function IntakePage() {
   }, [])
 
   useEffect(() => {
-    loadPatient()
     loadReports()
-  }, [loadPatient, loadReports])
+  }, [loadReports])
 
   // ---------- 1. 批量导入 ----------
   const addFiles = useCallback(
@@ -396,77 +360,6 @@ export default function IntakePage() {
     }
   }
 
-  // ---------- 5. 资料卡 ----------
-  const savePatient = async () => {
-    const v = form.getFieldsValue()
-    setPatientSaving(true)
-    try {
-      const { body } = await postJson('/api/intake/patient', {
-        name: v.name || '',
-        sex: v.sex || '',
-        age: v.age || '',
-        diagnosis: v.diagnosis || '',
-        subtype: v.subtype || '',
-        stage: v.stage || '',
-        hospital: v.hospital || '',
-        attending: v.attending || '',
-        questions: { focus: v.focus || '', confirm: v.confirm || '', nextVisit: v.nextVisit || '' },
-        // v3：第 1 页「临床背景与骨穿节点」区块（可选，只展示不推断；不填就显示「未录入」）
-        clinicalContext: {
-          lastChemo: v.lastChemo || '',
-          recentTxOrGcsf: v.recentTxOrGcsf || '',
-          marrowSummary: v.marrowSummary || '',
-        },
-      })
-      if (!body.ok) throw new Error(body.error || '保存失败')
-      setPatient(body.patient)
-      pushLog('病友档案已保存（身份证 / 手机号 / 住址一律不存）', 'ok')
-      message.success('已保存')
-    } catch (e) {
-      message.error(e.message)
-    } finally {
-      setPatientSaving(false)
-    }
-  }
-
-  const makeCard = async (nextMask = mask) => {
-    setCardLoading(true)
-    try {
-      const j = await jget(`/api/intake/card?mask=${nextMask ? 1 : 0}`)
-      setCard(j)
-      pushLog(`资料卡已生成（${nextMask ? '脱敏' : '未脱敏'}）`, 'ok')
-    } catch (e) {
-      message.error(`生成资料卡失败：${e.message}`)
-      setCard(null)
-    } finally {
-      setCardLoading(false)
-    }
-  }
-
-  const openCardInNewWindow = () => {
-    if (!card?.html) {
-      message.warning('资料卡还没生成')
-      return
-    }
-    const w = window.open('', '_blank')
-    if (!w) {
-      message.warning('浏览器拦截了新窗口，请允许弹窗后重试')
-      return
-    }
-    w.document.write(card.html)
-    w.document.close()
-  }
-
-  const printCard = () => {
-    const win = iframeRef.current?.contentWindow
-    if (!win) {
-      message.warning('资料卡还没生成')
-      return
-    }
-    win.focus()
-    win.print()
-  }
-
   // ---------- 渲染 ----------
   const pendingCount = items.filter((it) => it.status === 'pending').length
   const failedCount = items.filter((it) => it.status === 'failed').length
@@ -697,9 +590,7 @@ export default function IntakePage() {
             options={SECS.map((x) => ({ label: x.label, value: x.key }))}
           />
           <Text type="secondary" style={{ fontSize: 12 }}>
-            {sec === 'upload' ? '选图/拍照或 PDF，可多选、可两张拼接' :
-             sec === 'review' ? '逐行核对识别结果，改完再入库' :
-             '填病友信息 → 生成资料卡 → 打印/存 PDF'}
+            {sec === 'upload' ? '选图/拍照或 PDF，可多选、可两张拼接' : '逐行核对识别结果，改完再入库'}
           </Text>
         </Space>
       </div>
@@ -737,25 +628,6 @@ export default function IntakePage() {
         <ReviewPanel items={items} renderItemBody={renderItemBody} />
       </div>
 
-      {/* 5：资料卡 */}
-      <div id="sec-card" style={{ scrollMarginTop: 56 }}>
-      <ProfilePanel
-        form={form}
-        patient={patient}
-        patientSaving={patientSaving}
-        savePatient={savePatient}
-        card={card}
-        cardLoading={cardLoading}
-        makeCard={makeCard}
-        mask={mask}
-        setMask={setMask}
-        iframeRef={iframeRef}
-        printCard={printCard}
-        openCardInNewWindow={openCardInNewWindow}
-      />
-      </div>
-
-      {/* 已导入报告 */}
       <Drawer
         title="MedData 四引擎识别（实验）"
         width="min(1200px, 96vw)"

@@ -8,7 +8,7 @@ const { Dragger } = Upload
 import { ST, KIND_OPTIONS, FLAG_TEXT, uid, fmtSize, rawJson, postJson } from './shared.js'
 
 const { Text, Paragraph } = Typography
-export default function ProfilePanel({ form, patient, patientSaving, savePatient, card, cardLoading, makeCard, mask, setMask, iframeRef, printCard, openCardInNewWindow }) {
+export default function ProfilePanel({ form, patient, patientSaving, savePatient, card, cardLoading, makeCard, mask, setMask, iframeRef, printCard, openCardInNewWindow, hideActions = false }) {
   // 5：资料卡
   return (
     <Card
@@ -102,6 +102,7 @@ export default function ProfilePanel({ form, patient, patientSaving, savePatient
             </Form.Item>
           </Col>
         </Row>
+        {!hideActions && (
         <Space wrap>
           <Button onClick={savePatient} loading={patientSaving}>
             保存病友信息
@@ -121,6 +122,7 @@ export default function ProfilePanel({ form, patient, patientSaving, savePatient
             </Text>
           )}
         </Space>
+        )}
         <Paragraph type="secondary" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
           身份证、手机号、住址一律不收集（后端会直接丢弃这三类字段）。资料卡不含诊断结论与治疗建议。
         </Paragraph>

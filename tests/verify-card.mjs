@@ -211,35 +211,22 @@ it('时效：最近一次化验超 90 天 → 卡面醒目提醒（含日期与�
 })
 
 // ---------- 5. 材料清单与原件 ----------
-it('材料清单：0 行报告标「未结构化（仅存原件）」，绝不许标「0 项」', () => {
+it('第 2 页不含材料清单（2026-11-14 用户口径：纸质件里放材料清单没意义，已在「报告库」页承载）', () => {
   const reports = makeReports()
-  reports.push({ id: 'rep_img', reportDate: '2026-09-25', kind: 'imaging', hospital: '（脱敏）', rows: [], source: 'image', fileBlobId: 'f_test1' })
+  reports.push({ id: 'rep_img', reportDate: '2026-09-25', kind: 'imaging', hospital: '（脱敏）', rows: [], source: 'image' })
   const card = buildCard({ reports, mask: true, today: TODAY })
-  assert.equal(card.counts.material, 4)
-  assert.equal(card.counts.unstructured, 1)
-  const seg = block(card.html, '⑤ 材料清单', '⑥ 关键趋势')
-  assert.ok(seg.includes('未结构化（仅存原件）'), '影像报告必须标「未结构化（仅存原件）」')
-  assert.ok(!/>\s*0 项\s*</.test(seg), '不得出现「0 项」（会被读成解析失败丢数据）')
+  assert.ok(!card.html.includes('材料清单'), '卡面不得出现「材料清单」（已移到应用内报告库）')
+  assert.ok(!/未结构化（仅存原件）/.test(card.html), '卡面不再承载材料状态说明')
+  assert.equal(card.counts.material, 4, '数据层仍要统计报告份数（报告库页用）')
 })
 
-it('材料清单按「日期 + 医院」聚合：同日同院的多份压成 1 组（防第 2 页被材料清单撑爆）', () => {
-  const reports = makeReports() // 3 份不同日期
-  reports.push({ ...makeReports()[0], id: 'rep_dup', rows: makeReports()[0].rows }) // 与第一份同日同院
-  const card = buildCard({ reports, mask: true, today: TODAY })
-  assert.equal(card.counts.material, 4)
-  assert.equal(card.counts.materialGroups, 3, `同日同院应合并为 1 组，实际 ${card.counts.materialGroups} 组`)
-  const seg = block(card.html, '⑤ 材料清单', '⑥ 关键趋势')
-  assert.ok(new RegExp(`聚合为 3 组`).test(seg), '材料清单标题必须写明聚合组数')
-})
-
-it('材料清单：0 行报告不得出现「0 项」（聚合行用「仅原件」+ 图例说清）', () => {
-  const reports = makeReports()
-  reports.push({ id: 'rep_img2', reportDate: '2026-09-25', kind: 'imaging', hospital: '（脱敏）', rows: [], source: 'image', fileBlobId: 'f_x' })
-  const card = buildCard({ reports, mask: true, today: TODAY })
-  const seg = block(card.html, '⑤ 材料清单', '⑥ 关键趋势')
-  assert.ok(!/\d 份 · 0 项/.test(seg), '聚合行不得出现「0 项」')
-  assert.ok(seg.includes('仅原件'), '0 行组应显示「仅原件」')
-  assert.ok(/未结构化（仅存原件）/.test(seg), '图例必须写明「未结构化（仅存原件）」的完整含义')
+it('第 2 页全部指标：按临床大类分组，组标题齐全', () => {
+  const card = buildCard({ reports: makeReports(), mask: true, today: TODAY })
+  const seg = block(card.html, '④ 全部指标', '⑤') || block(card.html, '④ 全部指标', '⑥')
+  const groups = ['血常规及骨髓', '凝血功能', '生化与肝肾功', '炎症与免疫']
+  const missing = groups.filter((g) => !seg.includes(g))
+  assert.deepEqual(missing, [], `缺分组标题：${missing.join('、')}`)
+  assert.ok(!/text-overflow: ellipsis/.test(card.html.slice(card.html.indexOf('table.compact.cat'))), '归档表项目名不得省略号截断')
 })
 
 it('卡面不得承载原件跳转（打印件点不了；另存/转发后 /api/intake/blob 是死链）', () => {
