@@ -222,7 +222,27 @@ it('材料清单：0 行报告标「未结构化（仅存原件）」，绝不�
   assert.ok(!/>\s*0 项\s*</.test(seg), '不得出现「0 项」（会被读成解析失败丢数据）')
 })
 
-it('材料清单：有原件 → 「查看原件」按钮（带 blob id）；无原件 → 「无原件」', () => {
+it('材料清单按「日期 + 医院」聚合：同日同院的多份压成 1 组（防第 2 页被材料清单撑爆）', () => {
+  const reports = makeReports() // 3 份不同日期
+  reports.push({ ...makeReports()[0], id: 'rep_dup', rows: makeReports()[0].rows }) // 与第一份同日同院
+  const card = buildCard({ reports, mask: true, today: TODAY })
+  assert.equal(card.counts.material, 4)
+  assert.equal(card.counts.materialGroups, 3, `同日同院应合并为 1 组，实际 ${card.counts.materialGroups} 组`)
+  const seg = block(card.html, '⑤ 材料清单', '⑥ 关键趋势')
+  assert.ok(new RegExp(`聚合为 3 组`).test(seg), '材料清单标题必须写明聚合组数')
+})
+
+it('材料清单：0 行报告不得出现「0 项」（聚合行用「仅原件」+ 图例说清）', () => {
+  const reports = makeReports()
+  reports.push({ id: 'rep_img2', reportDate: '2026-09-25', kind: 'imaging', hospital: '（脱敏）', rows: [], source: 'image', fileBlobId: 'f_x' })
+  const card = buildCard({ reports, mask: true, today: TODAY })
+  const seg = block(card.html, '⑤ 材料清单', '⑥ 关键趋势')
+  assert.ok(!/\d 份 · 0 项/.test(seg), '聚合行不得出现「0 项」')
+  assert.ok(seg.includes('仅原件'), '0 行组应显示「仅原件」')
+  assert.ok(/未结构化（仅存原件）/.test(seg), '图例必须写明「未结构化（仅存原件）」的完整含义')
+})
+
+it('材料清单：有原件 → 按钮指向 blob；text-only → 「无原件」', () => {
   const reports = makeReports()
   reports[0].fileBlobId = 'f_abc123'
   reports[1].source = 'text-only'

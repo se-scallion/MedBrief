@@ -136,10 +136,27 @@ it('名称噪声：圈号 / 尾部单字母 / 定性结果 / OCR 截断', () => 
   assert.equal(cleanName('中性粒细胞百分15.8'), '中性粒细胞百分比')
 })
 
-it('脏名要标出来，不许当正常项：nameDirty 只命中真脏行', () => {
+it('NT-proBNP 脏名必须被别名消灭（含「按年龄分层 + pg/ml 阈值」的说明文字不再当项目名）', () => {
   const dirty = ALL_ROWS.map(normalizeRow).filter((r) => r.nameDirty)
-  assert.equal(dirty.length, 1, `nameDirty 应只命中 1 行（NT-proBNP 那行），实际 ${dirty.length}`)
-  assert.ok(/急性心衰/.test(dirty[0].name), `脏名应含「急性心衰」片段，实际 ${dirty[0].name}`)
+  assert.equal(dirty.length, 0, `快照里不应再有脏名，实际还有 ${dirty.length} 行：${dirty.map((r) => r.name.slice(0, 30)).join('、')}`)
+  const bnp = ALL_ROWS.map(normalizeRow).filter((r) => r.name === '前体NT-proBNP')
+  assert.ok(bnp.length > 0, '沾了参考说明的 NT-proBNP 行必须还原为「前体NT-proBNP」')
+  assert.ok(bnp.every((r) => !/[<>]?\d+\.\d+pg\/ml|按年龄分层/.test(r.name)), '规范名里不得残留阈值说明')
+  assert.ok(bnp.every((r) => r.repaired.includes('name-alias')), '别名归一必须留痕（name-alias）')
+  // 阈值被说明文字污染：`<300pg/ml-非` → `<300`
+  const th = bnp.find((r) => String(r.value).startsWith('<'))
+  if (th) assert.equal(th.value, '<300', `阈值应清洗为 <300，实际 ${th.value}`)
+})
+
+it('NT-proBNP 归到标准码（心功能关键项，蒽环类化疗必看），不得落进「其他项」', () => {
+  const codes = new Set(ALL_ROWS.map(normalizeRow).filter((r) => r.name === '前体NT-proBNP').map((r) => classifyAnalyte(r.name).code))
+  assert.deepEqual([...codes], ['NT_PROBNP'], `NT-proBNP 的 code 应为 NT_PROBNP，实际 ${[...codes].join(',')}`)
+  assert.equal(classifyAnalyte('前体NT-proBNP').cat, 'INFLAM', '应归入炎症/心功能组（与 NT-proBNP 同类），不得落 OTHER')
+})
+
+it('脏名仍要标出来（别名只覆盖已知形态）：未登记的多数字名称必须 nameDirty', () => {
+  const out = normalizeRow({ name: '某某项目 12.3 45.6 说明文字', value: '1.2', num: 1.2 })
+  assert.equal(out.nameDirty, true, '未登记的多数字名称必须标 nameDirty，不许静默当正常项')
 })
 
 // ---------------- 5. 串码防护（同名异轴项） ----------------
