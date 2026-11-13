@@ -135,13 +135,23 @@ it('完备性：105 行输入 → counts.rows=105，35 个项目一个不少', (
   assert.deepEqual(missing, [], `卡上缺这些项目（静默丢数据）：${missing.join('、')}`)
 })
 
-it('完备性：「最新指标」段实际渲染行数 == counts.latest（防"一组一行"复活）', () => {
+it('完备性：「全部指标」段实际渲染行数 == counts.latest（防"一组一行"复活）', () => {
+  // 2026-11-13 用户改版：取消「最新指标」段（异常项已按时间倒序，信息重复），
+  // 全部指标段移到 ③，趋势移到 ④（打印时强制最后一页）。判据不变：渲染行数必须等于项数。
   const card = buildCard({ reports: makeReports(), mask: true })
-  const seg = section(card.html, '② ', '③ ')
-  // 该段是两栏并排的两张表，各 1 行表头
-  const dataRows = trCount(seg) - 2
-  assert.ok(dataRows >= card.counts.latest, `最新指标段渲染 ${dataRows} 行 < 应有的 ${card.counts.latest} 行`)
+  const seg = section(card.html, '③ ', '④ ')
+  const dataRows = trCount(seg) - 2 // 两栏并排，各 1 行表头
+  assert.ok(dataRows >= card.counts.latest, `全部指标段渲染 ${dataRows} 行 < 应有的 ${card.counts.latest} 行`)
   assert.notEqual(dataRows, card.counts.groups, '渲染行数退化成了"组数"（历史 bug 回归）')
+})
+
+it('版式（2026-11-13 用户口径）：异常项按时间从新到旧、且不再有「最新指标」段', () => {
+  const card = buildCard({ reports: makeReports(), mask: true })
+  assert.ok(!card.html.includes('最新指标'), '「最新指标」段应按用户要求移除')
+  const seg = section(card.html, '① ', '② ')
+  const dates = [...seg.matchAll(/(\d{4}-\d{2}-\d{2})/g)].map((m) => m[1])
+  const sorted = dates.slice().sort((a, b) => b.localeCompare(a))
+  assert.deepEqual(dates, sorted, `异常项日期应为新→旧，实际 ${dates.join(',')}`)
 })
 
 it('完备性：异常项全部进「① 异常项」段（不是只留最新一条）', () => {
