@@ -1,0 +1,83 @@
+{
+  "name": "meddata-doc-recognition",
+  "version": "1.1.0",
+  "updated": "2026-10-25",
+  "note": "检查报告（doc）AI 主识别的「算法版本」——prompt 与产物契约同样是算法，独立于 app 版本与化验单识别版本（src/data/recognition-version.json）。改 prompt / 契约字段 / 输入分级后必须递增版本 + 写 changelog，并跑 pnpm run test:doc 门禁。",
+  "changelog": [
+    {
+      "version": "1.1.0",
+      "date": "2026-10-25",
+      "status": "DONE",
+      "goal": "检查报告 AI 精读太慢：同一张骨穿图两次对照，dsh agent 走了 30 次工具往返（16 次读图 + 10 次裁图）耗时 661s，其中 711s 是等首字（relay ttfb ≈ 4.7s + 1.94s × 上下文图片数，图片不进缓存）",
+      "changes": [
+        "新增「单发直读」通道（ai-once，server.mjs::triggerDocReadOnce + scripts/agent-task.mjs::buildDocOnceMessages）：不经 agent 循环，一次多模态请求直接产出同契约 done 文件；失败（非 200 / 超时 / 正文空 / JSON 不完整 / findings+conclusion 皆空）一律直连 spawnDocAgentV2 回落 agent，绕开 10s 冷却闸（回落到 triggerDocReadV2 会被 DOCREAD_COOLDOWN 静默吃掉）。",
+        "把转录口径抽成单一事实源 docRuleLines(isText) / docSchemaLines(id)，v2 prompt 与单发通道共用——首版单发自己精简了一份规则，漏掉 4b doc_type 统一词表与 time 抄录口径，直接导致 3 例 REGRESSED（生殖系统彩超→男性生殖彩超、浅表器官彩超→浅表淋巴结彩超、检查时间空）。",
+        "口径增补三处（两条通道同时受益）：3-1) time 必须从原文时刻抄（「2026年08月11日 08:28」→ time=08:28），只有日期时不得补 00:00；6-1) 正文每处「XX 占 N%」「共数 XX N 个」都要各列一条 measure，与表格明细并存；7-1) part/title 必须给引文（part 常由标题推出，引文抄标题含部位那段）。",
+        "vision 通道送模型前按需把图长边放大到 2400px（macOS sips，无第三方依赖）：小字数字在原尺寸会读错——doc-cert-20260825 原图读成 2026-03-25，detail:high 无效，sips -Z 2400 后读对 2026-08-25。",
+        "写盘前按 DOC_REQUIRED_FIELDS 补齐字段、kind 不在枚举内降级为 other（只降级不整份丢，避免一个错字退化成 11 分钟 agent）；DOC_REQUIRED_FIELDS 与 scripts/verify-doc.mjs 共用一份清单。",
+        "单发开启时跳过 MinerU 补跑（原 gate 会把触发串行推迟 11–90s，实测只回 262 字）；agent 回退路径仍按原逻辑补跑。",
+        "relay 请求带 thinking:{type:disabled}：transcription 不需要思维链，实测同一张图 6.1s / reasoning 0 vs 默认档 17.2s、effort:low 25.5s，且默认档首跑出现 reasoning 吃满 8000 token、正文为空（finish=length）。"
+      ],
+      "foundBy": "用户反馈「AI 识别花了 600 多秒」。现场：logs/agent-docread-1792894808839-pd1zx.log + dsh 会话流（30 步时间轴）+ :7863 网关逐请求日志（ttfb 与图数回归 ttfb≈4.7s+1.94s×图数）",
+      "verification": "pnpm run test:doc：9 例 8 PASS + 1 REFERENCE（与改造前基线一致，0 回退）；单例用时 165.3/165.4/99.3/231.5/27.1/36.2/27.1/24.1/18.1s → 18.2/9.2/9.2/6.2/3/6/6.1/6.1/3s（合计 794s→67s）；骨穿图 verify-doc 连跑两次 FAIL=0（661s→9.1~12.2s）；pnpm run test:all 绿；DOCREAD_ONCE=0 回退演练通过"
+    },
+    {
+      "version": "1.0.4",
+      "date": "2026-10-21",
+      "status": "DONE",
+      "goal": "病历文书（diagnosis certificate）在 doc prompt 里没有日期/结论口径 → reported_at 空、结论空，两条 cert 回归用例判红",
+      "changes": [
+        "buildDocUnderstandPrompt 新增规则 3c（病历文书 kind=discharge|cert / category=case）：date=出院日期（无则开证/盖章日期），time=出院时刻；reported_at=落款/开证日期且**允许只到日**（落款只有「2026年08月25日」就给 2026-08-25，不得因缺时刻留空——3) 的「不猜」指猜不出，落款日期是读到的）；conclusion=「主要诊断/出院诊断」原文并同步写入 fields（cert→diagnosis，discharge→discharge_diagnosis），两处不得一处有值一处空；findings 仅在有叙述段时填，表单版证明书留空；页脚免责声明与患者信息一律不得进 conclusion/fields。"
+      ],
+      "foundBy": "doc 门禁首跑 2 例 REGRESSED：doc-cert-20260825「报告日期 真值 2026-08-25 ↔ 产出（空）」、doc-cert-20260913「诊断结论 片段命中 0/7」——模型按检查报告口径把「落款只有日期」当「读不到」而留空，且把诊断只放进 fields 不进 conclusion",
+      "verification": "两例分别 pass@2 PASS；随后跑全量 pnpm run test:doc 复核无其它回退"
+    },
+    {
+      "version": "1.0.3",
+      "date": "2026-10-18",
+      "status": "DONE",
+      "goal": "新语料抓到的第三个缺陷：doc_type 词表不统一（同一部位换家医院/换份报告就换说法）",
+      "changes": [
+        "buildDocUnderstandPrompt 新增规则 4b：doc_type 优先使用统一词表（腹部彩超/心脏彩超/浅表器官彩超/生殖系统彩超/下肢彩超/心电图/胸部CT平扫/骨髓形态学（骨穿）…），不允许把部位细节写进类型名（如「颈部淋巴结彩超」应归「浅表器官彩超」）。"
+      ],
+      "foundBy": "scripts/regress-cases/doc-us-superficial-2215726 首跑 FAIL：真值「浅表器官彩超」↔ 产出「颈部淋巴结彩超」——内容读对了，但类型名碎片化会让归档查重与列表筛选失效",
+      "verification": "重跑该用例 PASS；全量 doc 门禁 6 通过 / 0 回退"
+    },
+    {
+      "version": "1.0.2",
+      "date": "2026-10-18",
+      "status": "DONE",
+      "goal": "新语料抓到的第二个缺陷：doc_type 被写成照抄标题的长名称",
+      "changes": [
+        "buildDocUnderstandPrompt 的 doc_type 要求收敛为**短标签**（≤12 字，部位+检查方式，如「腹部彩超」），完整名称归 title —— doc_type 参与查重与列表展示，必须与既有数据同口径。"
+      ],
+      "foundBy": "scripts/regress-cases/doc-us-abdomen-2215723 首跑：真值「腹部彩超」↔ 产出「腹部彩色多普勒超声检查报告单」",
+      "verification": "重跑两个 doc 用例均 PASS"
+    },
+    {
+      "version": "1.0.1",
+      "date": "2026-10-18",
+      "status": "DONE",
+      "goal": "新语料抓到的第一个缺陷：只有「报告时间」的报告把检查日期弄丢",
+      "changes": [
+        "buildDocUnderstandPrompt 新增规则 3b：图中若只有「报告时间/签发时间」而无独立「检查时间/采集时间」→ date/time 取该报告时间并置 reported_at 同值、notes 写明推定；保留 Bug 072『审核时间不是报告时间』。"
+      ],
+      "foundBy": "scripts/regress-cases/doc-ecg-2215722 首跑 FAIL（真值 date/time 有值，产出皆空——AI 严格区分检查/报告时间，推理正确但产品口径错）",
+      "verification": "重跑该用例 PASS"
+    },
+    {
+      "version": "1.0.0",
+      "date": "2026-10-15",
+      "status": "DONE",
+      "goal": "检查报告从「本地 OCR 先行 + AI 末端手动补丁」改为「双轨识别，结果以 AI 为准」（方案见 .agents/proposals/ai-first-doc-recognition.md）",
+      "changes": [
+        "scripts/agent-task.mjs 新增 buildDocUnderstandPrompt(id, mode)：v2 契约一次产出 kind/doc_type/category/title/part/日期时间/findings/conclusion/measures + 逐字段 confidence + evidence 引文 + notes；mode='text' 分支明确不读图。kind 枚举取自 src/data/docKinds.js（与前端下拉同一份）。v1 buildDocReadPrompt 保留作回滚路径。",
+        "server.mjs /api/ai-docread 按 version(1/2)+mode(doc|doc-text|lab) 路由；doc-text 模式不落原图。",
+        "输入分级 docReadModeFor({isImage,isScanned,textLen})：只对**真 PDF 文字层**走文本整理，扫描件一律读图（实测：OCR 乱码也有 541 字，按字数判会把垃圾送进文本模式）。",
+        "多页扫描件 PDF 由 docImage.js 纵向拼接成一张，避免只读第 1 页静默丢内容。",
+        "doc 级回归门禁：scripts/verify-doc.mjs（片段命中率/包含关系口径）+ scripts/run-regress-doc.mjs（pass@2 + docBaseline 守卫），case-ecg-chaoyang-changying 转正为 docBaseline:'pass'。"
+      ],
+      "verification": "verify-doc.mjs 对 case-ecg-chaoyang-changying 实测 PASS（报告类型/标题/日期/时间/结论片段 2/2/测量值 QRS 100ms/证据覆盖 6 字段/契约字段齐备）；pnpm test 44/44；pnpm run test:regress 0 回退。"
+    }
+  ]
+}

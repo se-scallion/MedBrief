@@ -1,0 +1,652 @@
+{
+ "name": "meddata-recognition",
+ "version": "1.12.1",
+ "updated": "2026-11-04",
+ "changelog": [
+  {
+   "version": "1.12.1",
+   "date": "2026-11-04",
+   "status": "DONE",
+   "tag": "recog-v1.12.1",
+   "goal": "双栏 graph「② 补回」加两道安全闸，根治「肝功能+肾功能+离子」报告凭空多出一项血常规指标「红细胞体积分布宽度-CV」(RDW_CV)。两份同版式真实报告（TR-20261104-7K4LBH 2026-08-13 / TR-20261104-PLK5PB 2026-08-17）均复现，属模板级必然。",
+   "changes": [
+    "a[根因] ocr.js mergeGraphValueByCode ② 补回只按 code 查重、且 codeToGraph 仅凭「值+参考范围」反推：报告 IBIL 行 7.4 / 0～13.68 与字典 RDW_CV 档案（0-15 / %）中心只差 4.4%，比 IBIL 自己的档案（1.7-13.7）更接近 → 反推成 RDW_CV（实测 matchFieldByValueRef('7.4','0～13.68','umol/L') → RDW_CV, ratio=0.044）。又因 ② 在每行循环里被调用（每次 parsed 只有当前行），同一个 graph 节点被反复消费，rawGrid 出现 17 条「红细胞体积分布宽度-CV <孤儿 token>」假行，最后被 normalize「同 code 多行择优」收敛成 1 项。",
+    "b[闸1 组一致性] ocr.js 新增 pageGroupEvidence(items)：全页 token 逐个 mapAlias 统计 FIELD.group 证据；backfillAllowed() 规定「该组在全页零证据 → 禁止补回」。全页可映射 token < 8（小报告/乱码页）时返回 null、不设闸，保持旧行为防误伤。",
+    "c[闸2 单位量纲] backfillAllowed() 要求 graph 节点自带单位与字段档案单位「归一后逐字相等」（unitKey：小写 + 去非字母数字）。刻意不复用 normalize.sameUnitClass——它对 other-vs-% 故意放宽返 true（为免推翻中文名映射），而补回是低置信操作，宁可漏补不可错补。两道闸各自独立就能拦下本 bug。",
+    "d[单测] 新增 scripts/verify-backfill-guard.mjs（23 断言，已登记 run-unit.mjs）：闸 1/闸 2 正反例 + 不误伤（IBIL/Cr/K 合法补回放行）+ 证据不足退回旧行为 + 端到端断言「喂入 IBIL 行 7.4/0～13.68/umol/L 这一页，mergeGraphValueByCode 不得补出红细胞体积分布宽度」。已验证去掉闸后该用例立即红（补出 1 条假行），即用例真的钉住本 bug。",
+    "e[回归语料] 新增 scripts/regress-cases/case-TR-20261104-7K4LBH 与 case-TR-20261104-PLK5PB（同版式两份，各 25 项权威 expected）。两者登记 knownFail（baselineFails 8 / 11）：残留失败是 CLI 复刻管线（verify-report 把 900px 图上采样到 3000px）的双栏 name/value 串行，修复前后 FAIL 计数完全一致（已实测），与本轮补回闸无关，属独立缺陷；本 case 用于锁定这两份报告的真值，防未来「改 A 伤 B」。"
+   ],
+   "regression": "run-regress 待全量跑（新增 2 例 knownFail 守住 8/11，其余不变）；pnpm test 76 通过 / 0 失败（含新增 verify-backfill-guard 23 断言）",
+   "knownResidue": "① 本轮只做「拦错补」，没做更彻底的「按 graph 节点查重」（一个物理行只允许产出一个 code）——后者能根治「一行数据被两个 code 消费」整类问题，但改动面更大，按计划先留作下一轮评估（触发条件：再出现任一新 code 凭空补出的案例）。② 两份固化报告的残留 FAIL（双栏串行）需专项治理；治理后应把 meta.json knownFail 改回 false。③ 未复现 CLI 侧假行：verify-report 的 OCR 质量与该图在浏览器实际管线（buildGridFromItems 走 900px 原图）不同，故假行只在端到端断言（verify-backfill-guard 的合成 items）里钉住，未在图片回归里钉住。"
+  },
+  {
+   "version": "1.12.0",
+   "date": "2026-10-29",
+   "status": "DONE",
+   "tag": "recog-v1.12.0",
+   "goal": "OCR 优化按「生效方式」拆成两半（docs/新类型报告自动触发ORC优化-design-v1.md 附录 J）：A 半＝数据层增量（字段/别名/keyFields/段落名/定义码）走运行时补丁，写完即生效、不必等隔离工作树与全量门禁；B 半＝解析/归一逻辑改动，仍走源码 + 门禁 + tag。本轮只落地 A 半的承载层，PATCHES 为空 → 识别行为零变化。",
+   "changes": [
+    "a[新增] `src/data/patches.js`：纯数据补丁模块（顶层无逻辑、无 import），承载 ORC 优化产生的表驱动增量；头注写明四条铁律（只放数据 / 沉淀后清空 / 失败不传染识别 / 原子写）。",
+    "b[新增] `src/data/applyPatches.js`：零依赖校验+合并器。`validatePatch` 做结构与类型校验（含 __proto__ 等禁止键）；`applyPatches(patches, sink)` 按 sink 注入合并字段/别名/keyFields/段落名/定义码，语义为「源码优先 + 去重 + 幂等 + 绝不抛异常」。",
+    "c[接入] `dictionary.js` 尾部 try/catch 应用（字段→STANDARD_FIELDS/FIELD_BY_CODE、别名→ALIAS_MAP、keyFields→REPORT_TYPES）；`parseDoc.js` 把 `SECTION_MATCHERS` 改为可重建的 `buildSectionMatchers()` 并在段落补丁后重建；`ocr.js` 的 `REPORT_TYPE_DEFINING_CODES` 接受补丁追加。",
+    "d[门禁] 新增 `scripts/verify-patches.mjs`（24 断言：校验 / 合并语义 / 幂等 / 坏补丁不抛出 / 空补丁下字典与「分析结果」切段无回归）并登记进 `run-unit.mjs` 白名单：`pnpm test` 70 → 71 通过 / 0 失败。",
+    "e[治理] `save-recog-version.mjs`：① ALGO_FILES 补登 patches.js / applyPatches.js / verify-patches.mjs（否则 tag 指向的代码缺补丁层）；② 新增「补丁沉淀自检」——PATCHES 非空时警告列出未沉淀补丁 id，提醒合并回静态表后清空。"
+   ],
+   "regression": "run-regress：7 通过(green) / 9 守住(known-fail) / 0 回退 / 12 跳过（PATCHES 为空，识别行为与 1.11.2 一致）",
+   "knownResidue": "① 本轮只做承载层，尚未接入「首份新类型自动触发」判据与材料三层留存（raw items 尚未落 trace），故补丁仍靠人工写入。② worktree 隔离、/optimize 页面、闭环自动化按排期延后（触发条件见设计稿附录 D/C）。③ 补丁与静态表并存期须守沉淀纪律，脚本只警告不阻断。",
+   "_note": "识别算法版本 ≠ app 版本（app 见 src/data/app-version.json）"
+  },
+  {
+   "version": "1.11.2",
+   "date": "2026-10-29",
+   "status": "DONE",
+   "tag": "recog-v1.11.2",
+   "goal": "用户三条反馈（2026-10-28/29）：① 「检验报告种类更多，可能隔天出报告，报告时间可能跨日 → 不能只选时间，要加日期」；② 「最近几份报告的日期识别都不全面」；③ 血常规识别反馈 TR-20261028-VCU1MO（9 处修正 + 2 行删除）。本轮落地：报告日期独立字段（跨日正确）、日期/时间多候选回退、百分比单位碎片归一；血常规的双栏 value/seq 串列属图像分辨率与分栏层的深水区，另立专项（见 knownResidue）。",
+   "changes": [
+    "a[记录契约] `report` 新增「报告日期」：ImportFlow 的 draft 增 `reported_date`，落库时 `reported_at = reported_date + reported_time`（只填日期则只写日期），缺省才回退采集日期 `date`——此前一律用 `draft.date` 拼报告时间，**隔天出报告的记录日期必然错**。",
+    "b[UI] DataGrid 校对页新增「报告日期（可选）」`type=date` 输入（含「已自动识别」徽标），报告时间另设一行；占位提示写明「留空＝与采集日期相同」，老记录与同日出具报告行为不变。",
+    "c[识别] ocr.js runLocalBest / runLocalBestParallel：`time` / `collectedAt` / `reportedAt` 由「只取 best」改为**逐项多候选回退**（date 早已如此）。低分辨率 900px 存档图的页脚小字在某个策略变体里能读出来、在 best 变体里读不出——这是「日期/时间全空」的主因之一（实测 40 条记录 18 条无报告时间）。",
+    "d[单位归一] normalize.js normalizeUnit 增「百分比碎片」规则：`16%` / `4%` / `20%`（双栏行内归并把邻栏序号码挤进单位格）与 `%y` / `%)`（% 后带杂字）→ 统一归为 `%`；合法单位（10^9/L、10^12/L、fL、mg/L、pg）不受影响。",
+    "e[测试] verify-unit-ocr-fix.mjs 增 9 条 normalizeUnit 断言（5 条碎片 + 4 条合法单位不受影响），22 条全过。"
+   ],
+   "knownResidue": "① 血常规「双栏 value/序号串列」（用户反馈里 MCHC 值变 17、MONO_PCT 值变 192、EO_ABS 值变 99.5）本次**未修**：根因在 buildGridFromItems 的双栏切分对 900px 低清图失准（行内 token 归并把右栏序号并进左栏），属图像分辨率 + 分栏层深水区，需专门画像与 ≥1600px 原图做回归，不能拿 900px 存档图当判据。② 用户反馈里 6 处 `autoFix`（unit/ref）是「一键修正到字典标准值」，**不等于报告原文错**（如 RDW-SD ref 30-50、MPV 5-10、PLT_PCT 0.08-1 就是报告原文），按 §9.4 只信 manual，不作真值。③ 序号插值 autoFillItemNo 在双栏交错结构下会把 Hb/HCT/MCV 填成 27/28/29（报告印的是 13/14/15），同属分栏层问题。④ 900px 存档图页脚日期字形糊（「2026-08-2」），算法无法还原，靠多候选回退 + 用户手填兜底。",
+   "_note": "识别算法版本 ≠ app 版本（app 见 src/data/app-version.json）"
+  },
+  {
+   "version": "1.11.1",
+   "date": "2026-10-28",
+   "status": "DONE",
+   "tag": "recog-v1.11.1",
+   "goal": "用户第四轮微调（2026-10-28）三条：「报告原文去掉标题（北京市医疗机构临床检验结果报告单）」「为什么不可编辑」「临床备注这一项去掉吧，用不上」。据此：① 报告原文不再收抬头标题（它不承载信息、原件图就在旁边）；② `report_text` 从只读改为**可编辑**，并加 `report_text_edited` 标记——用户改过之后重新识别/换引擎不再覆盖人工修改；③ **删除校对页的「临床备注」输入框**（`record.notes` 字段与详情页展示、导出、Prompt 引用全部保留，否则库里 2 条历史备注会看不见）。",
+   "changes": [
+    "ocr.js：extractFlowReport 不再抽 header 段（删 FLOW_HEADER_RE 与相关分支），返回 { antigens, impression, conclusion, footnote }；多页 PDF 合并的段名清单同步去掉 header。",
+    "flowNotes.js：composeReportText 的 SECTION_LABELS 去掉 header（报告原文现在从「所检测抗原：」开始）；头注改「可编辑 + report_text_edited 标记」。",
+    "DataGrid.jsx：报告原文区块由只读 div 改为受控 `<textarea rows={6}>`（可编辑，读字错漏可自行修正）；**删除「临床备注（可选，将随导出一起提供给 AI）」输入框与其 notes/onNotesChange props**。",
+    "ImportFlow.jsx：`onReportTextChange` 写值并置 `report_text_edited: true`；识别落草稿时若已编辑则不覆盖（`d.report_text_edited ? d.report_text : compose…`）；emptyDraft/buildRecord 带 report_text_edited。",
+    "agent-task.mjs：C 类 narrative 契约去 header 字段，并补一句「报告抬头标题不收（用户要求，省版面）」。",
+    "ocrEngines.js：ai 分支 narrative 四段透传（去 header）。",
+    "verify-flow-report.mjs：⑫ 由「五段」改为「四段（无 header）」+ 新增断言「拼装结果不含报告抬头标题」；总计 29 条。"
+   ],
+   "knownResidue": "① `record.notes` 字段本身**没有删除**：库里 2 条记录在用（r_1792589699080_bew1c 流式人工核对说明、r_marrow_manual_1792591358708 骨穿 AI 精读取值说明），且有 1 条 doc 备注；删字段会让这些历史内容与导出/Prompt 引用一起消失。现状＝仅去掉输入口，历史内容仍可在详情页「备注」区块查看、仍随导出。② notes 的真实使用场景只出现在「图文型 / 人工转录」报告（指标表读不全需人补说明），普通化验单用不上——用户据此判断\"用不上\"成立。③ report_text_edited 只在前端 draft 与 record 上记标记，不做字段级 diff 审计；若用户希望\"改了什么\"可回溯，需另做编辑留痕（当前未做）。",
+   "_note": "识别算法版本 ≠ app 版本（app 见 src/data/app-version.json）"
+  },
+  {
+   "version": "1.11.0",
+   "date": "2026-10-28",
+   "status": "DONE",
+   "tag": "recog-v1.11.0",
+   "goal": "用户第三轮口径（2026-10-28，接 1.9.0/1.10.0）：「我要里边的文字也记录」+「那条『机器误识未校』的说明不要」+「既然都识别了，把文字都记下来」+「患者信息不收——重复，也敏感」。据此把流式报告的**报告原文**（抬头 / 所检测抗原清单 / 印象 / 结论 / 注）落到**独立只读字段 `report_text`**：① 不再是塞进「临床备注」（备注是用户手写语义、且会随导出与 Prompt 提供给 AI，机器全文塞进去无法区分）；② 正文里不再出现任何免责句，改由 UI 区块标题「报告原文（机器转录）」承载；③ 患者身份与重复信息在抽取层就排除（姓名/性别/年龄/条码号/住院号/床号/病历号/病案号/门诊号/标本类型/科室病区），依据项目既有脱敏口径（typingCard.js「不输出住院号/证件号」）。",
+   "changes": [
+    "ocr.js：extractFlowNarrative 升级为 extractFlowReport，按版式抽五段 header / antigens / impression / conclusion / footnote；新增 FLOW_IDENTITY_RE，含身份与重复信息的行整行丢弃（姓名/性别/年龄/条码/住院号/床号/病历号/病案号/门诊号/标本类型/科室病区）；抗原清单按「并列 ≥3 个 CD/cKappa/cLambda」跨行续接（纯 CD 行无中文，会被人为噪声过滤误杀，此处豁免），折行拼接处补空格避免 CD14,CD15 粘连；「注：…」只取第一条。「拿不到段名就返回 null」的纪律不变。",
+    "flowNotes.js：由「拼 notes 块」改为 composeReportText（五段按序、段间空行、**不加任何免责声明**）+ hasReportText；原生标签已有的段不重复加前缀。",
+    "ImportFlow.jsx：emptyDraft/buildRecord 增 report_text；识别后写 `report_text: composeReportText(narrative) || d.report_text`（只覆盖机器产物，不碰 notes 手写内容）；DataGrid 传 reportText。",
+    "DataGrid.jsx：校对页在「临床备注」上方新增只读区块「报告原文（机器转录，只读；不含患者信息）」（max-h-32 滚动、whitespace-pre-wrap 保留折行）。",
+    "ReportDetail.jsx：详情页新增只读区块「报告原文（机器转录）」。",
+    "export.js：JSON（buildJson / buildJsonAll）与 Markdown（toMarkdown）带上 report_text；**Prompt 导出不含**（toMarkdown 新增 opts.withReportText，buildPrompt 传 false）——AI 需要原文时直接读原件图，不必塞整页 OCR 噪声。",
+    "agent-task.mjs：C 类 prompt 的 narrative 契约扩为五段，并明写「严禁转录患者身份与重复信息（姓名/性别/年龄/条码/住院号/床号/病历号/病案号/门诊号/标本类型/科室病区）、散点图轴标与签名时间戳都不收」。",
+    "ocrEngines.js：ai 分支的 narrative 按五段透传（五段全空即视为未给）。",
+    "verify-flow-report.mjs 扩到 28 条断言：新增「五段齐全 / 抗原清单跨 3 行完整（HLA-DR→cLambda，含 CD235a）/ 拼装后段间空行 / **不含任何免责句** / **患者身份零泄露**（姓名·性别·年龄·条码·住院号·床号·病历号·标本类型·科室病区）/ 不收时间戳·检验者·地址 / 原文照抄不润色（幼稚也淋巴细乃·BO.2%2RBME·CD1lib）/ 空输入不产占位」。"
+   ],
+   "knownResidue": "① 抬头行与抗原清单仍可能带 OCR 噪声（如「报告单 @)」「CDllb」），按「照抄不纠错」口径保留（纠错版请用 AI 精读）。② AI 通道的 narrative 五段只做过 prompt 与透传改造 + 一次真机 e2e，未建 AI 回归（省额度）；agent 不给该键时前端不渲染区块（宁缺勿脏）。③ report_text 只在流式图文报告产出；骨髓形态学等其它报告暂不生成全文（其正文以分类表为主，已在指标里）。④ 旧记录无 report_text → 详情页不显示该区块（零迁移降级）。⑤ 患者身份的排除是**行级白名单+关键词双保险**：若某厂商版式把身份与正文写在同一行，可能整行被丢弃（宁缺勿脏，需按图补规则）。",
+   "_note": "识别算法版本 ≠ app 版本（app 见 src/data/app-version.json）"
+  },
+  {
+   "version": "1.10.0",
+   "date": "2026-10-28",
+   "status": "DONE",
+   "tag": "recog-v1.10.0",
+   "goal": "接 1.9.0 的用户追加需求（2026-10-28）：「里边的文字也记录」。即流式免疫分型（FCM-MRD）报告的**印象/结论正文**要留档——这类报告可入库指标只有一行 MRD，但正文（表型、各系细胞占比、结论判断）才是用户要看的内容。历史做法是人手抄进 record.notes（库里 r_1792589699080_bew1c 的 notes 就是整段正文）。**计划流程排雷后否掉了「双落（归档检查报告 kind=flow）」**：Bug 204（2026-10-28 修完）正是「同一原件在 docs 与 records 各存一份」的跨实体重复，且 doc.measures 会与 record.data_points 重复产 MRD 点；`doctor:dup` ① 通道现为 0 组，双落会立刻破线。故改为「正文写进化验记录的 notes」，不新增字段、不新增第二条记录。",
+   "changes": [
+    "ocr.js 新增 export extractFlowNarrative(text)：按报告版式切「印象 (Impression)」/「结论 (Conclusion)」两段，剔除页眉·患者信息·所检测抗原清单·散点图轴标·页脚（注:/地址/采样时间/落款），折行直接拼接；查不到段名即返回 null（宁缺勿脏，绝不猜内容）。",
+    "ocr.js 正文透传：recognizeLocalOnce（几何通道与文本通道）→ runLocalBest / runLocalBestParallel（best 优先 + 任一候选回退，与 date 同口径）→ runLocalBestSliced（切片用合并 items 文本）→ ocrInternal 的 PDF 文本层分支与多页图片 PDF（各段取首个非空，防多页重复）→ runOCRWithRetry。",
+    "新增 src/utils/flowNotes.js（纯函数，零 DOM）：buildFlowNotes(narrative,{existing,source}) 拼「来源标注 + 印象 + 结论」块，用户手写备注保留在后、旧机器块先剥离再前置（重新识别/换引擎不会重复堆叠）；hasFlowNotesBlock / stripFlowNotesBlocks 供判定与清理。来源标注分本地/AI 两种措辞，与既有手工合并口径一致。",
+    "ImportFlow.jsx：识别完成处（本地 runOCRWithRetry 与 recognizeWithEngine 两分支）把 narrative 预填进 draft.notes（appendFlow 语义见 flowNotes.js），落库仍走既有 `notes: draft.notes`（ImportFlow.jsx:609 一线未动）。",
+    "scripts/agent-task.mjs buildDocReadLabPrompt：C 类（流式）口径新增正文转录要求与输出契约 `narrative:{impression,conclusion}`（连续文本、照抄不改写、不收页眉/抗原清单/轴标/页脚、缺段留空）；其它类型省略该键。",
+    "src/utils/ocrEngines.js：local 分支把 r.narrative 放进 rawMeta，ai 分支把 done.narrative 放进 rawMeta（字段缺失即 null，不臆造）。server.mjs 的 /api/ai-docread-status 原样展开 done 文件，narrative 自然透传，无需改服务端。",
+    "src/devBridge.js：ocrBench 结果回传 narrative 与 gridRows —— 浏览器产品路径（runLocalBest/runLocalBestSliced）是否真把正文带出来，只能在这里验（node 侧跑不了 canvas/tesseract worker），这也是 1.8.22「node PASS 但浏览器路径不生效」的防复发手段。",
+    "scripts/verify-flow-report.mjs 扩到 23 条断言：新增正文切段（两段齐全、边界不串、去噪、无段名返回 null）、真实 OCR 原样文本「照抄不润色」守门（结论 BO.2%2RBME AI / 印象 幼稚也淋巴细乃 必须原样保留）、以及 buildFlowNotes 的四种语义（标注、追加不覆盖、替换不堆叠、空正文不动 notes）。"
+   ],
+   "knownResidue": "① 本地通道**照抄原文不纠正错字**（如「幼稚也淋巴细乃」「BO.2%2RBME AI」），措辞已在标注行写明「机器误识未校；以原件为准」——用户要看纠正版请用 AI 精读（AI 通道由读图转录）。② AI 通道的 narrative 只做过 prompt/透传改造 + 一次真机导入验证，未建 AI 回归（省额度）；若日后 agent 不吐该键，前端表现为不预填（宁缺勿脏），不会写脏正文。③ 正文**不进** expected.json（不是指标，不进回归硬判），回归只守指标与切段函数。④ 明确不做「归档为检查报告 kind=flow 双落」（Bug 204 口径），也不新增 record.narrative 结构化字段——等出现「正文与手写备注分不清」或需要按段检索时再议。⑤ 骨髓形态学等其它图文报告暂不转录正文（它们的正文以分类表为主，已在指标里）。",
+   "_note": "识别算法版本 ≠ app 版本（app 见 src/data/app-version.json）"
+  },
+  {
+   "version": "1.9.0",
+   "date": "2026-10-28",
+   "status": "DONE",
+   "tag": "recog-v1.9.0",
+   "goal": "闭环用户报障（2026-10-28）：「OCR 优化——检验报告也开始有含图的形态了，旧的 OCR 流程可能要参考检查报告的逻辑」。附件是朝阳医院血液科的**流式免疫分型（FCM-MRD）图文报告**：主体 19 张散点图 + 印象/结论正文，**一个指标表格都没有**，唯一可入库指标是正文里的「幼稚B淋巴细胞约占有核细胞的 0.2%」。旧本地通道把它当表格解析，散点图轴标（10³/10⁴）、CD 分子名、门内百分比全被当「项目名 | 结果」：GRID 28 行、POINTS 出 FOLATE=2 / GGT=4 / Cr=108 / LYM_ABS=8 / NEUT_PCT=56.3 / EPO=57.4 等 **10 项无中生有的假指标**，真值 0.2% 一项都没出（AI 通道早有 C 类口径，本地通道一直缺）。",
+   "changes": [
+    "ocr.js 新增流式报告短路（geometric 通道 buildGridFromItems 与文本通道 buildGridFromText 共用）：detectFlowReportText = 硬条件「正文并列 ≥5 个 CD 分子」+ 软锚点（所检测抗原 / 设门 / CD45-SSC，任一被读花仍命中）→ buildFlowGridFromText 丢弃散点图噪声，只抽一行「流式MRD残留」。",
+    "ocr.js 新增提取器 extractFlowMrdRow：只认指向幼稚/原始/异常细胞群体的百分比（①「…幼稚B淋巴细胞约占有核细胞的 0.2%」②「见 0.2% 幼稚B淋巴细胞」③「MRD <0.01%」），绝不把同段并列的「粒细胞占有核细胞的 81%」「T 细胞占淋巴细胞的 64.8%」当残留量；阴性写「未检出」、读不到值留空（不编数字）；外周血标本命名带 -外周血（与 AI 通道 C 类口径同形）。",
+    "ocr.js 选优层新增流式候选优先（flowCandidateRank / pickFlowCandidate，runLocalBest 与 runLocalBestParallel 同步）：散点图噪声候选的 mapped 数虚高（实测 binary 变体 mapped=5 假指标 vs 正确候选 mapped=1），常规 score/mapped 选优必选到噪声；流式候选优先且**不参与字段级补充融合**（其它候选的 code 全是噪声）。",
+    "normalize.js 新增 DETECTION_LIMIT_CODES（FCM_MRD）：ref=<0.01 是检出灵敏度而非参考区间上限，阳性值 0.2% 天然越界，旧逻辑会判「疑似小数点错位」并给 ×0.01→0.002 候选——等于劝用户把阳性结论改错，现豁免（只保留单位/列错位判断）。",
+    "reportCatalog.js FLOW_CYTOMETRY 标题特征词补「所检测抗原 / 所测抗原」：MRD 报告标本类型永远是骨髓，裸词「骨髓」会让 BONE_MARROW_MORPHOLOGY 抢走类型（实测含「标本类型: 骨髓」即翻车）；「所检测抗原」是流式独有版式词且更长，稳定压过。",
+    "scripts/verify-report.mjs（门禁 harness）同步流式候选优先与跳过融合，保证 CLI 与产品 runLocalBest 同口径。",
+    "新增 scripts/verify-flow-report.mjs（12 条纯内存断言：形态判定 / 单行短路 / 只取幼稚原始百分比 / FCM_MRD 0.2% <0.01 / 类型 FLOW_CYTOMETRY / 不提示小数点错位 / 候选排名 / 阴性未检出 / 读不到留空 / 不误伤普通化验单·骨髓·融合基因 / 外周血命名），登记进 run-unit.mjs。",
+    "新增回归用例 scripts/regress-cases/case-flow-mrd-1007/（真值取原图印象正文，B 档人工核对）：verify-report PASS，run-regress PASS（基线 0 FAIL）。",
+    "scripts/save-recog-version.mjs 的 ALGO_FILES 补登 src/data/reportCatalog.js 与 scripts/verify-flow-report.mjs（类型目录属判定算法层，此前未登记 → 改类型判定无法随 tag 回退）。"
+   ],
+   "knownResidue": "① 报告的印象/结论正文（粒细胞分化发育异常、CD 亚群分布、cKappa/cLambda 多克隆等）仍不落库，本地通道只留「流式MRD残留」一行 + 原件；若要留档需按检查报告口径（findings/conclusion）另立通道，待用户拍板。② 「所检测抗原」清单里的单个 CD 分子（CD34+CD19+ 表型串）不抽取，属报告描述层，不进指标。③ 流式形态判定依赖「≥5 个 CD 分子」，若某厂商报告只印 3~4 个 CD 且无「所检测抗原/设门」字样会退回旧通道（表现为噪声行），届时按图补锚点。",
+   "_note": "识别算法版本 ≠ app 版本（app 见 src/data/app-version.json）"
+  },
+  {
+   "version": "1.8.24",
+   "date": "2026-10-25",
+   "status": "DONE",
+   "tag": "recog-v1.8.24",
+   "goal": "闭环用户报障（2026-10-25）：「这份骨穿报告我第二次导入，没有识别出重复」。根因不是哈希算错，而是**归档查重压根没有哈希通道**——findDuplicateDoc 只有 date + doc_type + 文件名三项，任一被读歪就静默放行重复归档。这次三项里 date 就被读歪了：该报告写「采取日期 2026.10.10」，旧标签表不收「采取/取材/采样」→ checked 落空 → 退化成「取全文第一个日期」；而 OCR 把 `2026.10.10` 读成 `2026.10.i0`（不可解析）、末尾 `回报日期 2026.10.12` 的 2026 又被读成 2006 → date 落成 2006-10-12，与归档的 2026-10-10 不等。原件字节其实完全相同（sha256 e9c091f5…8201816，与已归档 blob 逐字节一致），只要有一颗哈希通道就必中。",
+   "changes": [
+    "新增 src/utils/docDup.js（纯函数，零 DOM）：归档查重改两路通道——通道 0 原件字节哈希 doc.file.sha256（与日期/类型/文件名读数无关，同一份文件必中）；通道 1 category+date+doc_type+文件名（历史无哈希归档、无原件手动录入的兜底）。任一命中即判重。",
+    "doc_type 比较键做字面规范化 normalizeDocTypeKey（全角→半角、去空白、大小写），**不做同义词合并**（不把「腹部彩超」并成「超声」，那是展示层口径）；只作用比较，不改存储值。",
+    "修一个连带缺陷：导入流原先只传 {date, doc_type, file_name}，候选被推成 category='exam' → 「按 category 隔离」把病历文书（category='case'）全部挡在门外，同日同类型重复出院记录从来没被拦过。现 CaseImportFlow 显式传 kind，docDup 侧再按 doc_type 词族兜底。",
+    "DocImportFlow / CaseImportFlow：选文件即算原件 SHA-256（并行、不阻塞识别），保存前再补算一次兜底；落库写 doc.file.sha256，命中哈希时错误提示注明「原件字节完全相同，确为同一份文件」。",
+    "store.js：查重委托给 docDup；新增一次性迁移 backfillDocFileHash()——从 IndexedDB/服务端 blobs 取回历史归档原件补算 sha256（取不到标 sha256_missing 不重试），老归档立刻恢复字节级查重。",
+    "assetAttach.attachDocFile：补传原件同时写 sha256，避免「补传过的归档」永久缺字节通道。",
+    "parseDoc.extractDateTime：checked 标签表补 采取日期/采取时间/取材日期/取材时间/采样日期/采样时间；reported 补 回报日期/回报时间（骨穿、细胞形态报告常用写法），从根上钉住标本采集日。",
+    "新增 scripts/verify-doc-dedup.mjs（17 条断言：哈希命中跨日期/类型/文件名、老归档三项兜底、空 sha 不互配、category 隔离、字面规范化、不误并同义类型），并登记进 run-unit.mjs；verify-doc-datetime.mjs 补 3 条日期标签用例。"
+   ],
+   "knownResidue": "① 通道 0 挡不住「同一份报告的两次不同拍照/截图」（字节必然不同）——那需要感知哈希或内容指纹，本期不做，等出现真实案例再上；现按三项通道兜底（同日期同类型同文件名仍能拦）。② 判重后仍只是「禁止保存 + 提示」，不做跨库自动合并；用户若确为不同报告，改日期/类型即可放行（原有逃生口不变）。③ 三项通道的 category 兜底用到 doc_type 词族正则，与 docKinds.js 同口径但未共用常量，后续若要加新文书类型需同步两处。",
+   "_note": "识别算法版本 ≠ app 版本（app 见 src/data/app-version.json）"
+  },
+  {
+   "version": "1.8.23",
+   "date": "2026-10-24",
+   "status": "DONE",
+   "tag": "recog-v1.8.23",
+   "goal": "闭环用户报障（2026-10-24）：「2026-10-10 形态学 0.5% 达标」是错的——该份骨穿（朝阳，ALL 治疗后）正文写「原幼淋占1.5%」，抽到的却是 measures 里的「原始红细胞 0.50%」。根因两层：① streamExtract 的 BM_EACH 只加了 (?!粒) 守卫，没排红系，且正文里的合计缩写「原幼淋」既不属于 原始+幼稚 组合式也不属于 (原始|幼稚) 逐项式 → 正文一条都没命中；② 兜底分支 measures.find(/原始|幼稚/) 于是抓到「原始红细胞」（红系前体，不是原始/幼稚白血病细胞）。diseaseIngest 的检验记录通道同病（NOT/GRAN 只排「粒」）。",
+   "changes": [
+    "streamExtract.js：BM_EACH 守卫扩为 (?!粒|红)；新增 BM_ABBR 识别「原幼淋/原幼细胞」合计缩写（守卫 (?!红|粒|单核|巨核|嗜酸|嗜碱)），合计式优先返回、不与拆分行相加（避免 原始2% + 原幼淋3% 被重复计数）。",
+    "streamExtract.js：extractMorph 兜底 measures.find 增加排除式（粒|红|单核|巨核|嗜酸|嗜碱|浆细胞|血小板），杜绝「原始红细胞」冒充原始细胞。",
+    "diseaseIngest.js：GRAN_NAME_RE（仅排粒）改为 NOT_TARGET_LINEAGE_RE（粒|红|单核|巨核|嗜酸|嗜碱|浆细胞|血小板），化验记录分类行同口径。",
+    "scripts/verify-disease-streams.mjs：新增 6 条断言（原幼淋 1.5% 命中 / 只有红系分项不产点 / 正文 原始红细胞·原幼红细胞 不算本流 / 合计行优先不重复相加 / 记录通道红系不叠加）；3 条旧断言按新口径改写（0 值 → qualifier=nd 且 value=0），并补「定性阴性不带数值」守卫。",
+    "存量数据修正：d_1792882654726_zkvh3 重新抽取后形态学点 dm_2026-10-24T22:57:34.769Z_1 由 0.50% 改为 1.50%（raw「原幼淋占1.5%」），已增量推送 data-server（version 2675）。",
+    "同轮第二处（用户 2026-10-24 追问「值应该是 0 而不是未检出」）：streamExtract 5 处 + diseaseIngest 3 处不再把报告的数值 0 抹成 null——**值照抄报告（0），判定仍按 qualifier='nd'**；展示层 StreamsSection.valueText / StreamChart tooltip 改为「有数字就显示数字%（0%），只有定性『阴性/未检出』才显示未检出」。存量 3 个点（P190 10-10、P210/P230 08-14）已按新口径重推（version 2929）。"
+   ],
+   "knownResidue": "① 本次只修「分型归属」，不改变 CR 阈值（≤5%），该点 0.5→1.5 仍属达标，但数值必须与报告一致。② 「原幼红/原幼粒」等缩写按红系/髓系排除，若日后遇到用「原幼」泛指白血病细胞的报告需另有判别依据（例如同一报告里同时出现 原始+幼稚 拆分行时以拆分行优先）。③ 版本已入库：commit 与 tag `recog-v1.8.23` 随本轮一并落库（算法文件 streamExtract/diseaseIngest/StreamsSection/StreamChart 同 commit）。",
+   "_note": "识别算法版本 ≠ app 版本（app 见 src/data/app-version.json）"
+  },
+  {
+   "version": "1.8.22",
+   "date": "2026-10-24",
+   "status": "DONE",
+   "tag": "recog-v1.8.22",
+   "goal": "闭环用户反馈「本地 OCR 总是识别不出第二行」（1.8.21 在 node 侧 PASS，但浏览器产品路径仍只出 1 项）。在浏览器里跑同一条 runOCRWithRetry 管线抓到真实 GRID：定量行确实进了网格，但名字带 OCR 残渣——`BCR-ABL1 P1907aBL1x100% BCR-ABL1`（尾部多一个 BCR-ABL1、P190/ABL1 被读成 P1907aBL1）。normalize 的 mapAlias 对整名做子串匹配时命中了我为定性行加的别名 `BCR-ABL1 P190…` → 错配成 BCR_ABL1_P190_Q，随后与真正的定性行**同 code 去重**，定量行整行消失。这就是「node 能过、浏览器只 1 项」的差异根因。",
+   "changes": [
+    "normalize.js：纯 ASCII 整名映射改为「先试 repairFusionName 修形后的标准名，命中就用它；修形不出来才退回原名 mapAlias」——避免残渣名被子串匹配错配到定性字段。",
+    "scripts/verify-fusion-report.mjs：新增 2 条断言（带 OCR 残渣的定量行不被错配成 _Q、仍映射 _PCT 且取到 0），把浏览器实测的失败形态固化进单测。"
+   ],
+   "knownResidue": "① 该图的 GRID 里仍会带 2 条页眉噪声行（「# 年龄 S 30」「条码号 凤 fC 266829093」）与 1 条页脚噪声行，normalize 会丢弃（无 code、非 gap 候选），不影响 POINTS；若日后噪声行被误收，按 §3.5 分层断言定位。② 定量行的单位/参考范围在原图为空，网格留空属正常。③ 1.8.21/1.8.22 两轮都源于同一张报告，浏览器验证脚本已留在 scripts/scratch/e2e-ocr-dump.mjs，后续同类问题可直接复跑。"
+  },
+  {
+   "version": "1.8.21",
+   "date": "2026-10-22",
+   "status": "DONE",
+   "tag": "recog-v1.8.21",
+   "goal": "闭环用户报障（2026-10-22）：白血病融合基因检测报告**本地离线 OCR 识别不出项目**（POINTS=0，GRID 只剩页眉页脚 3 行）。断在 grid 层两处：① 定性结果行（测试结果=阴性）因「无数字」被整行丢弃；② 定量行（名纯 ASCII 且被读花 Pl907aBL1x100%、值是复合写法 0/793000=0% 又被读成 0779300F 0）被当乱码行丢弃。",
+   "changes": [
+    "ocr.js：新增**定性结果行**支持——某行没有数值、但含「阴性/阳性/弱阳性/未检出/未见异常/正常/异常/±/(+)/(-)」等定性结论，且序号右侧的名称（拼回整名后）能在字典命中时，按「名称=该定性结论」入网格（保守：必须 mapAlias 命中，避免收噪声行）。表头/元信息过滤对定性行放行并做空安全（parsed 可能为空）。",
+    "ocr.js：新增**融合基因定量行**兜底——逐个切点试「前半段能被 repairFusionName 修形成标准名 + 后半段含数字」，解决纯 ASCII 名被读花导致整行丢失。",
+    "dictionary.js：新增 export repairFusionName()，把 OCR 常见读花修回可命中的写法（l/I/|→1、7a→/、全角数字归一、x100% 归一），输出「BCR-ABL1 P190融合基因」/「BCR-ABL1 P190/ABL1x100%」；normalize 的「纯 ASCII 整名映射」也接上它。",
+    "normalize.js：融合基因定量字段的值容错——「0/793000=0%」取百分比 0；OCR 坏写成「0779300F 0」时取最后一个数字当百分比、前两个当拷贝数/对照拷贝数（_copies/_controlCopies 留痕，不改数值大小）。",
+    "固化回归：scripts/regress-cases/case-fusion-p190-20261010/（真实图 source.jpg + 人工逐字核对 expected.json 两项 + meta.json，baselineFails=0）。"
+   ],
+   "knownResidue": "① 该图 RAW TEXT 仍有页眉/方法列乱码（「功光PCR」「萝光PCR」），本 case 只固化两条数据行，不把乱码锁成真值。② 定性行支持依赖「名称能被字典命中」，字典未收录的定性项目（如某些传染病筛查项）仍不会入网格——新增字段时按其别名补即可。③ 本 case 的 826×1169 系统导出图 tesseract 置信偏低，靠结构修补而非图像质量取胜；若后续同类报告仍漏项，优先按 §3.5 分层断言定位是 items/grid 还是 normalize。"
+  },
+  {
+   "version": "1.8.20",
+   "date": "2026-10-22",
+   "status": "DONE",
+   "tag": "recog-v1.8.20",
+   "goal": "闭环用户报障：白血病融合基因检测报告（朝阳 2026-10-10，BCR-ABL1 P190）AI 精读 72 秒**只识别出 1 项**，定量行整行丢失，且报告类型被判成「骨髓形态学」。根因三处：① 定量行行名是纯 ASCII（BCR-ABL1 P190/ABL1x100%），逐 token 查别名全落空 → 被当乱码行丢弃；② 字典没有融合基因字段与类型，两行都无处映射，标题里「骨髓」二字把类型抢成骨髓形态学；③ lab prompt 没有分子报告口径。",
+   "changes": [
+    "dictionary.js：新增 REPORT_TYPES.FUSION_PCR（融合基因定量，6 个 keyFields）+ GROUP_FIELD_SETS.FUSION + REPORT_GROUPS.FUSION + RECORD_CATEGORIES「融合基因」；新增 6 个标准字段 BCR_ABL1_P190/P210/P230 × 定性(_Q，ref 阴性) / 定量(_PCT，单位 %)，别名覆盖真实写法（BCR-ABL1 P190融合基因 / BCR-ABL1 P190/ABL1x100% / BCR/ABL P190 拷贝数比率 / 裸 P190融合基因）；TITLE_KEYWORDS 新增 FUSION_PCR 专属词（白血病融合基因检测 / 融合基因检测 / BCR/ABL / P190融合基因…），长度胜过「骨髓」，纠正类型误判。",
+    "normalize.js：① 纯 ASCII 行名先按**整名**查别名表，命中即当已识别（不再落入乱码行的 value+ref 反推/丢弃分支）——这是定量行整行丢失的直接修复；② 融合基因定量行「0/793000=0%」只取百分比 0，拷贝数另存 _copies / _controlCopies 供追溯。",
+    "agent-task.mjs buildDocReadLabPrompt：新增 D 类（白血病融合基因检测 / 分子定量）判定与转录口径——定性行与定量行**都要转录**、禁止合并或省略，定量结果只填百分数（0/793000=0% → 0），参考范围没写就留空。",
+    "新增 scripts/verify-fusion-report.mjs（8 断言，真实报告两行 fixture）：两行都进网格 / 映射到 Q 与 PCT 字段 / 类型判 FUSION_PCR（不被骨髓抢） / 定量 0 → pcr nd 点 / 分析通道 P190 / 定性+定量同键去重只留 1 点 / 0.012% → eq 点；已登记进 run-unit 白名单。",
+    "验证：同一张图重跑化验 AI 通道，rows 由 1 行 → **2 行**（88s），落网格两行、类型「融合基因定量」。"
+   ],
+   "knownResidue": "① 本机 dsh 单次调用仍 70–90s（推理+读图），不建议对单行小报告频繁重跑。② 定性行「阴性」与定量行「0%」都会产 nd 点，靠同键去重合并为 1 点；若某院只给定性不给定量，则只剩定性 nd（属报告本身缺定量，非识别缺陷）。③ P190/P210/P230 之外的罕见转录本（如 e19a2 以外的变异型）仍按「分析通道 other」处理，未单列字段。"
+  },
+  {
+   "version": "1.8.19",
+   "date": "2026-10-21",
+   "status": "DONE",
+   "tag": "recog-v1.8.19",
+   "goal": "流式免疫分型（FCM-MRD）业务归属纠正：与骨穿同一口径（用户 2026-10-21 拍板）——报告由检验科出具、抬头就是「临床检验结果报告单」，业务上属检验；此前因正文是印象/结论叙述 + 散点图、没有指标网格，被 reportKind 归为检查报告。本轮改为走化验通道，并在该通道单列「C 类：流式」转录口径（只取一行 MRD 结果）。",
+   "changes": [
+    "dictionary.js：新增 FCM_MRD（流式MRD残留，group 流式免疫分型）与 REPORT_TYPES.FLOW_CYTOMETRY（keyFields=[FCM_MRD]）、GROUP_FIELD_SETS.FLOW、RECORD_CATEGORIES「流式」、ALIAS_MAP（流式MRD残留 / 流式MRD残留-外周血 / MRD / 微小残留病 / 残留白血病细胞 / 异常细胞群体占有核细胞比例 等写法）。",
+    "reportCatalog.js：新增 FLOW_CYTOMETRY 标题特征词（流式免疫分型 / 流式细胞 / 免疫分型 / FCM-MRD / MRD / 微小残留），使化验页能按标题判成流式类型。",
+    "reportKind.js：①「流式免疫分型」从 DOC_MODALITY 移出（业务上不是检查报告），改判 lab 分支（流式专属词 +4）；② 新增「流式独占定性」——报告模态是流式细胞术即判 lab，结论模板句引用的「融合基因/染色体/骨髓细胞形态学」不得把整份报告改判成检查报告（否则会被基因/核型分支抢走）；③ 顺带修 X 线裸 DR 误命中：HLA-DR / CD45-DR 这类抗原名（前置连字符）不再判成 X 线摄影。",
+    "agent-task.mjs buildDocReadLabPrompt：新增 C 类（流式免疫分型）转录口径——不逐图/逐 CD 分子转录，只输出一行 [\"流式MRD残留\", 结果值, 灵敏度, \"%\"]，结果值取印象/结论里的残留比例（\"<0.01\" 保留上界写法、\"未检出\" 原样），外周血标本名称带 -外周血；并把 FLOW_CYTOMETRY 加进 buildClassifyTypePrompt 的类型清单。",
+    "diseaseIngest.js：新增 recordLooksLikeFlow + flowPointsFromRecord——流式记录 → fcm 点（数值 eq / \"<x\" lt+lod / 未检出·0·阴性 nd；外周血名称 → peripheral_blood；空白不产点，与形态学同一严谨口径）。",
+    "StreamsSection.jsx：流式卡片空态显示「已入库流式报告 N 份…未给出可解析的 MRD 比例」，空态文案按流别区分（骨穿 / 流式 / 融合基因）。",
+    "测试：verify-report-kind.mjs 两条流式用例翻转为 lab（并守「不被基因/核型引用词改判」）；verify-marrow-kind.mjs 增加流式→lab 用例；verify-chromosome-kind.mjs 改为只守「不被核型规则抢走」；verify-disease-streams.mjs 增 10 条断言（fcm 点、未检出/0/阴性/上界/数值各态、外周血标本、空白不产点、C 类一行 rows→网格→fcm 点端到端）。"
+   ],
+   "knownResidue": "① 流式报告本体（散点图、CD 分子列表、印象正文）仍不进结构化数据，只留一行 MRD + 原件；正文若要留档仍需用户另存检查报告（老 kind=flow 文档仍按所见/结论抽点，兼容不动）。② 化验通道读流式靠 AI，本地 Tesseract 对这类图版报告只能读标题（无表格可抽）。③ 结构上 26 个骨髓项 + FCM_MRD 现都会出现在「指标」页的指标分组里（骨髓形态学 / 流式免疫分型 组），与残留病监测卡片并存——是否要在指标分组里隐藏这两组待用户决定。"
+  },
+  {
+   "version": "1.8.18",
+   "date": "2026-10-21",
+   "status": "DONE",
+   "goal": "骨髓形态学（涂片分类）业务归属纠正 + 该通道识别能力补齐。用户拍板：业务分类与识别能力必须分开——骨穿由检验科血液细胞室出具、主体是「细胞名称|血片%|参考范围|骨髓片%」分类计数表，属临床血液学检验，业务上就是检验报告；此前因本地 OCR 读不好双列表，reportKind 把它强制归检查报告（2026-09-10 口径），等于用识别能力缺口改写业务分类。本轮改为走检验（化验）通道，并在该通道补齐识别能力。",
+   "changes": [
+    "dictionary.js：新增 LYMBLAST_BF/MF（原始淋巴细胞-血片/骨髓片）、IMMLYM_BF/MF（幼稚淋巴细胞-血片/骨髓片）4 个骨穿标准字段，并登记进 REPORT_TYPES.BONE_MARROW_MORPHOLOGY.keyFields 与 REPORT_GROUPS.BONE_MARROW；别名表收录带后缀/带前缀/裸名/「原幼淋」「原始+幼稚淋巴细胞」「原始淋巴」「幼淋」等写法（裸名默认归骨髓片——骨穿表主列是骨髓片，形态学目标值也取骨髓片）。根因：字典缺这两项时「原始淋巴细胞-骨髓片」被 LYM 子串抢码后按同 code 去重静默丢掉，ALL 的 CR 依据整行消失（实测骨穿双列表两行被吞）。",
+    "reportKind.js：骨髓形态学分支由「强制 doc」改为「强制 lab」——要件为 ①骨髓/骨穿/髓片/细胞形态学字样 ②双列分类表特征（骨髓片/血片/粒红比/M:E/巨核细胞/分类计数/细胞分类/涂片分类/NAP 积分）③无影像/流式模态词 ④非活检/病理；命中 labScore += 4。同时新增「模态词独占定性」规则（modality 命中且 docScore≥3 且 labScore≤docScore+1 → doc），防止流式报告抬头「临床检验结果报告单」+ 结论引用「骨髓细胞形态学」把 lab 分反超而误判 unknown。",
+    "agent-task.mjs buildDocReadLabPrompt：骨髓感知标准名序列补入原始/幼稚淋巴细胞 4 项、核心成对细胞由 11 对扩到 13 对；并写明「原图写成『原幼淋』合计行就直接输出原幼淋，不要拆」，让 AI 长格式 rows 与字典名对齐、CR 判据行不再被并进「淋巴细胞」。",
+    "diseaseIngest.js：pointsFromRecord 新增骨髓形态学记录抽取（recordLooksLikeMarrow + morphPointsFromMarrowRecord）——骨髓片「原始+幼稚」求和成形态学点、血片单独成点；合计写法（原幼淋/原始+幼稚）优先、避免双计；取材稀释打 diluted_sample 标记。严谨口径：空白单元格 ≠ 0，一律不产点。",
+    "DocImportFlow.jsx：「其他检查」AI 分类兜底判出 BONE_MARROW_MORPHOLOGY 时不再就地落成检查报告，改为建议「改为检验报告」。",
+    "测试：重写 scripts/verify-marrow-kind.mjs（骨髓形态学/骨通变体 → lab；骨髓活检、流式引用骨髓形态学 → doc，5 断言）并登记进 run-unit 白名单；verify-disease-streams.mjs 增 9 条断言（双列求和、血片独立点、空白不产点、原幼淋缩写、取材稀释标记、AI 长格式 rows→网格→形态学点端到端）。"
+   ],
+   "knownResidue": "① 已按 §8 存档（commit + recog-v1.8.18 tag）；本次提交按用户指示包含同文件里并行会话的待提交改动（见 commit message 说明）。② 骨穿走化验通道后，本地 Tesseract 对手机拍照/扫描的表格仍读不出可用网格（实测 826×1169 骨穿图 OCR 全文 391 字全乱码），实际依赖 AI 化验通道的长格式转录；PDF 文字层的双列表识别质量另需单独验证。③ 真实朝阳骨穿（2026-09-03）原始/幼稚两列空白，按严谨口径仍不产形态学点（这是报告本身的缺失，非识别缺陷），页面已给出「已入库骨穿报告 N 份但未写明原始/幼稚比例」的解释。④ 尚未把骨穿图固化进 regress-cases（该目录走化验网格通道，本图本地 OCR 无真值可固化，禁止用当前输出伪造基线）。",
+   "tag": "recog-v1.8.18"
+  },
+  {
+   "version": "1.8.17",
+   "date": "2026-09-23",
+   "status": "DONE",
+   "goal": "染色体核型串 OCR 标点保真加固（延续 1.8.16 闭环 265141）。用户报障 v20260922-1610(旧前端/recog 1.8.15)：检查所见核型 `47XYt922q34q11+?18` 全剥标点；实测 1.8.16 选优恰好选中剥标点 variant（sauvola），整条链路都未保住 ISCN 标点。根因 = 纯 chi_sim+psm6 对 `,;( )` 拉丁标点吞读（命中工作流 §5.2 跨 variant 标点丢失）。",
+   "changes": [
+    "ocr.js 新增纯函数 extractKaryotype（行级 ISCN 核型捞取，含性染色体+数字+结构 token 判据）/ bestKaryotypeFromCandidates（多候选按 ISCN 标点+结构保真度择优——只择优、不臆造标点，可在 node 单测）/ validateKaryotype（ISCN 格式校验，畸形如 XYit 吞逗号判低置信，绝不自动改写值）。",
+    "ocr.js 新增 recognizeKaryotype(dataUrl, baseText)：对核型报告追加 eng 单语 + chi_sim 的 psm7 重读（eng 模型对拉丁标点保真远高于 chi_sim），并入候选后由 bestKaryotypeFromCandidates 择优；属「改怎么读」而非「改写值」（§5.2 护栏）。",
+    "ocr.js ocrImageToTextInternal 终稿文本接入 repairKaryotypeInText：仅当检测到核型且标点不全时触发额外重读（非核型图零额外开销）；修复后做 ISCN 校验，畸形（如 XYit 吞逗号）打 console.warn 低置信告警供人工复核。",
+    "验证：scripts/verify-karyotype-265141.mjs（9 断言纯函数单测 ALL PASS，node 可跑、不依赖 tesseract）；scripts/verify-karyotype-empirical.mjs（真实图 + 直接 createWorker 多配置实证，标点完整 PASS）。production 重读走 ocr.js 内部 worker/preprocessImage（浏览器端生效），node 端不可初始化，由 empirical 脚本等价复刻证明。"
+   ],
+   "knownResidue": "① 实证显示标点已全保真，但单字符滑读 `XY,t`→`XYit`(chi_sim)/`47`→`AT`(eng) 仍存，属 OCR 读值层缺陷，按 §5.2 不自动改写，仅 validateKaryotype 标低置信 + 人工复核；若日后需精确串，可对核型行做高倍裁切重读（仍属「改怎么读」）。② 生产 recognizeKaryotype 走 ocr.js 内部 worker/preprocessImage，浏览器端生效；node SSR 下 tesseract worker 无法初始化（与历史限制一致），单测走纯函数 + empirical 直接 createWorker 等价证明。③ 老版 v20260922-1610(recog 1.8.15) 既有此垃圾；1.8.16 路由修复 + 1.8.17 标点加固共同解决用户报障。"
+  },
+  {
+   "version": "1.8.16",
+   "date": "2026-09-23",
+   "status": "DONE",
+   "goal": "闭环染色体核型报告（265141，北京大学人民医院血研所）。该报告无「指标名-数值-参考范围」网格，主体是「核型描述 + 分析结果」文本与核型图；化验网格通道实测 grid 22 行全噪声、POINTS 出 P=2 / Ca=24 / PLT=20 三项无中生有的假指标，且 grid 表头「检验项目 / 结果 / 参考范围 / 单位」使 lab 分 7 > doc 分 4 → 被判为化验报告送进化验页，用户拿到一堆假指标。定稿与骨髓图文（Bug 087）/ 病理活检同口径：按检查报告归档（存原件 + 所见 / 结论）。",
+   "changes": [
+    "reportKind.js DOC_MODALITY 新增「染色体核型」模态词（染色体核型 / 核型分析 / 染色体检查 / 细胞遗传学），排在流式之后、基因之前——核型报告必含「染色体」，此前一律落「基因」标签，模态名不准；流式结论常引用「染色体」，故必须排在其后。",
+    "reportKind.js detectReportKind 新增染色体 / 核型强信号分支（与骨髓、病理同口径：labScore > 0 时 docScore = max(docScore, labScore + 2)，否则 +3），使「假指标 + 检验表头」不能再把分流抢回 lab。",
+    "parseDoc.js CONCLUSION_SECTIONS 新增「分析结果」：核型报告的结论段名即此，此前未登记导致结论整段落空（实测 conclusion=\"\"），仅核型串靠基因类默认通道落进 findings。4 字 > 裸「结果」2 字，SECTION_MATCHERS 按长度降序故优先命中结论。",
+    "新增 scripts/verify-chromosome-kind.mjs（7 条断言）并登记进 run-unit.mjs：守①化验通道形态（全文 + grid 表头 + 垃圾指标）仍判 doc；②真实 OCR 全文判 doc；③模态标签为染色体核型；④流式不被核型规则抢；⑤血常规不误伤；⑥parseDoc 结论接住核型分析结果；⑦核型串留在所见。"
+   ],
+   "knownResidue": "① 强制 doc 的判据含裸「染色体」——目前仅见核型 / 基因类报告出现该词，血常规等化验单不会误伤（已有反例断言守住）；若日后出现「化验单页眉带染色体字样」的版式需收紧为「染色体 + 核型」双证据。② 核型串本身的 OCR 质量取决于原图清晰度，本报告核型串 47,XY,t(9;22)(q34;q11),+?18 读对，但分析结果正文的中文仍为噪声（属 OCR 读值层，不由本次逻辑改动解决）。③ 未把该图固化进 scripts/regress-cases/：该目录走化验网格通道判定，而本报告已定性为检查报告，无化验真值可固化（§6.5 禁止用当前 OCR 输出伪造基线），改由 verify-chromosome-kind.mjs 在单测层守护。"
+  },
+  {
+   "version": "1.8.15",
+   "date": "2026-09-20",
+   "status": "DONE",
+   "goal": "闭环 794 骨髓活检（1071×1515，v1.8.9 字高放大的残余缺陷）。放大后报告时间 2026-08-11 已读对，但仍有 4 处：① 标题「骨髓活检」读成「骨亿/骨骨」（取材读「骨项/骨崩」），且 detectTitle 关键词不含「活检报告」导致归一后仍落兜底名「病理活检检查报告」；② date 被报告时间占用——病理报告无「检查时间」标签，extractDateTime 的 checked 落空回退成报告日期，真正的检查相关日期（页眉「接收日期 2026-08-05」）没用上，reported_at 反而丢失；③ ×1.68 下附图区乱码「人 全个 人 Oh 生、昌 了华夏 多友人9计2 PC」混进 findings（一个 OCR 插入的顿号绕过 ⑤ 标点 rescue、13 个 CJK 超 ⑥ 字数上限）；④ 「标本长度: 1.3CM」的裸 CM 被 normalizeMeasureUnit 的 /^cmy?s?$/ 误归成 cm/s。",
+   "changes": [
+    "parseDoc.js fixOcrVariants：「骨髓」形近变体扩充 骨亿/骨项/骨崩（实测 794 ×1 读 骨骨/骨崩、×1.68 读 骨亿/骨项），标题与「取材」字段同时受益。",
+    "parseDoc.js detectTitle：kw 补「活检报告」——病理标题「骨髓活检报告」不含「报告单」，不补则永远落兜底名；命中后走既有「以报告词结尾」校验返回「骨髓活检报告」。",
+    "parseDoc.js extractDateTime：检查类标签补 接收时间/接收日期/送检日期/取样日期（排在既有检查/采集标签之后，仅在无更高优先级标签时生效）。794 实测 date 2026-08-11→2026-08-05、reported_at ''→2026-08-11。",
+    "parseDoc.js isGarbledLine 新增 ⑥.5：无语义词且 CJK 分段 ≥4 段、每段 ≤3 字 → 乱码剔除（按「分段碎」本身判定，不受标点 rescue 与字数上限影响）。",
+    "parseDoc.js normalizeMeasureUnit：cm/s 归一收窄为 /^cm(ys|s|\\/s)$/（须确有 s/y 尾巴），裸 CM 归为长度 cm。",
+    "验证：verify-doc-image（794 ×1.68 端到端）title=骨髓活检报告 / date=2026-08-05 / reported_at=2026-08-11 / findings 无乱码 / 标本长度 1.3cm 全达标；回归 verify-doc-datetime 9/9、verify-parse-sections 10/10、verify-doc-type 34/34、verify-marrow-kind 4/4、verify-ecg-measures 23/23、verify-emptyspace PASS、run-unit 38/38 全绿。",
+    "ocr.js extractReportDate firstMatch：由「exec 一次、normalize 失败即 return null」改为循环扫描，遇到 normalize 为 null 的非法串（年份越界 / 月>12 / 日>31）跳过并继续找下一个合法日期，返回首个能 normalize 的日期。仅影响兜底路径（无采集/报告标签时），对正常报告零副作用。（本条原与上方另一个 changes 键重名被 JSON 解析丢弃，1.8.16 收尾时并入同一数组，内容未改）",
+    "verify-extract-date.mjs 新增场景 G2：复现首位非法日期串（电话「3010-52011162」被读花）后跟真实「26-08-20」，断言兜底识别到 2026-08-20 且不再报 no_date。",
+    "验证：浏览器真实管线（runLocalBest + extractReportDate）对 8451788689528 由 date=null 变为 date=2026-08-20；verify-extract-date 全场景通过；npm test 38/38 全绿；npm run test:regress 0 回退（case-8451788689528 由需手选变为 PASS）。"
+   ],
+   "knownResidue": "仅修复兜底路径「首个串非法即放弃」的过保守行为；若报告全文首个合法日期本身就不是用户期望的那天（如页眉印刷日期早于页脚报告时间），兜底仍会取首个合法日期——属既有设计（collectedAt/reportAt 标签优先，兜底仅 first_date），本版不改优先级。"
+  },
+  {
+   "version": "1.8.13",
+   "date": "2026-09-18",
+   "status": "DONE",
+   "goal": "修复多页化验单 PDF 只认第 1 页的丢数据缺陷（Bug 112）：所有页都进识别，合并为一份报告一条记录。用户拍板「合并为一条 / 默认合并 / 原件存整份」，故不做拆页（pdf-lib 拆页方案已否决）。",
+   "changes": [
+    "ocr.js 三处写死 pdf.getPage(1) 全部改为全页遍历：extractPdfItems（文字层主路径）、extractPdfImageDataUrl（扫描件内嵌原图）、pdfFirstPageToDataUrl（页面渲染兜底）。此前多页 PDF 第 2 页起从未进入任何识别通道，指标静默丢失且用户无感知。（doc 链路 parseDoc.js#extractDocContent 早已遍历全页，无此缺陷）",
+    "新增 loadPdfDoc / extractPdfPageItems / buildGridFromPdf：遍历 pdf.numPages，每页独立 buildGridFromItems，再由 mergePageGrids 按页序拼行。★ 绝不把多页 items 直接拼给 buildGridFromItems —— 不同页 y 坐标互相重叠会跨页混行，产出「看着合理但错」的错值，比丢数据更危险。",
+    "新增 mergePageGrids + isHeaderLikeRow：首页保留表头，续页重复的「申请项目 / 检验项目 / 结果 / 参考范围 / 单位 / 提示」行剔除。判据刻意收紧——行内出现任何数字即判为数据行，绝不误删真指标。",
+    "扫描件 / 无文字层：新增 extractPdfAllPageImages（逐页内嵌原图）与 renderPdfAllPages（逐页渲染兜底），逐页 runOcrImage 后由 ocrPdfPages 合并网格。★ 刻意不做「多页拼长图一次 OCR」——拼图改变像素分布与行高，直接伤识别质量；代价是耗时按页数线性增加。文字层路径仍是毫秒级，零成本。",
+    "doc 扫描件兜底 ocrScannedPdfToText 同步改为逐页 OCR 后按页序拼全文，超时上限按页数放宽（单页 = OCR_TIMEOUT_MS，与现状完全一致）。",
+    "零回归设计：pdfFirstPageToDataUrl / extractPdfImageDataUrl 保留「第 1 页」语义（预览缩略图与既有单页调用方不变），原件始终存整份 PDF。",
+    "验证：新增 scripts/verify-pdf-multipage.mjs（16 断言，已登记 run-unit.mjs）——续页表头判据 5 条、单页合并 == 旧逻辑逐行一致（零回归）、两页样本 25→49 行证明续页进入、反证旧「只认第 1 页」逻辑行数更少。样本 scripts/samples/multi-page-lab-2p.pdf 由 pypdf 合成。npm test 34/34 全绿；npm run test:regress 5 green / 9 known-fail 守住 / 0 回退 / 2 跳过（与基线完全一致）；npm run build 通过。"
+   ],
+   "knownResidue": "① 扫描件（无文字层）多页逐页 OCR，耗时按页数线性增加（文字层路径零成本）；② 续页表头剔除是「无数字 + 表头词」启发式，遇「表头行里印了数字」的版式不会剔除；③ 未做页数上限，超大 PDF 走扫描件通道会跑很久；④ 端到端需在浏览器实跑（node SSR 下 pdfjs 走 Vite ?url worker 无法初始化，与 tesseract worker 同限），单测走 pdfjs legacy 直取文本层验证合并契约。"
+  },
+  {
+   "version": "1.8.12",
+   "date": "2026-09-13",
+   "status": "DONE",
+   "goal": "doc 链路按字高放大（根治活检报告「报告时间 2026-08-11 被读成 2026-09-11」的图像层根因，闭环 v1.8.8 knownResidue）+ 宽度辅助判据按 Option A 删除（宽度仅保留 maxWidth 护栏）。",
+   "changes": [
+    "ocr.js planDocUpscale/computeDocUpscaleScale 改为「按中位字高放大」：首遍量词框高度中位数，低于 minGlyph(22) 才纯等比放大到 targetGlyph(32)（曲线饱和区起点），达标即零额外成本沿用原图；放大前先跑原图、只在重跑结果非空时采用（放大失败/崩了不丢已有结果）。",
+    "整份语料(18 张)实测：字高策略比基线汉字数更多 13/18（其余 5 张持平，差 ±10 字符属 OCR 噪声非实质回退）；下游 parseDoc 结构化——流式 851 所见 505→707 字、结论「淋巴册胞」→「淋巴细胞」更准，骨髓活检日期修对(08-11)+正文更完整。单字/短行层面偶现 OCR 噪声使某一行略糊（ecg 结论），属放大固有代价、非系统性回退。",
+    "宽度辅助判据(useWidthGate/minWidth)按 Option A 删除：实证宽度与字高不共线——k=H/W 跨图差 3 倍，宽图可能很密（ecg 1649px/H19）也可能很疏（832_hd 1440/H49）；按「原图宽度≥minWidth 即跳过放大」会在「宽而密」图丢字（ecg 1649/H19：字高策略 328 汉字 → 宽度跳过仅 132，丢 196 字符）。宽度唯一安全作用 = 放大后 maxWidth(3000) 护栏（内存/时长），已保留。",
+    "verify-doc-upscale.mjs 7 项守住（小字按目标字高放大、同宽不同字号、字高达标不放大、量不出字高走兜底、倍率/宽度上限护栏、总开关可退回旧行为、宽而密图仍按字高放大防 ecg 丢字）。"
+   ],
+   "knownResidue": "放大属图像层范式改动，端到端需在浏览器/DevBridge 验证（node SSR 下 tesseract worker 无法初始化，与历史一致）；单字噪声在极个别短行偶使结论略糊，已在 18 张语料评估为可接受代价。dictionary.js/日期提取专项不在本版本范围（已单独存档为 recog-v1.8.11）。"
+  },
+  {
+   "version": "1.8.11",
+   "date": "2026-09-13",
+   "status": "DONE",
+   "goal": "时间检测专项（用户点名「出现过好多次，不要再出现」）：① 提高报告日期/时刻的召回（历史 27 条真实语料只过 14，13 个缺口）；② 根除「识别不到就静默填今天」——日期留空 + 黄条提示 + 保存拦截；③ 日期异常必须可检出（dateEvents），不再静默写错数据。",
+   "changes": [
+    "★ 根因定位：ocr.js extractReportDate 拿不到日期 → ImportFlow emptyDraft 默认 today() → DataGrid 只掉了「已自动识别」徽章（太弱，用户看不见）→ 保存后错日期落库。emptyDraft 的 date 已改为一律留空，save() 缺日期时显式提示（原 if(!draft.date) return 是静默失败，会被当成按钮坏了）。",
+    "ocr.js 无年份写法支持（08-04 / 8月4日 / 08/04，微信支付宝报告常见）：新增 NOYEAR_RE，年份【只借同报告内已出现的显式年份】，全文无任何带年日期时一律拒绝——宁可留空提示，也绝不臆造年份（对齐 Bug 031 不自动改写/编造）。",
+    "ocr.js 中文时分支持：DATE_RE 时分分隔由 [:.-°] 扩为 [:：时.-°]、分钟由 (\\d{2}) 放宽为 (\\d{1,2}) 并兼容「分」后缀 → 「04时36分」「11时09分」「2026年8月4日11时09分」不再只拿到日期丢时刻（这正是历史上「时间识别不出来」的形态）。",
+    "ocr.js 标签补全：新增「接收时间/接收日期/标本接收/收到时间」作为采集类的次级兜底（标本入实验室，日期最接近采样日；实测 794 骨髓活检报告只有「接收日期:2026-08-05」，此前整行丢失）；报告类新增「检验日期/打印时间/审核时间/签发时间」。",
+    "ocr.js 时间分离：新增 TIME_ONLY_RE，「报告时间: 11:09」这类只有时刻的写法，借同报告已确定的日期拼回完整 reportedAt（此前整段丢弃）。",
+    "ocr.js 就近优先（关键修复）：pickAt 由「无条件先取完整日期」改为「完整日期与无年份日期谁离标签更近谁优先」。反例「采样时间: 08-04 10:44 报告时间: 2026-08-04 11:09」中 08-04 仅占 10 字符，18 字符窗口会越过标签边界，把报告的 11:09 误当成采样时间。",
+    "ocr.js 裸「报告」兜底修正 off-by-one：正则前导排除符可能吃掉 1 个字符，固定 +3 在行首 ^ 匹配时会错位一位（吞掉日期首位数字），改为 rm.index + rm[0].length 精确定位。",
+    "ocr.js 臆造日期作废：兜底引擎会从参考区间数字里拼出假日期（实测「白细胞 WBC 3.4 3.5-9.5」→ 2043-05-09）。新增未来日期校验，命中即作废留空 + future_date 事件，绝不落库。",
+    "ocr.js 新增可检出事件 dateEvents + dateSource（collect/report/first_date/none）：no_date（未识别到，请手选）、gap_too_large（采样→报告跨度 >30 天）、report_before_collect（报告早于采样）、future_date。★ 只暴露不改写——794 报告「接收 08-05 / 报告 09-11」相差 37 天被正确检出（OCR 把 08 读成 09），但按红线不自动纠正。",
+    "app 级（不属算法文件，未随 tag 提交）：ImportFlow 新增日期事件黄条（列出各条 message，无日期时提示「已留空、不会自动填今天，请在下方选择后保存」）+ 保存拦截提示 + dateEvents/dateSource 写入 trace 供回查；DataGrid 日期字段随之留空。",
+    "验证：verify-extract-date 由 13 场景扩为 33 场景全过（13 条历史 case 全保留 + 无年份 4 + 中文时分 4 + 标签补全 6 + 时间分离 1 + 真实 794 矛盾检出 3 + 负向 2，含 dateEvents 断言）；test:all 全绿（单测 31/31，OCR 回归 5 green / 9 known-fail 守住 / 0 回退 / 2 跳过）。"
+   ],
+   "knownResidue": "794 骨髓活检的「报告时间 2026-08-11 被读成 2026-09-11」（8→9）属 OCR 读值层缺陷，本版只能【检出】（gap_too_large 事件提示核对），不自动改写（Bug 031 红线）。根治需走图像层（既往 A/B 实测：低清小图放大到 3000px 可读对，但放大 doc 链路属范式级改动，待决策）。另：ocr.js 的真实 OCR 管线在 node SSR 下无法初始化 tesseract worker（环境限制，非本次改动），端到端需在浏览器/DevBridge 验证。"
+  },
+  {
+   "version": "1.8.10",
+   "date": "2026-09-13",
+   "status": "DONE",
+   "goal": "修复 v1.8.7 引入的副作用：3 字符别名 'BNP' 参与 mapAlias ③ 子串匹配，把 NT-proBNP 的「丢连字符 / 丢前缀」OCR 变体（NTPROBNP / NTproBNP / 'NT proBNP' / NTPROBNP测定 / 脑钠肽前体）全部吞成 BNP。变体被吞比未映射更危险——未映射用户可见可手选，被吞产出「看着合理但错」的字段，属静默错值。",
+   "changes": [
+    "dictionary.js NT_PROBNP 显式收录无连字符 / 无前缀变体：新增别名 'NTPROBNP'、'脑钠肽前体'。name 归一化会去空格并转大写，故 'NTproBNP' / 'NT proBNP' 均归一为 'NTPROBNP' 精确命中；带后缀的 'NTPROBNP测定' 由 ③ 最长别名优先（8 字 > 'BNP' 3 字）命中。BNP 自身（BNP / B型钠尿肽 / 钠尿肽 / 脑钠肽）仍正确落 BNP，双向不误抢。",
+    "scripts/verify-report-catalog.mjs 固化为回归用例：9 个 NT-proBNP 变体断言落 NT_PROBNP + 4 个 BNP 名称断言落 BNP（双向守卫，防任一方向被抢）。",
+    ".agents/workflows/ocr-optimize.md §5.3：把「子串 / 别名互不误配」改写为**实测纪律**——补入本次反例，并加两条：① 必须穷举目标字段的常见 OCR 变体（带 / 不带连字符、小写、带空格、带「测定」后缀）逐个断言并固化进回归，只验证「整名精确匹配能兜住」远远不够；② 变体被吞比未映射更危险（静默错值）。另补「不要把陈旧基线导致的 IMPROVED 记成收益，以 .regress-report.json 的 git diff 为准」。",
+    "验证：14 个名称落点全对（NTPROBNP / NTproBNP / 'NT proBNP' / NTPROBNP测定 / 脑钠肽前体 / N端前脑钠肽 / N端前B型脑钠肽 / N端脑钠肽前体 / NT-proBNP → NT_PROBNP；BNP / B型钠尿肽 / 钠尿肽 / 脑钠肽 → BNP）；run-unit 29/29；verify-report-catalog 23/23；门禁 test:all 全绿（OCR 回归 5 green / 9 known-fail 守住 / 0 回退 / 2 跳过，与 v1.8.7 结果逐项一致，即本轮对 OCR 语料零影响）。",
+    "遗留（未修，知情）：① BNP 默认 ref 0-100 为字典默认值（本图报告印 <100 吻合），与 NT-proBNP 0-125 仅差 20%、反推抗噪余量 4 倍；② 'BNP' 同时作为 CARDIAC 标题特征词，任何标题含 BNP 的报告会被强判心肌（低风险、无心肌回归用例守护）；③ CARDIAC.keyFields 4→5 使 signature 变长、降低心肌报告 coverage（阈值行为未变，无用例守护）；④ 本次改动未固化图片回归用例（无权威 expected，按 §6.5 不得以 OCR 输出当真值）。"
+   ]
+  },
+  {
+   "version": "1.8.9",
+   "date": "2026-09-12",
+   "status": "DONE",
+   "goal": "EPO 报告在【上传路径】识别修复：并行策略分支因 tesseract.js 共享 wasm 图像解码状态并发污染，把 EPO 这类边缘单测报告误读成 WBC（字段全错）；同时新增 default16(contrast1.6) 变体救回清晰小字中文名类报告（EPO 等）。覆盖 8451788689528 EPO 单测报告经 ImageUploader 上传链路端到端识别。",
+   "changes": [
+    "ocr.js runLocalBestSliced 的并行分支（runLocalBestParallel 用切片 worker 池）在多 worker 并发处理不同预处理变体图时，tesseract.js 共享 wasm 图像解码状态会互相污染，把 EPO 这类边缘报告读成 WBC（主 worker 串行路径 runLocalBest 稳定正确）。为保识别正确性，并行分支统一回退串行主 worker 路径（lastOcrRoute='serial' → runLocalBest）；并行 worker 池的速度优化存在上述 tesseract.js 并发缺陷，需另立专项修复，本轮不强行提速。",
+    "ocr.js 新增 default16 变体（preprocessImage：grayscale(1) contrast(1.6) brightness(1.05)），针对 EPO 等清晰小字中文名单测报告——1.6 对比救回被 1.4 压糊的小字名。OCR_LOCAL_STRATEGIES 把 default16 放最前，但水印报告（CU7TT0 类）1.6 会压坏数值→低分，runLocalBest 继续跑后续策略、default(1.4) 命中，不回归。",
+    "验证：EPO 在上传路径出现 ✅（ImageUploader 链路端到端 → 报告含 EPO 字段、value/ref/unit 正确）；test:all 0 regressed（单测 + OCR 回归全绿，default16 新变体不伤 CU7TT0 等水印案例）；CLI 直跑原图此前已 PASS，本轮补齐上传路径这一条回归缺口。"
+   ]
+  },
+  {
+   "version": "1.8.8",
+   "date": "2026-09-12",
+   "status": "DONE",
+   "goal": "分流层 + 病理报告解析修复：骨髓活检（病理）报告被化验网格通道误收成 lab，落库为 7 项无中生有的乱码假指标（NEUT_ABS/MCV/MONO_PCT/AST/EO_ABS/TT/Ca）；同时「镜下所见 / 综合诊断」因 matchSectionStart 走 startsWith 匹配不到，所见/结论整段丢失（归档索引里只剩标签）。覆盖 7941786427319（北京大学人民医院血研所 骨髓活检报告 TG15220，临床诊断全血细胞减少，综合诊断 B-ALL？）。",
+   "changes": [
+    "reportKind.js 新增「病理 / 活检报告」doc 分支（活检/病理报告/病理诊断/病理学检查/组织病理/免疫组化/镜下所见/综合诊断），与骨髓图文报告同款「docScore = max(docScore, labScore+2)」覆盖语义。关键词刻意避开裸「病理」（化验单页眉常有「病理号」，实测血常规+病理号仍判 lab，已加断言守住）。实测该图两条网格策略（default/sauvola psm6）由此从 lab(high) 转为 doc(medium)，不再进化验页。",
+    "★ 关键词取「镜下所见 / 综合诊断」的原因：化验通道的 ocrFullText 由表格 items 拼成（ImportFlow），标题「骨髓活检报告」被 OCR 读丢、正文字符串也乱码，该图网格通道里「骨髓/巨核细胞」全丢，只剩「镜下所见」「综合诊断」两个存活信号——只补骨髓系词对这张图无效。",
+    "parseDoc.js detectDocType 新增 kind='pathology' / doc_type='病理活检' 分支，位置在内镜/超声/CT 之后、骨髓分支之前（骨髓活检报告含「未见巨核细胞」会被骨髓分支先吞成「骨髓形态学（骨穿）」；而「胃镜取活检」「超声引导穿刺活检」必须仍判内镜/超声，已加断言）。",
+    "parseDoc.js FINDINGS_SECTIONS 增「镜下所见」「免疫组化」、CONCLUSION_SECTIONS 与 STRONG_CONCLUSION_KW 增「综合诊断」：matchSectionStart 是 startsWith 匹配，只登记裸「所见」「诊断」永远匹配不到带前缀的段名 → 该图 findings/conclusion 曾双双为空。修复后所见含「骨小梁间区前体细胞弥漫浸润…未见巨核细胞」+ 免疫组化标记 CD34/CD117/CD20/PAX-5/TdT，结论「B-ALL? 请结合临床及相关检查」。",
+    "parseDoc.js META_LINE_RE「标本号」放宽为「标本」：覆盖病理报告的「标本长度 / 标本类型」等元信息行，不再混进检查所见。",
+    "OCR 形近字归一 骨通|骨随|骨骨 → 骨髓（reportKind.fixOcrVariants / parseDoc.fixOcrVariants / ImportFlow.TITLE_OCR_FIX 三处同口径）：该图标题被读成「骨骨活检报告」。",
+    "app 级（不属算法文件，未随 tag 提交）：DocsSection 归档筛选新增「病理」chip（kind='pathology'，brown）+ export.js DOC_KIND_TEXT.pathology='病理活检'。",
+    "治理补登：save-recog-version.mjs / recog-rollback.mjs 的 ALGO_FILES 补入 reportKind.js、parseDoc.js 与两个守护脚本 + 本图 OCR 文本语料——此前的归档清单漏了分流/解析层，导致这类改动无法随之回退。",
+    "验证：run-unit 29/29（verify-report-kind 新增 4 条断言：病理报告判 doc、带检验表头仍 doc、化验网格通道形态仍 doc、化验单页眉「病理号」仍 lab；verify-doc-type 新增 12 条断言：病理 doc_type / kind=pathology / 组织病理 / 内镜与超声不被病理分支抢走 / 所见含镜下描述与免疫组化标记 / 结论含综合诊断 / 标本长度不进所见 / 真实图 OCR 文本端到端）；真实图 scripts/samples/7941786427319_.pic.ocr.txt 端到端 kind=pathology、doc_type=病理活检、所见含骨小梁描述与 CD34/TdT、结论含 B-ALL。"
+   ],
+   "knownResidue": "该图 doc 链路（原图 + chi_sim + psm6）把「报告时间 2026-08-11」读成 2026-09-11（8→9），标题「骨髓活检」读成「骨骨活检」（已归一）。A/B 实测（scripts/diag-doc-resolve-ab.mjs，4 张检查报告）：把低清小图（≤1071px）放大到 3000px 可读对 08-11、汉字数 313→338、流式图 CD 列表更全，CT/超声为持平——但放大 doc 链路属范式级改动（历史上 1652px CT 图放大曾被实测降级），未在本轮实施，待用户决策。"
+  },
+  {
+   "version": "1.8.7",
+   "date": "2026-09-12",
+   "status": "DONE",
+   "goal": "扩字段：新增「B型钠尿肽(BNP)」独立字段与别名，与 N端前脑钠肽(NT-proBNP) 区分——二者是不同检测（BNP=活性激素本身，NT-proBNP=其代谢片段），单位同为 pg/mL 但参考范围不同，混用会算错。覆盖 8441788689496 的 BNP 单项目报告：申请项目「B型钠尿肽」判为心肌(CARDIAC)、项目名「钠尿肽」映射到 BNP。",
+   "changes": [
+    "dictionary.js STANDARD_FIELDS 新增 BNP（B型钠尿肽，group 心肌，unit pg/mL，ref 0-100）；REPORT_TYPES.CARDIAC.keyFields 追加 BNP；ALIAS_MAP 新增 BNP 别名（B型钠尿肽/B型脑钠肽/B型利钠肽/脑钠肽/钠尿肽/BNP）。「钠尿肽」与「脑钠肽」字不同、不互为子串——但**该论证不完整、已被证伪**（见本条纠正）：只检查了「中文整名」而漏了「丢连字符的英文变体」，'BNP' 仍吞掉了 NTPROBNP 等变体，v1.8.10 已修。",
+    "reportCatalog.js ALIASES.CARDIAC 追加利钠肽家族标题特征词（B型钠尿肽/B型脑钠肽/B型利钠肽/脑钠肽/钠尿肽/BNP）：使『单做 BNP 一项』的报告（signature 覆盖率 1/5=0.2 < 0.30 阈值）也能靠标题判为心肌；OCR 把中文名读乱时仍可由文本中的 (BNP) 兜底命中。",
+    "ocr.js REPORT_TYPE_DEFINING_CODES 追加 BNP（与既有 NT_PROBNP 一致，防双栏 graph 反推误补 BNP 改变报告类型）。",
+    "安全论证：BNP(0-100) 与 NT_PROBNP(0-125) 中心偏移 12.5%/10% 均超 matchFieldByValueRef「强吻合」阈值(≤0.05)，两者不会成为彼此的强候选，不破坏既有值+ref 反推唯一性。",
+    "验证：8441788689496 端到端 POINTS 出现 BNP|B型钠尿肽|23.73|pg/mL|0-100、reportType=CARDIAC；run-unit 29/29；verify-report-catalog 23/23（新增 3 条 BNP 用例）；门禁 test:all 全绿（OCR 回归 5 green / 9 known-fail 守住 / 0 回退 / 2 跳过）。",
+    "纠正（2026-09-13 反省发现，勿再犯）：本条初版曾写「biochem 19→17、3DQWJ6 2→1 IMPROVED」，属**假归因**。git diff scripts/regress-cases/.regress-report.json 显示改前改后**除版本头外无任何案例变化**——biochem 实际早已为 17，是 case-biochem/meta.json 的 baselineFails=19 陈旧未更新。即本次改动对 OCR 回归语料实为**零影响**（纯加字段不伤老图），但**不得**记为收益。判定改动影响须以 .regress-report.json 的 git diff 为准。另本条引入副作用（'BNP' 子串吞掉 NT-proBNP 的丢连字符变体），已由 v1.8.10 修复。"
+   ]
+  },
+  {
+   "version": "1.8.6",
+   "date": "2026-09-11",
+   "status": "DONE",
+   "goal": "扩字段 + 读值层修复：新增促红细胞生成素(EPO) 字段与别名；isNum 支持前导比较运算符(>/</≥/≤)，识别 >1500.0 这类「高于检测限」超限值（此前整行因无数值被丢弃）。覆盖 8451788689528 单测 EPO 报告（结果 >1500.0、参考 2.6-19、单位 mIU/mL）。",
+   "changes": [
+    "dictionary.js STANDARD_FIELDS 新增 EPO（促红细胞生成素，group 贫血，unit mIU/mL，ref 2.6-19）；ALIAS_MAP 新增 EPO 别名（促红细胞生成素/红细胞生成素/促红素/Erythropoietin/EPO）。",
+    "ocr.js isNum 放宽：/^[<>≥≤]\\s*\\d+(\\.\\d*)?$/ 兼容超限值写法，使 >1500.0 被识别为数值（value 保留 > 前缀，符合 Bug 031 不自动改写）。"
+   ]
+  },
+  {
+   "version": "1.8.5",
+   "date": "2026-09-11",
+   "status": "DONE",
+   "goal": "反馈驱动修复（feedback-TR-20260911-SBLXJ7）：肝功能报告直接胆红素(DBIL) 行名被 OCR 重度乱码为「Be ASt] E BIL)」，整行 MISSING（verify FAIL [MISSING] DBIL），固化该反馈为 green 回归案例守住。",
+   "changes": [
+    "dictionary.js 别名表调整：DBIL 接管通用 'BIL' 别名（新增），TBIL 移除历史遗留的通用 'BIL' 别名（TBIL 行本身带明确 (TBIL) 缩写，无需裸 BIL）。胆红素家族仅 TBIL/IBIL/DBIL 三项，TBIL/IBIL 已由各自精确别名 (TBIL)/(IBIL) 命中，残留的裸 (BIL) 行必为 DBIL。",
+    "normalize.js 字段赋值处新增胆红素三联体兜底：当 rawName 含 'BIL'（胆红素专属 token，实验室中文语境下只有胆红素家族含 BIL）且当前 code 不是 TBIL/IBIL/DBIL 时，改投 DBIL。须在 rawName 被改写为标准名之前、且早于 buildGridPoints 末尾「同 code 多行择优」执行——否则乱码行 'Be ASt] E BIL)' 中 BEAS[T] 误命中的 AST 会与真实 AST 行同 code 被去重吞掉（case-TR-20260911-SBLXJ7 即此坑）。覆盖 OCR 把「直接胆红素(DBIL)」读成缺左括号+吞 D 的乱码、使 DBIL 行无法别名命中而被碎片值抢码的漏配。",
+    "验证：verify case-TR-20260911-SBLXJ7 FAIL 1→0（DBIL=3.5 命中，PASS）；门禁 test:all 全绿（单测 29/29；OCR 回归 4 green + 9 known-fail 守住 + 0 回退；case-feedback-CU7TT0 维持 PASS、EBTMG1/1788095314581 等维持基线），胆红素三联体其它案例（case-biochem/case-8261787387724/case-feedback-AMRYOT 等）不受影响。",
+    "用户另有 4 处 manual 修改（row9 PLT→PA 的 code/name/unit/ref 重映射）均非 value 字段，按 §9.4 仅作定位线索不锁入 expected，PA/PLT 误配留待专项治理，不在本修复范围。"
+   ]
+  },
+  {
+   "version": "1.8.4",
+   "date": "2026-09-10",
+   "status": "DONE",
+   "goal": "反馈驱动修复（feedback-TR-20260830-MINQ7R）：血常规 hsCRP 报告 EO_PCT 整项被错配成 EO_ABS（值/参考区间/单位全错），固化该反馈为 green 回归案例守住。底层为「单位量纲矛盾→同族兄弟字段改投」的确定性修复，不依赖任何 2 字符缩写别名 hack。",
+   "changes": [
+    "normalize.js 新增 siblingByUnit(code, unit)：name 别名命中的字段其单位量纲与本行单位矛盾时，若存在同前缀（EO_/NEUT_/LYM_/MONO_/BASO_/RET_）且单位量纲吻合的兄弟字段则改投。覆盖 OCR 把「嗜酸性粒细胞绝对值」读成 % 单位、实为「嗜酸性粒细胞百分比(EO_PCT)」的错配（case-TR-20260830-MINQ7R：EO_PCT 行名被误读为绝对值、单位却是 %、值 0 → 旧逻辑挂到 EO_ABS 且因 %≠10^9/L 整项错乱）",
+    "dictionary.js 撤回上一轮遗留的 SAFE_2CHAR='EO' 全局 2 字符别名 hack 及其边界守卫：该 hack 为 MINQ7R 临时方案，且实测会污染其它报告（如 'EO' 作为子串误吞长词）。MINQ7R 的真实 OCR 行名是干净中文「嗜酸性粒细胞绝对值」，根本无需 'EO' 缩写别名；EO_PCT/EO_ABS 的标准中文别名与 'EO%'/'EO#' 缩写已足够",
+    "验证：verify case-TR-20260830-MINQ7R FAIL 3→0（EO_PCT=0/WBC=1.95/MONO_PCT=3.1 全命中，PASS）；门禁 test:all 全绿（单测 26/26；OCR 回归 3 green + 8 known-fail 守住 + 0 回退；case-1788095314581 维持基线 1 内 LYM_PCT=18 已知波动），MINQ7R 由新建案例直接 PASS"
+   ]
+  },
+  {
+   "version": "1.8.3",
+   "date": "2026-09-04",
+   "status": "DONE",
+   "goal": "case-feedback-6ROCOF 精度修复：低清双栏图下 OCR 把「血小板压积」形近误读为「血小板积压」致 PCT 整项 MISSING，且 verify 的 expected 口语 code PCT 与系统标准 code PLT_PCT 未归一。低风险修掉 1 项 FAIL（5→4）。",
+   "changes": [
+    "dictionary.js PLT_PCT 别名追加「血小板积压」：OCR 常把「压积」的「压」形近误读为「积」→「血小板积压」，旧别名不含该变体导致 name 未映射、整项 MISSING；补别名后该图 GRID 行「21 血小板积压 PCT」正确映射 PLT_PCT、值 0.01 命中（verify FAIL 由 MISSING 转 PASS）",
+    "scripts/verify-report.mjs CODE_EQUIV 追加 PCT↔PLT_PCT 归一：expected.json 用口语 code PCT，系统字典 code 为 PLT_PCT，原 findPoint 的 code 精确匹配 + name 匹配都因「积压」≠「压积」而 MISSING；加归一后 expected PCT 命中标准 PLT_PCT 点",
+    "验证：verify case-feedback-6ROCOF FAIL 5→4（PCT 转 PASS）；门禁 test:all 全绿（单测 17/17，OCR 回归 0 回退，该 case 由基线 5 降为 IMPROVED 当前 4）；meta.json baselineFails 5→4"
+   ]
+  },
+  {
+   "version": "1.8.2",
+   "date": "2026-09-04",
+   "status": "DONE",
+   "goal": "用户核心诉求落地：血常规报告识别后混入的非血常规指标（肝功/肾功/血脂/尿常规/凝血/离子）应被剔除，让「检测出的生化指标少一点」。新增类型组黑名单过滤 filterOffTypeNoise，并在触发条件加「≥2 项混入才过滤」护栏，避免误伤单发情形与干扰多策略选优。",
+   "changes": [
+    "normalize.js 新增 filterOffTypeNoise（并在 normalizeGridToPoints 末尾调用）：依据字典 FIELD.group 做类型组黑名单。CBC 报告（血常规项 ≥5 且占绝对多数）下，剔除明确属于「肝功能/肾功能/尿常规/血脂/离子/凝血/甲功/心肌/感染/便常规/血型/真菌/血糖」组的指标（如 PA/UA/UPH/GGT/TG/P/TT）。保留『血常规』+『炎症指标』（超敏CRP 常与血常规联检），未映射或无 group 的项一律保留——黑名单比白名单安全，不误杀 NRBC/RDW/P_LCR/PCT/RET 等长尾血常规项。",
+    "触发条件加护栏：① 血常规组 ≥5 项；② 单发混入（其它组项 <2）不触发，保守保留（可能是真实边缘项）；③ 血常规项 > 其它组项数 ×2（绝对多数）。背景：初版无护栏导致 case-1788095314581 退化——该纯双栏血常规图被 OCR 识出 1 个 GGT 噪声，过滤删掉它后改变了该策略 mapped 计数，verify 多策略选优从 LYM_PCT=74.7 策略切到 LYM_PCT=18（右栏序号误当值）策略，使原本 PASS 的 case 变 FAIL。加护栏后该 case 恢复 PASS，且用户场景 6ROCOF（混入 4 项）仍被过滤。",
+    "新增专项验证 scripts/verify-type-filter.mjs（接入 run-unit.mjs）：4 场景全过——A. 6ROCOF 实况（GGT/PA/UA/UPH 4 项混入→全剔除）；B. 血常规+超敏CRP（HS_CRP 保留）；C. 生化全项（不动）；D. 单发混入 1 项 ALT（保守不触发）。",
+    "验证：单测 17/17；OCR 回归 11 cases 0 回退，3 PASS(green) + 7 known-fail 守住 + 1 skip；case-1788095314581 恢复 PASS，case-feedback-6ROCOF 守住基线"
+   ]
+  },
+  {
+   "version": "1.8.1",
+   "date": "2026-09-04",
+   "status": "DONE",
+   "goal": "TR-20260904-6ROCOF 防御性加固：CBC 报告被 OCR 把页眉/页脚/图表分析区误读成数据行（混入 PA/UA/UPH/GGT/TG/P/TT 等非 CBC 项目）。Bug 020 系「页眉/元信息过滤」加固：metaCompact 关键词扩充 + ≥10 位纯数字 value/ref 兜底丢弃（不依赖 !code 守卫）",
+   "changes": [
+    "normalize.js metaCompact 关键词列表扩充：「病历」→「病例」（病理号/病例号）；新增「流水」（流水号）、「临床」「诊断」（临床诊断：急性淋巴细胞白血病这类字样不再走数据行路径）、「检测」「仪器」「分析仪」（仪器信息）；所有真名已映射的字段不受影响",
+    "normalize.js 在 metaHit 守卫后，对所有 code 状态（含 code 已映射真名）增加 ≥10 位纯数字 value/ref 兜底丢弃：OCR 把「病理号 000729747900」「电话 0316-8328471」「条码 202608081281」误读为数据行的 value/ref 字段时——典型症状是 name 看起来是真项目名（「尿酸」「前白蛋白」）但 value/ref 是 11-12 位数字。≥10 位阈值可安全区分（指标 ref 字段最大宽度约 6-7 位「125-350」「0.1-0.6」），不误伤正常 ref",
+    "固化 case-feedback-6ROCOF 进 scripts/regress-cases/：26 项血常规真值（基于原图 + 用户 wholeReport 校对），5 项 OCR 精度 FAIL 注册 knownFail=true baselineFails=5 regressTolerance=5。Bug 020 系根因已被 v1.8.1 的兜底防线覆盖（PA/UA 这种 row 在历史会话里会被 10 位数字兜住），剩余 5 FAIL 是 OCR 精度（eo 0.7→07、ly# 2.36→10、MCHC/PCT 未识别、p-lcr 15.3→15），不在本修复范围",
+    "验证：单测 15/15；OCR 回归 11 cases 0 回退；case-feedback-6ROCOF 当前 FAIL=5（守住基线 5），与 v1.8.0 baseline 持平；其它 10 case 维持或 IMPROVED 不变"
+   ]
+  },
+  {
+   "version": "1.8.0",
+   "date": "2026-09-04",
+   "status": "DONE",
+   "goal": "带灰水印低清报告（case-feedback-CU7TT0「北京大学人民医院」水印+表格小字+JPEG 复合）knownFail→green：merge 单位残段保护 + 纯 chi_sim 文本行通道（buildGridFromText）+ 选优 key 规则，verify FAIL 4→0",
+   "changes": [
+    "ocr.js mergeNumericFragments 加「指数单位残段保护」：buf 单段 /^1?10$/ + 当前段 /^9\\d*(\\.\\d*)?$/（10⁹/L 上标被 OCR 拆成 '10 9.1' 无小数点）→ flush 拆开，不再拼成假值 109.1 抢占真实值列（真实值在更靠左，字符宽也竞争不过 5 字符假值）。修掉 CU7TT0 的 PLT 10971→10",
+    "ocr.js 新增 export buildGridFromText(text)：纯 chi_sim psm6 data.text 行文本→grid 通道（OCR_LOCAL_STRATEGIES 第 6 候选 {psm:6,variant:'default',mode:'text'}）。几何 items 通道在灰水印低清图把小数拆成 '3.'+'34' 等 word 碎片无法归位，但 psm6 行文本直读数值：小数空格净化（0. 49→0.49）+ 按 '-' ref 区间切段 + 行内 ref 残对（0 10 断连）剔除 + 指数单位残段对剔除 + 双栏按 '|' 分段 + 表头行建 [name,result,ref,unit] 列映射。关键参数 contrast 1.4（1.6 会压坏水印图数值，已对照）；识别走 getTesseractZh（chi_sim 单语，预热已加载），名称中文质量远高于 chi_sim+eng",
+    "选优 key 规则（runLocalBest/Parallel/verify 三处统一）：score>=0.5 按 score 优先（高分策略保命）；score<0.5 的疑难图（异常值多各策略分都极低）改按 mapped 数排序，防「binary 仅 4 行虚高 0.4」抢占「default/文本 15+ 行」候选，使文本通道凭 mapped 16>15 胜出",
+    "runLocalBest/Parallel：supplement 补漏排除 text 策略（find 加 !s.strategy.mode），之后文本通道 pts 追加补漏；date 回退其它策略（文本通道日期缺失时不落回当天）；runLocalBestParallel 文本策略分支走 recognizeLocalOnce（chi_sim worker，池内全是 chi_sim+eng 几何）；runLocalBestSliced 的切片每片循环跳过 text 策略（文本通道仅整图可用）",
+    "verify-report.mjs 同步：STRATEGIES 追加 mode:'text'，新增 chi_sim worker + default14 变体（contrast 1.4，产品同参），best 判定同 key 规则，文本 pts 参与补漏",
+    "验证：verify CU7TT0 FAIL 4→0（PASS）；门禁单测 15/15；OCR 回归 0 回退且 4 case IMPROVED：CU7TT0 4→0（knownFail 转 green，meta.json baselineFails=0）、8261787387724 4→3、biochem 19→18、3DQWJ6 2→1。实验证据 scripts/exp-wm-text.mjs（文本通道逐策略对照）、exp-wm3000/exp-wm-lang/exp-wm-eng.mjs（语言/分辨率/对比度对照）"
+   ]
+  },
+  {
+   "version": "1.7.3",
+   "date": "2026-09-03",
+   "status": "DONE",
+   "goal": "修复 OCR 网格行序颠倒（自下而上→自上而下），使校对网格展示/自动填充序号与报告表格顺序一致（用户诉求：网格尽量按原表格从上到下排）",
+   "changes": [
+    "ocr.js clusterByY：返回前的行排序由 b.y-a.y（降序）改为 a.y-b.y（升序）。该函数是 buildGridFromItems 行聚类唯一出口（单栏整页聚类 + 双栏左右分栏聚类共用）；此前单栏 grid 恒按表格自下而上输出——实测 figA 迈瑞血常规 items snapshot（y=483 顶部行序号 1 落在 grid 尾部，y≈1246 底部 MCV 在前）。簇划分（eps/遍历归并）逻辑未动，仅翻转输出行序",
+    "双栏分支 lineObjs 合并排序本就是升序，语义统一为 y 升序=表格从上到下，消除两条路径方向互斥的隐患",
+    "连带影响：normalizeGridToPoints 产出的 points 数组与 _row 从自下而上翻转为自上而下；autoFillItemNo（无序号报告自动填充 1..N 序号）与 summarizeAudit 序号序列方向随之贴表格；DataGrid 默认排序（_item_no asc → _row asc）的兜底 _row 语义修正。detected 序号（报告自带）不受影响",
+    "验证：figA snapshot 修复后 grid 首行=「1 白细胞」(y483)、尾部=MCV/HCT（y≈1246），与表格从上到下一致；门禁：单测 15/15，OCR 回归 2 green / 7 known-fail / 0 回退 / 1 跳过，且 case-8261787387724 4→3、case-biochem 19→18、case-feedback-3DQWJ6 2→1、case-feedback-CU7TT0 4→3 均 IMPROVED（归因依赖行序的归并/择优更贴物理行）"
+   ]
+  },
+  {
+   "version": "1.7.2",
+   "date": "2026-09-03",
+   "status": "DONE",
+   "goal": "反馈驱动治理：将 TR-20260903-CU7TT0 的 manual value 修正固化为 knownFail 回归案例，守住 OCR 读值层缺陷不退步",
+   "changes": [
+    "新增回归案例 scripts/regress-cases/case-feedback-CU7TT0：来源 feedback-TR-20260903-CU7TT0（900px 脱敏图），expected 仅取用户 manual 修正值 LYM_ABS 10→2.66、PLT 10971→10、NEUT_ABS 10→0.49、HS_CRP 15→54.4",
+    "分层诊断：items 层 token 存在但字符级碎片化严重；grid 层值列串行（10^9/L 单位列被读成 109），normalize 层按名字+参考范围把 109 行挂到 LYM_ABS/PLT、按 CRP 关键字把噪声值 5 行挂到 HS_CRP；NEUT_ABS 因名字乱码未命中",
+    "判定为 §5.2 OCR 读值层缺陷（非 dictionary/normalize/ocr 解析层可修）：psm6/default、psm11/default、psm7/sharpen 三策略一致给出 LYM_ABS=109/PLT=109/HS_CRP=5；调低 MIN_OCR_WIDTH 仅改变失败形态不减少 FAIL 数，且会伤及其它案例（参考 case-feedback-U6VDSD  precedent）",
+    "遵守 Bug 031 红线：不自动改写数值；以 knownFail（baselineFails=4, tolerance=0）守住，防止后续算法改动使这 4 项退步",
+    "门禁：单测 15/15；OCR 回归 2 green / 7 known-fail / 0 回退 / 1 跳过；case-feedback-CU7TT0 当前 4 FAIL = 基线 4，守住"
+   ]
+  },
+  {
+   "version": "1.7.1",
+   "date": "2026-09-03",
+   "status": "DONE",
+   "goal": "把跨行错配改判接入「数据清洗」面板，治理历史脏数据——与导入链路共用同一判据 resolveCrossRowDuplicates，避免两套实现分叉",
+   "changes": [
+    "normalize.js resolveCrossRowDuplicates：由文件内私有函数改为 export；新增 allow({from,to,value}) 准入回调（清洗面板用它接住用户取消勾选，被取消的改判整条跳过）与变更清单返回值 [{from,to,name,value,unit,ref_range,reason}]，供调用方展示明细",
+    "clean.js cleanRecord：在项目名重映射 / 确定值反推之后调用 resolveCrossRowDuplicates（作用于本条记录内 code 占用情况，无需跨记录）；命中项 push 进 pointFixes（kind='crossrow'），数值永不改写（Bug 031）",
+    "clean.js cleanRecords：新增 opts.skipCrossRow（用户取消勾选的改判 key 集合），传入 cleanRecord 跳过对应改判；summary.pointFixes 扣除被跳过项",
+    "CleanPanel：跨行错配改判单列「⛓ 跨行错配改判」分组卡片，默认全部勾选、可逐条取消（与重复记录同范式），每条展示 日期·项目名：from→to 及三列吻合理由；执行时把取消项作为 skipCrossRow 传入；原「指标重映射」卡片排除 crossrow 以免重复展示",
+    "门禁：单测 15/15（含 verify-clean / verify-reverse）；OCR 回归 2 green / 6 known-fail / 0 回退 / 1 跳过，与基线一致"
+   ]
+  },
+  {
+   "version": "1.7.0",
+   "date": "2026-09-03",
+   "status": "DONE",
+   "goal": "修复「跨行错配」类脏数据：整行 结果/单位/参考范围 来自另一指标行、只有项目名是串行的那个（如 PLT 三列被挂到「红细胞计数」名下），并把反推结论交还给用户以便一键改判",
+   "changes": [
+    "normalize.js matchFieldByValueRef：新增 unitMatch 维度（报告单位与候选字段档案单位是否吻合，含 OCR 噪声变体归一如 410^9/L→10^9/L），为「三列一致性」判定提供单位证据；报告未带单位时返回 null，该维度不参与判定",
+    "normalize.js 新增 resolveCrossRowDuplicates（由 resolveByMultiSignal 阶段3调用）：对「同报告内重复 code 的行」做跨行错配改判。安全条件缺一不可——① 当前 code 在本报告内出现 ≥2 次（本行属多余重复行，改掉不丢指标）② 本行单位与参考范围双双矛盾于当前 code 档案（已排除 OCR 噪声变体与等效单位）③ 存在唯一候选字段其单位+参考范围双双吻合 ④ 该候选 code 在本报告内未被占用（不产生重复）",
+    "刻意不要求「值落在参考范围内」（区别于旧反推通道）：随访患者指标普遍异常（PLT 长期 8~42 而参考 125-350），该门槛会让逻辑在这类数据上形同虚设；改以「三列一致性 + 报告内 code 占用情况」为判据",
+    "normalize.js reverseFieldMatch：保留「名字优先」护栏——单凭本行无法区分「名字串行」与「其余列串行」，二者形式完全相同（「血红蛋白+Cr的单位/参考范围」与「红细胞计数+PLT三列」）。初版在单点放开该护栏即触发 verify-reverse.mjs 的 2 条回归（血红蛋白→Cr、甘油三酯→CK_MB），故回滚单点改动、改到能看到全局 code 占用的 resolveByMultiSignal 阶段处理，单点保护完整保留。另在所有「仅提示」分支补 suggestedCode/suggestedName，把反推结论交还上层",
+    "normalize.js auditPoint：新增 suggestCode / suggestName 字段并由 buildGridPoints 透传，使「检测到矛盾但未自动改判」的行能携带反推目标，供 UI 提示与一键改判",
+    "UI（app 级，不属算法文件）：ReportDetail 指标行新增「反推指向 X」徽章（展示 _audit.reverseHint）与「改判为此项」按钮（仅改 standard_code，保留报告自带的结果/单位/参考范围，数值永不改写 Bug 031，重算状态与审计，目标 code 已存在时二次确认）；Dashboard 新增「待核对错配」聚合入口，列出全库 unit+ref 双 mismatch 的点并可直达对应报告",
+    "门禁：单测 15/15（verify-reverse 7/7，2 条名字优先守卫守住）；OCR 回归 2 green / 6 known-fail / 0 回退 / 1 跳过，与基线一致（回归语料无重复 code 行场景，新逻辑未触发）"
+   ]
+  },
+  {
+   "version": "1.6.1",
+   "date": "2026-08-31",
+   "status": "DONE",
+   "goal": "修复低分辨率图上数值末尾 K→8 误认导致 MCV 等被读错（如 88. → 8K.），并兼容小数点被空格拆开的数值碎片合并",
+   "changes": [
+    "src/utils/ocr.js mergeNumericFragments：新增 cleanDigitConfusion（极窄范围，仅 K→8），只作用于『数字 + K（可选 . 与尾随数字）』形态的 OCR 碎片（如 88. 误读为 8K.），把 8K. 还原为 88. 后再与相邻数字碎片合并成完整数值（8K. 2 → 88.2）；绝不触碰纯字母词（钾 K、BASO 缩写），也不做宽字母映射（O→0/S→5/B→8…）以免误伤其它报告真实数值",
+    "src/utils/ocr.js mergeNumericFragments NUM_FRAG：放宽允许『数字 + 末尾小数点』碎片（如 88.），配合上面纠错使其能与后续数字碎片合并为 88.2；src/utils/ocr.js GRAPH_NUM_RE 同步放宽尾点，graph 双栏路径一致",
+    "安全论证：K→8 仅作用于『数字打头的 K』形态，血常规/生化的钾(K)等纯字母名称不受影响；先以宽字母映射（O/S/B/G…）实测触发 case-8271787533111 回退（值被错并/错位），故收敛为仅 K→8 单点修复以守住回归门禁",
+    "固化回归：新增 case-feedback-RCW87Y（来源 feedback-TR-20260831-RCW87Y，900px 脱敏图），expected 仅取用户 manual 修正值 MCV 88→88.2、P_LCR 15→15.3（autoFix/reMatch 仅作线索，不锁死）；连续 3 次 verify 均 PASS（FAIL=0）",
+    "门禁：单测 15/15；回归 case-feedback-RCW87Y PASS、case-1788095314581 PASS、case-8261787387724 4→3(IMPROVED)、case-biochem 19→18(IMPROVED)、case-feedback-3DQWJ6 2→1(IMPROVED)、case-8271787533111 守住 5、case-feedback-U6VDSD 守住 2、case-sample 守住 1（0 回退）"
+   ]
+  },
+  {
+   "version": "1.6.0",
+   "date": "2026-08-31",
+   "status": "DONE",
+   "goal": "修复 PDF 图片型真双栏血常规（左右贴合）的解析层错配：行聚类拆行 + 箭头噪声切格 + best 策略切换丢指标",
+   "changes": [
+    "ocr.js buildGridFromItems clusterByY：eps 硬上限 13px 放宽到 0.75×行距（下限 13）。高分辨率渲染图（行距 51px）行内 token 基线抖动 27px 时会把同一物理行拆成两行（WBC 行序号/值/ref 与名称分离 → parseCellTokens 错配：WBC got=4、LYM got=18、MCHC 值串行）；eps 恒 < 行距，不会误并相邻数据行",
+    "ocr.js parseCellTokens：名称词分支排除『单字符符号/数字+符号』箭头噪声（+、4+ 等，提示列 ↓ 的误读），当前格已有数值时归入 rest 不触发切格——否则右栏序号/值被切到新格当 value",
+    "ocr.js runLocalBest / runLocalBestParallel / runLocalBestSliced + verify-report.mjs：多策略字段级补充融合从『仅 sauvola』扩展为『default → sauvola → binary → sharpen』优先级补充。best 偶发选到 binary（score 同 0、mapped 略高）时，default 已正确识别的指标（MCHC=340）不再随 best 切换丢失",
+    "新增回归案例 case-1788095314581（PDF 渲染图 3600×2537，真双栏 26 项左右贴合）：expected MONO_PCT=0.9、PLT=10 按图修正（用户粘贴 0.94/101，但 3600/6000px 渲染像素投影证实尾字 4/1 物理不存在，多策略 OCR 全读 0.9/10，证据链见 meta.json note）",
+    "门禁：单测 15/15；回归 case-1788095314581 PASS、case-8261787387724 4→3（IMPROVED）、case-biochem 19→18（IMPROVED）、case-feedback-3DQWJ6 2→1（IMPROVED）、case-8271787533111 守住 5、case-feedback-U6VDSD 守住 2、case-sample 守住 1（0 回退）"
+   ]
+  },
+  {
+   "version": "1.5.2",
+   "date": "2026-08-31",
+   "status": "DONE",
+   "goal": "补全采集/报告时间时分分隔符兼容 OCR 把冒号误读为度「°」：8301788098266 真实报告采样时间行读到 04°36（° 是冒号误读），旧正则 [:.-] 不涵盖 ° 导致 collectedAt 只拿到日期、丢失 04:36 时分——即「采集时间识别不出来」",
+   "changes": [
+    "src/utils/ocr.js extractReportDate：DATE_RE 时分分隔符由 [:.-] 放宽为 [:.-°]（冒号/点/连字符/度），兼容扫描件把冒号读成 ° 的噪声（实测 830 采样 04°36）",
+    "安全论证：度 ° 入时分组安全（温度 37°C 的 ° 后非两位数字，不匹配 (\\d{1,2})°(\\d{2})），不会误匹配",
+    "固化回归：verify-extract-date.mjs 新增场景13，用 830 真实 OCR 文本（采样 04°36 / 接收 06.26 / 报告 09:16）验证 collectedAt/reportedAt 正确含时分",
+    "门禁：verify-extract-date 14/14、run-unit 15/15 通过（test:all 由存档脚本统一跑，本修复仅动日期正则，预期 0 回退）"
+   ]
+  },
+  {
+   "version": "1.5.1",
+   "date": "2026-08-30",
+   "status": "DONE",
+   "goal": "修复「报告时间/采集时间识别不出来」：OCR 常把时分分隔符冒号「:」误读为点「.」或连字符「-」，旧正则只认冒号导致时分整段丢失（只拿到日期、丢失具体时刻）",
+   "changes": [
+    "src/utils/ocr.js extractReportDate：DATE_RE 时分分隔符由 [:](仅冒号) 放宽为 [:.-]（冒号/点/连字符），兼容扫描件 OCR 噪声（实测 04.36 / 11.53 / 08-01 等写法）",
+    "安全论证：月分隔用 [-./年]、时分分隔用 [:.-]，二者位置不重叠（日期已消费到「日」才进可选时分组），不会把「月-日」误判为「时-分」；年份 2 位（26→2026）仍支持",
+    "固化回归：verify-extract-date.mjs 新增场景11/12，用 8261787387724 / 8271787533111 两张真实报告的 OCR 噪声文本（点/连字符混用 + 2位年）验证 collectedAt/reportedAt 正确含时分",
+    "门禁预计：verify-extract-date 13/13 通过；test:all 由存档脚本统一跑（本次仅改日期提取正则，不影响指标网格解析，预期 0 回退）"
+   ]
+  },
+  {
+   "version": "1.5.0",
+   "date": "2026-08-29",
+   "status": "DONE",
+   "goal": "数据清洗去重补上文件哈希信号：修复『导入判重提示后选仍要插入的修正版（改了日期/数值）在清洗时漏网』的残留重复",
+   "changes": [
+    "clean.js analyzeRecords：新增 clusterByFileHash，把非空 file_hash（兜底 image_hash）相等的记录聚为精确重复组，并入 dupGroups，与内容指纹组去重",
+    "根因：导入查重用文件哈希通道判『重复文件』，清洗仅按内容指纹+同日同类型聚类，导致改了日期/数值的强制插入记录从清洗网漏出",
+    "空哈希不参与聚类（历史无哈希记录安全），betterThan 仍保留识别最全一条；合并在清洗页默认勾选，与内容重复一致",
+    "门禁：verify-clean.mjs 12/12、npm test 15/15 通过（test:all 由存档脚本统一跑）"
+   ]
+  },
+  {
+   "version": "1.4.0",
+   "date": "2026-08-28",
+   "status": "DONE",
+   "goal": "反馈驱动修复（真实反馈 TR-20260828-3DQWJ6）：补行名档案（钙磷乘积、AST:ALT 比值）+ 扩充单位 OCR 噪声变体，修复行名错配与单位归一缺口",
+   "changes": [
+    "dictionary.js：CA_P_PRODUCT 别名补 OCR 变体『钙磅乘积』+ ref 补 35-40，修复该行被识别为 NEUT_PCT",
+    "dictionary.js：新增 AST_ALT（AST/ALT 比值）标准档案 + 组合别名（长度 7 在 mapAlias 最长子串优先下胜过单字 AST/ALT，不误伤单字段行），修复该行被识别为 AG",
+    "normalize.js：UNIT_OCR_FIX 扩充 7 条（wumol/L、uwmol/L、wnol/L、umoly/L、me/L、W/L、裸 mmol），覆盖 μ 误读为 w/uw/wn/me 等 OCR 变体",
+    "新增回归案例 case-feedback-3DQWJ6（含真值 2 条，行名映射已修；值/单位列错位与 MISSING 行记 knownFailNotes，属 OCR 读值层待根治）",
+    "门禁：单测 15/15；case-8261787387724 4→3、case-8271787533111 5→4（IMPROVED）；case-biochem 守住 19、case-sample 守住 1、新案例守住 2（0 回退）"
+   ]
+  },
+  {
+   "version": "1.3.0",
+   "date": "2026-08-27",
+   "status": "DONE",
+   "goal": "单位 OCR 误读变体归一（V/L→U/L、amol/L→mmol/L、wol/L→umol/L、e/L→g/L、wmol/L→umol/L），提升单位正确性；并诊断确认小数点丢失为跨 variant 一致的 OCR 读值缺陷",
+   "changes": [
+    "src/utils/normalize.js normalizeUnit：新增 5 条单位字形误读映射，归一到标准单位（不改数值，符合 Bug 031）",
+    "诊断结论（scripts/diag-biochem-variants.mjs）：TC=310/LDL_C=167/ALB=413/IBIL=97 等小数点丢失在全部 5 个 OCR variant 下一致出现 → 属 OCR 读值层缺陷，非选择/归一化问题；逻辑层因 Bug 031 冻结不自动改写，需 OCR 范式级改进（不在本轮范围）"
+   ]
+  },
+  {
+   "version": "1.2.1",
+   "date": "2026-08-27",
+   "status": "DONE",
+   "goal": "修复上传链路 JPEG 重编码有损导致的『数字粘连/整行丢失』（TBA 17.4 被读成 41.3、白蛋白行消失）",
+   "changes": [
+    "ImageUploader.jsx downscaleImage：原图宽度 ≤1200px 时不再走 canvas.toDataURL('image/jpeg', 0.85) 无意义重编码，直接透传原文件 dataURL",
+    "根因：上传→downscaleImage 即使 scale=1 也重编码 JPEG 0.85，有损导致 OCR 白蛋白行(41.3/40-55)整行丢失、41.3 串入 TBA 行，TBA 17.4 误读为 41.3",
+    "复现/验证：playwright 真实浏览器按上传路径（重编码 vs 透传）对比，修复后 grid 33→51 行、TBA=17.4、ALB=41.3 恢复；CLI 直跑原图不受影响（门禁本来就绿，该 bug 仅 UI 上传路径）",
+    "关联案例：case-8261787387724（expected.json 已含 TBA 17.4，上传链路问题，run-regress 直跑原图不覆盖该路径）"
+   ]
+  },
+  {
+   "version": "1.2.0",
+   "date": "2026-08-27",
+   "status": "DONE",
+   "goal": "扩语料：将工作区样本报告固化进 regress-cases，扩大门禁覆盖面，为后续 OCR 预处理轮次提供『不退步』护栏（地基稳了再动算法）",
+   "changes": [
+    "scripts/regress-cases/case-sample：新增样本血常规报告（NEUT_PCT/NEUT_ABS），含真实偏低异常值 NEUT_ABS=0.60，专门守卫 Bug 031『异常值不被自动改写』",
+    "门禁覆盖率：回归案例 3→4；全绿（15 单测 + 4 案例守住，0 回退）",
+    "说明：real-lab-*.png / chart_photo_*.png 等无配对 expected.json，未伪造真值固化，避免锁定错 OCR 阻塞未来修复"
+   ]
+  },
+  {
+   "version": "1.1.0",
+   "date": "2026-08-27",
+   "changes": [
+    "normalize.js: 新增 parenStrong 守卫——行名显式带括号缩写 (CODE) 时禁止 value+ref 反推覆盖，修复 (DBIL)→MYO、(osm)→LPA 等『算法退步』",
+    "dictionary.js: 新增 OCR 误读缩写别名 Gs→GGT、GLv→GLU、PAB→PA，修复 GGT/GLU/PA 名称映射",
+    "关联回归案例：case-8261787387724 6→4、case-8271787533111 5→4、case-biochem 守住基线 19"
+   ]
+  },
+  {
+   "version": "1.0.0",
+   "date": "2026-08-27",
+   "changes": [
+    "初始算法版本锚点：多策略 runLocalBest（psm6/default + psm6/binary + psm11/default + psm7/sharpen + psm6/sauvola 选最优）"
+   ]
+  }
+ ]
+}

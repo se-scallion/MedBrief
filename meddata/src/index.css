@@ -1,0 +1,147 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    @apply bg-slate-100 text-slate-800;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-white rounded-xl border border-slate-200 shadow-sm;
+    position: relative;
+    transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.2s ease;
+  }
+  /* 卡片 hover 描边光晕：阴影为静态，仅过渡 opacity（GPU 友好，不触发重绘） */
+  .card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.1);
+    opacity: 0;
+    transition: opacity 0.25s ease;
+  }
+  .card:hover::after {
+    opacity: 1;
+  }
+  .card:hover {
+    border-color: rgba(13, 148, 136, 0.35);
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-brand-600 text-white hover:bg-brand-700;
+  }
+  .btn-secondary {
+    @apply btn bg-white border border-slate-300 text-slate-700 hover:bg-slate-50;
+  }
+  .btn-ghost {
+    @apply btn text-slate-600 hover:bg-slate-100;
+  }
+  /* 顶栏操作按钮：统一高度/圆角/字号，保证一排按钮视觉对齐 */
+  .btn-top {
+    @apply inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-lg text-xs font-medium whitespace-nowrap transition-colors;
+    @apply focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/70 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-top-ghost {
+    @apply btn-top bg-slate-800 border border-slate-600 text-slate-200 hover:bg-slate-700 hover:text-white active:bg-slate-600;
+  }
+  .btn-top-primary {
+    @apply btn-top bg-brand-500 text-white shadow-lg shadow-brand-500/25 hover:bg-brand-400 active:bg-brand-600;
+  }
+  /* 拖拽悬停态：整类切换（而非局部覆盖），避免 hover 变体把高亮盖掉 */
+  .btn-top-drop {
+    @apply btn-top bg-brand-600 border border-brand-500 text-white shadow-lg shadow-brand-500/30;
+  }
+  /* 极简顶栏导航：与动作按钮同高、低存在感，当前项高亮 */
+  .topnav-link {
+    @apply inline-flex items-center h-9 px-2.5 rounded-lg text-sm font-medium whitespace-nowrap text-slate-300 hover:text-white hover:bg-slate-800 transition-colors;
+  }
+  .topnav-link-active {
+    @apply text-white bg-slate-800;
+  }
+  .input {
+    @apply w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500;
+  }
+  .label {
+    @apply block text-xs font-medium text-slate-500 mb-1;
+  }
+  /* 横排字段标签：与输入框同一行、缩小竖向占用，统一小号灰字 */
+  .field-label {
+    @apply text-xs text-slate-500 whitespace-nowrap;
+  }
+  /* 顶栏品牌辉光：青绿径向 + 顶部高光，极低存在感，不遮挡内容（::before 在内容之下） */
+  .topbar-glow {
+    position: relative;
+  }
+  .topbar-glow::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(120% 150% at 100% 0%, rgba(20, 184, 166, 0.18), transparent 55%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 42%);
+    opacity: 0.9;
+  }
+  .topbar-glow > * {
+    position: relative;
+    z-index: 1;
+  }
+  /* 图表区入场扫描线：一次性自上而下扫过，pointer-events:none，reduced-motion 下不播 */
+  .scan-in {
+    position: relative;
+    overflow: hidden;
+  }
+  .scan-in::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 100%;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(13, 148, 136, 0) 0%, rgba(13, 148, 136, 0.12) 50%, rgba(13, 148, 136, 0) 100%);
+    transform: translateY(-100%);
+    animation: scan-sweep 0.6s ease-out 1;
+    z-index: 2;
+  }
+  @keyframes scan-sweep {
+    to {
+      transform: translateY(100%);
+    }
+  }
+}
+
+/* 系统开启「减少动效」：关闭 CSS 动画与过渡（motion 组件已由 MotionConfig 处理） */
+@media (prefers-reduced-motion: reduce) {
+  .scan-in::before {
+    animation: none;
+    display: none;
+  }
+  .card,
+  .card::after {
+    transition: none;
+  }
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-300 rounded-full;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

@@ -1,0 +1,7 @@
+# MedData 源目录入库范围（2026-11-13，P0-3）
+# 只入库 src + 配置；下面两类是**可复制的第三方二进制**，不入库（合计 49 MB）。
+# 需要浏览器端 tesseract 引擎时：从 MedData 仓执行 `cp -R meddata/public/tesseract meddata/public/traineddata meddata/public/`
+public/tesseract/
+public/traineddata/
+.DS_Store
+*.bak
