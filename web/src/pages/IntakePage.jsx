@@ -442,6 +442,20 @@ export default function IntakePage() {
     }
   }
 
+  const openCardInNewWindow = () => {
+    if (!card?.html) {
+      message.warning('资料卡还没生成')
+      return
+    }
+    const w = window.open('', '_blank')
+    if (!w) {
+      message.warning('浏览器拦截了新窗口，请允许弹窗后重试')
+      return
+    }
+    w.document.write(card.html)
+    w.document.close()
+  }
+
   const printCard = () => {
     const win = iframeRef.current?.contentWindow
     if (!win) {
@@ -916,8 +930,11 @@ export default function IntakePage() {
             <Button type="primary" onClick={() => makeCard()} loading={cardLoading}>
               生成资料卡
             </Button>
-            <Button onClick={printCard} disabled={!card}>
+            <Button onClick={printCard} disabled={!card?.html}>
               打印 / 存 PDF
+            </Button>
+            <Button onClick={openCardInNewWindow} disabled={!card?.html}>
+              新窗口打开
             </Button>
             {patient?.updatedAt && (
               <Text type="secondary" style={{ fontSize: 12 }}>
@@ -939,18 +956,19 @@ export default function IntakePage() {
           </Space>
         ) : card?.html ? (
           <Space direction="vertical" size={8} style={{ width: '100%' }}>
-            <Space wrap>
+            <Space wrap align="center">
               <Tag color={card.masked ? 'green' : 'orange'}>{card.masked ? '已脱敏（姓名打码）' : '未脱敏'}</Tag>
               <Text type="secondary" style={{ fontSize: 12 }}>
                 报告 {card.counts?.reports ?? 0} 份 · 指标 {card.counts?.latest ?? card.counts?.rows ?? 0} 项 ·
-                异常 {card.summary?.abnormalCount ?? 0} 项
+                异常 {(card.counts?.p0 ?? 0) + (card.counts?.p1 ?? 0)} 项
+                {card.counts?.staleDays > 90 ? ` · ⚠️ 最新化验距今 ${card.counts.staleDays} 天` : ''}
               </Text>
             </Space>
             <iframe
               ref={iframeRef}
               title="问诊资料卡预览"
               srcDoc={card.html}
-              style={{ width: '100%', height: 900, border: '1px solid #f0f0f0', borderRadius: 8, background: '#fff' }}
+              style={{ width: '100%', height: 'min(78vh, 1180px)', border: '1px solid #f0f0f0', borderRadius: 8, background: '#fff' }}
             />
           </Space>
         ) : (
