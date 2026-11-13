@@ -14,6 +14,7 @@ import {
   Input,
   Modal,
   Row,
+  Segmented,
   Select,
   Space,
   Spin,
@@ -60,6 +61,38 @@ export default function IntakePage() {
 
   const [reports, setReports] = useState([])
   const [mdOpen, setMdOpen] = useState(false) // 四引擎实验台（抽屉）
+
+  // 页内分段（2026-11-13）：①②③ 原本纵向堆叠、一屏只见 ①，医生/家属要一路往下滚。
+  // 这里加一条吸顶分段条：点哪段滚到哪段，滚动时高亮当前段。不动 state、不拆页面。
+  const SECS = [
+    { key: 'upload', label: '① 导入', id: 'sec-upload' },
+    { key: 'review', label: '② 校对', id: 'sec-review' },
+    { key: 'card', label: '③ 资料卡', id: 'sec-card' },
+  ]
+  const [sec, setSec] = useState('upload')
+  const scrollLock = useRef(0) // 点击分段后短暂锁住观察器，否则「点了③却被②抢走高亮」
+  const gotoSection = useCallback((key) => {
+    const target = SECS.find((x) => x.key === key)
+    if (!target) return
+    setSec(key)
+    scrollLock.current = Date.now() + 900
+    document.getElementById(target.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [])
+  // 滚动时反查当前所在的段（用 IntersectionObserver，避免手写 scroll 节流）
+  useEffect(() => {
+    const els = SECS.map((x) => document.getElementById(x.id)).filter(Boolean)
+    if (!els.length) return
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (Date.now() < scrollLock.current) return // 点击引发的滚动期间不抢高亮
+        const visible = entries.filter((e) => e.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0]
+        if (visible) setSec(visible.target.id.replace('sec-', ''))
+      },
+      { rootMargin: '-96px 0px -55% 0px', threshold: [0.1, 0.4, 0.8] },
+    )
+    els.forEach((el) => io.observe(el))
+    return () => io.disconnect()
+  }, [])
   const iframeRef = useRef(null)
 
   // ---------- 病友档案 ----------
@@ -655,6 +688,21 @@ export default function IntakePage() {
           四引擎识别（实验）
         </Button>
       </div>
+      <div style={{ position: 'sticky', top: 0, zIndex: 5, background: '#f5f6f8', padding: '6px 0' }}>
+        <Space size={8} align="center">
+          <Segmented
+            size="small"
+            value={sec}
+            onChange={gotoSection}
+            options={SECS.map((x) => ({ label: x.label, value: x.key }))}
+          />
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {sec === 'upload' ? '选图/拍照或 PDF，可多选、可两张拼接' :
+             sec === 'review' ? '逐行核对识别结果，改完再入库' :
+             '填病友信息 → 生成资料卡 → 打印/存 PDF'}
+          </Text>
+        </Space>
+      </div>
       <Alert
         type="info"
         showIcon
@@ -667,6 +715,7 @@ export default function IntakePage() {
       />
 
       {/* 1 + 2：导入与拼接 */}
+      <div id="sec-upload" style={{ scrollMarginTop: 56 }}>
       <UploadPanel
         items={items}
         pendingCount={pendingCount}
@@ -681,11 +730,15 @@ export default function IntakePage() {
         removeItem={removeItem}
         toggleSelect={toggleSelect}
       />
+      </div>
 
       {/* 3 + 4：识别校对与入库 */}
-      <ReviewPanel items={items} renderItemBody={renderItemBody} />
+      <div id="sec-review" style={{ scrollMarginTop: 56 }}>
+        <ReviewPanel items={items} renderItemBody={renderItemBody} />
+      </div>
 
       {/* 5：资料卡 */}
+      <div id="sec-card" style={{ scrollMarginTop: 56 }}>
       <ProfilePanel
         form={form}
         patient={patient}
@@ -700,6 +753,7 @@ export default function IntakePage() {
         printCard={printCard}
         openCardInNewWindow={openCardInNewWindow}
       />
+      </div>
 
       {/* 已导入报告 */}
       <Drawer
