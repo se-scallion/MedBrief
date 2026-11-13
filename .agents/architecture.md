@@ -304,3 +304,54 @@ ego lite 的 Chromium（真实指纹 + 独立 profile）可通过。故 `lib/ego
 满足任一条件时，考虑合并进 MedData monorepo：
 1. 被引用的 MedData 纯函数 > 10 个且改动频繁；
 2. MedData 启动服务端多用户模式。
+
+## 前端导航与页面结构（2026-11-13 整合）
+
+### 导航形态
+
+`web/src/App.jsx` = `Layout.Header` + `Layout.Sider(Menu 两组)` + `Content`（原来是顶部 6 个 Tabs 平铺）。
+
+```
+资料   资料录入 · 报告库 · 病历交换包
+出诊   出诊监控 · 挂号与预约 · 预约记录 · 114 会话
+```
+
+- **URL**：切页写回 `?tab=<key>`（`history.replaceState`，**未引入 react-router**）。
+  `KEY_ALIAS` 兜住历史写法：`?merged=guahao` → `booking`、`/#session` → `session`、未知值回落 `intake`。
+- **窄屏**：`Sider breakpoint="lg" collapsedWidth={56}`，`Content` 加 `minWidth: 0`（否则内容会把容器撑出横向滚动条）。
+- **零新依赖**：只用 antd 自带 `Layout.Sider` / `Menu`。
+
+### 页面文件（`pages/` 与 `tabs/` 的分工）
+
+| 文件 | 职责 |
+|---|---|
+| `pages/IntakePage.jsx` | 资料录入：① 导入 ② 校对 ③ 资料卡，页内**吸顶分段条**（Segmented + scrollIntoView + IntersectionObserver） |
+| `pages/intake/UploadPanel.jsx` | ① 批量导入 |
+| `pages/intake/ReviewPanel.jsx` | ② 识别与校对 |
+| `pages/intake/ProfilePanel.jsx` | ③ 病友信息 + 资料卡预览 + 打印/新窗口 |
+| `pages/intake/ReportsPanel.jsx` | 报告库（自包含取数，按 reportDate 倒序） |
+| `pages/intake/shared.js` | `ST / KIND_OPTIONS / FLAG_TEXT / uid / fmtSize / rawJson / postJson` |
+| `tabs/*.jsx` | 出诊线五个页面组件（Booking / Brief / Monitor / Orders / Session） |
+
+### 「同一功能唯一入口」（2026-11-13 验收表）
+
+| 功能 | 唯一入口 |
+|---|---|
+| 上传 / 识别 / 校对 | 资料录入 |
+| 报告清单 / 原件回看 | 报告库（卡片本身零跳转——印刷件上点不了，另存转发后 `/api/intake/blob` 是死链） |
+| 资料卡预览 / 打印 | 资料录入 ③ |
+| 病友档案 | 资料录入 ③ |
+
+### MedData 的位置
+
+- `web/src/meddata/` 是 **Vite `resolveId` 适配层**（不是重复实现，**不删**）：把 `meddata/src` 的
+  `data/store.js`、`utils/docFileStore.js` 重定向到本地实现，保证「数据真相源只有 `data/reports.json`」。
+- `meddata/src` 源码已入库（156 文件 / 2.23 MB）；`meddata/public/{tesseract,traineddata}` 49 MB 二进制
+  不入库，见 `meddata/public/README.md`。
+- **MedData 四引擎工作台不再是并行入口**：收进资料录入页右上「四引擎识别（实验）」的 Drawer（`React.lazy`），
+  与主路径不并列、不占导航。
+
+### 前置依赖（已知约束）
+
+前端依赖**借自 `../MedData/node_modules`**（根 `node_modules` 是软链），版本锁定在 `package.json` 的
+`medbriefFrontendDeps`，详见 `docs/前端依赖.md`。换机器不装齐这棵树 → `vite build` 直接失败。
