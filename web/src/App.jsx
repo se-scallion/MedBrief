@@ -10,11 +10,10 @@ import {
   Tag,
   Typography,
 } from 'antd'
-import MonitorTab from './tabs/MonitorTab.jsx'
-import BookingTab from './tabs/BookingTab.jsx'
-import BriefTab from './tabs/BriefTab.jsx'
-import OrdersTab from './tabs/OrdersTab.jsx'
-import SessionTab from './tabs/SessionTab.jsx'
+import MonitorPage from './pages/MonitorPage.jsx'
+import BookingPage from './pages/BookingPage.jsx'
+import BriefPage from './pages/BriefPage.jsx'
+import SessionPage from './pages/SessionPage.jsx'
 import IntakePage from './pages/IntakePage.jsx'
 import ReportsPanel from './pages/intake/ReportsPanel.jsx'
 
@@ -44,16 +43,23 @@ export default function App() {
   // ---------- 导航（2026-11-13 换壳：顶部 6 tab → 左侧 Sider 两组）----------
   // 分组按「业务流程」而不是「技术模块」：资料线（录入→整理→出片→交换）与出诊线（看号→挂号→会话）。
   // URL 兼容：旧链接 /?merged=guahao、/#booking、/?tab=xxx 都能落到对应项（见 KEY_ALIAS）。
+  const KEY_ALIAS = { guahao: 'booking', merged: 'booking', card: 'intake', new: 'booking', orders: 'booking' }
+  // 合并后的子段：?tab=orders 或 ?sub=orders 都要落到「预约记录」
+  const subOf = (want) => {
+    try {
+      const u = new URL(window.location.href)
+      return u.searchParams.get('sub') === want || u.searchParams.get('tab') === want ? want : undefined
+    } catch { return undefined }
+  }
   const PAGES = [
     { key: 'intake', label: '资料录入', group: '资料', node: <IntakePage /> },
     { key: 'reports', label: '报告库', group: '资料', node: <ReportsPanel /> },
-    { key: 'brief', label: '病历交换包', group: '资料', node: <BriefTab /> },
-    { key: 'monitor', label: '出诊监控', group: '出诊', node: <MonitorTab /> },
-    { key: 'booking', label: '挂号与预约', group: '出诊', node: <BookingTab /> },
-    { key: 'orders', label: '预约记录', group: '出诊', node: <OrdersTab /> },
-    { key: 'session', label: '114 会话', group: '出诊', node: <SessionTab /> },
+    { key: 'brief', label: '病历交换包', group: '资料', node: <BriefPage /> },
+    { key: 'monitor', label: '出诊监控', group: '出诊', node: <MonitorPage /> },
+    // 发起挂号 + 预约记录 = 同一件事的前后半段，合并成一项（页内两段），见 pages/BookingPage.jsx
+    { key: 'booking', label: '挂号与预约', group: '出诊', node: <BookingPage initialSub={subOf('orders')} /> },
+    { key: 'session', label: '114 会话', group: '出诊', node: <SessionPage /> },
   ]
-  const KEY_ALIAS = { guahao: 'booking', merged: 'booking', card: 'intake', new: 'booking' }
   const readKeyFromUrl = () => {
     const u = new URL(window.location.href)
     const raw = u.searchParams.get('tab') || u.hash.replace('#', '') || (u.searchParams.has('merged') ? 'guahao' : '')
