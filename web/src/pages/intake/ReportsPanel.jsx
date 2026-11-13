@@ -1,62 +1,125 @@
-// ReportsPanel：从 IntakePage.jsx 原样切出的第 ④ 块（2026-11-13 抽页，JSX 逐字未改）
-import React from 'react'
-import {
-  Alert, App as AntApp, Button, Card, Col, Collapse, Divider, Empty, Form, Image,
-  Input, Modal, Row, Select, Space, Spin, Switch, Table, Tag, Tooltip, Typography, Upload,
-} from 'antd'
-const { Dragger } = Upload
-import { ST, KIND_OPTIONS, FLAG_TEXT, uid, fmtSize, rawJson, postJson } from './shared.js'
+// 报告库：已入库报告清单（2026-11-13 从「资料录入」页独立出来，成为 Sider 里的一个菜单项）
+//
+// 为什么独立：用户抱怨「全杂在一个页面」——录入页应当只做「上传→校对」，
+// 报告清单是「查/翻/回看原件」的日常动作，放在录入页底部等于每次都要滚到底。
+// 这里自包含取数（不再从 IntakePage 传 reports 进来），页面之间不共享状态。
+import React, { useCallback, useEffect, useState } from 'react'
+import { Alert, App as AntApp, Button, Card, Empty, Input, Space, Tag, Typography } from 'antd'
+import { jget } from '../../api.js'
+import { KIND_OPTIONS } from './shared.js'
 
-const { Text, Paragraph } = Typography
-export default function ReportsPanel({ reports, loadReports }) {
-  // 已导入报告
+const { Text } = Typography
+
+export default function ReportsPanel() {
+  const { message } = AntApp.useApp()
+  const [reports, setReports] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [q, setQ] = useState('')
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const j = await jget('/api/intake/reports')
+      // 按报告日期倒序（接口按入库顺序返回，医生要的是「最近做的那张」在最上面）
+      const list = (j.reports || []).slice().sort((a, b) => String(b.reportDate || '').localeCompare(String(a.reportDate || '')))
+      setReports(list)
+    } catch (e) {
+      message.error(`报告清单读取失败：${e.message}`)
+    } finally {
+      setLoading(false)
+    }
+  }, [message])
+
+  useEffect(() => { load() }, [load])
+
+  const kw = q.trim()
+  const hit = kw
+    ? reports.filter((r) => [r.id, r.hospital, r.kind, r.reportDate].filter(Boolean).join(' ').includes(kw))
+    : reports
+  const totalRows = reports.reduce((a, r) => a + (Array.isArray(r.rows) ? r.rows.length : 0), 0)
+  const unstructured = reports.filter((r) => !(Array.isArray(r.rows) && r.rows.length)).length
+
   return (
-    <Card size="small" title="已导入的报告" extra={<Button size="small" onClick={loadReports}>刷新</Button>}>
+    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <Space direction="vertical" size={0}>
+          <Text strong style={{ fontSize: 15 }}>报告库</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            共 {reports.length} 份 · 指标 {totalRows} 行 · 未结构化 {unstructured} 份（只存原件，不是解析失败）
+          </Text>
+        </Space>
+        <Space>
+          <Input.Search
+            allowClear
+            size="small"
+            placeholder="搜医院 / 日期 / 类型 / 报告号"
+            style={{ width: 240 }}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+          <Button size="small" onClick={load} loading={loading}>刷新</Button>
+        </Space>
+      </div>
+
       {reports.length === 0 ? (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有入库的报告" />
+        <Card size="small"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有入库的报告，先去「资料录入」上传" /></Card>
       ) : (
-        <Table
-          size="small"
-          rowKey="id"
-          pagination={false}
-          dataSource={reports}
-          columns={[
-            { title: '报告', dataIndex: 'id', width: 150 },
-            {
-              title: '类型',
-              dataIndex: 'kind',
-              width: 100,
-              render: (v) => KIND_OPTIONS.find((k) => k.value === v)?.label || v || '—',
-            },
-            { title: '日期', dataIndex: 'reportDate', width: 110, render: (v) => v || '—' },
-            { title: '医院', dataIndex: 'hospital', render: (v) => v || '—' },
-            {
-              // 0 行 = 只存了原件、没解析出指标（影像报告等）——不许写「0」，否则像解析失败丢数据
-              title: '指标 / 状态',
-              dataIndex: 'rows',
-              width: 130,
-              render: (v, r) => {
-                const n = Array.isArray(v) ? v.length : 0
-                if (n > 0) return `${n} 项`
-                return <Tag color="default">未结构化（仅存原件）</Tag>
-              },
-            },
-            {
-              title: '原件',
-              dataIndex: 'fileBlobId',
-              width: 90,
-              render: (v, r) =>
-                v ? (
-                  <Button size="small" type="link" onClick={() => window.open(`/api/intake/blob/${encodeURIComponent(v)}`, '_blank')}>
-                    查看原件
-                  </Button>
-                ) : (
-                  <span style={{ color: '#9ca3af' }}>{r.source === 'text-only' ? '无原件' : '—'}</span>
-                ),
-            },
-          ]}
-        />
+        <Card size="small" styles={{ body: { padding: 0 } }}>
+          <div className="rb-list">
+            <div className="rb-head">
+              <span className="c1">日期</span>
+              <span className="c2">医院</span>
+              <span className="c3">类型</span>
+              <span className="c4">指标</span>
+              <span className="c5">原件</span>
+            </div>
+            {hit.map((r) => {
+              const n = Array.isArray(r.rows) ? r.rows.length : 0
+              return (
+                <div className="rb-row" key={r.id}>
+                  <span className="c1">{r.reportDate || '—'}</span>
+                  <span className="c2" title={r.hospital}>{r.hospital || <Text type="secondary" style={{ fontSize: 12 }}>未填医院</Text>}</span>
+                  <span className="c3">{KIND_OPTIONS.find((k) => k.value === r.kind)?.label || r.kind || '—'}</span>
+                  <span className="c4">
+                    {n > 0 ? `${n} 项` : <Tag color="default">未结构化（仅存原件）</Tag>}
+                  </span>
+                  <span className="c5">
+                    {r.fileBlobId ? (
+                      <Button size="small" type="link" onClick={() => window.open(`/api/intake/blob/${encodeURIComponent(r.fileBlobId)}`, '_blank')}>
+                        查看原件
+                      </Button>
+                    ) : (
+                      <Text type="secondary" style={{ fontSize: 12 }}>{r.source === 'text-only' ? '无原件' : '—'}</Text>
+                    )}
+                  </span>
+                </div>
+              )
+            })}
+            {hit.length === 0 && <div className="rb-row"><span>没有匹配「{kw}」的报告</span></div>}
+          </div>
+        </Card>
       )}
-    </Card>
+
+      <Alert
+        type="info"
+        showIcon
+        message="原件在哪看？"
+        description="资料卡（打印件）不承载任何跳转——纸上点不了，另存转发后链接也是死链。回看原图/PDF 请在这里点「查看原件」。"
+      />
+
+      <style>{`
+        .rb-list { font-size: 13px; }
+        .rb-head, .rb-row { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid #f2f3f5; }
+        .rb-head { color: #6b7280; font-size: 12px; background: #fafafa; }
+        .rb-row:hover { background: #fafafa; }
+        .rb-head span, .rb-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .c1 { width: 96px; flex: none; }
+        .c2 { flex: 1 1 auto; min-width: 0; }
+        .c3 { width: 110px; flex: none; }
+        .c4 { width: 150px; flex: none; }
+        .c5 { width: 90px; flex: none; text-align: right; }
+        @media (max-width: 640px) { .c1, .c3, .c4, .c5 { width: auto; } .rb-head { display: none; } .rb-row { flex-wrap: wrap; } }
+      `}</style>
+    </Space>
   )
 }

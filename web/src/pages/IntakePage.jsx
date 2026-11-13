@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   App as AntApp,
@@ -7,6 +7,7 @@ import {
   Col,
   Collapse,
   Divider,
+  Drawer,
   Empty,
   Form,
   Image,
@@ -34,7 +35,10 @@ import { ST, KIND_OPTIONS, FLAG_TEXT, uid, fmtSize, rawJson, postJson } from './
 import UploadPanel from './intake/UploadPanel.jsx'
 import ReviewPanel from './intake/ReviewPanel.jsx'
 import ProfilePanel from './intake/ProfilePanel.jsx'
-import ReportsPanel from './intake/ReportsPanel.jsx'
+
+// MedData 四引擎工作台：原来是与本页「平级」的第二个 Segmented 入口（同一件事两条路）。
+// 2026-11-13 收敛：主路径只有本页这一套；四引擎降级为抽屉里的**实验备选**，不占导航、不并列。
+const MedDataWorkbench = React.lazy(() => import('../meddata/MedDataWorkbench.jsx'))
 
 
 export default function IntakePage() {
@@ -55,6 +59,7 @@ export default function IntakePage() {
   const [mask, setMask] = useState(false)
 
   const [reports, setReports] = useState([])
+  const [mdOpen, setMdOpen] = useState(false) // 四引擎实验台（抽屉）
   const iframeRef = useRef(null)
 
   // ---------- 病友档案 ----------
@@ -639,6 +644,17 @@ export default function IntakePage() {
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <Space direction="vertical" size={0}>
+          <Text strong style={{ fontSize: 15 }}>资料录入</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            上传 → 自动识别（本机）→ 逐行校对 → 入库；识别结果进 data/reports.json，原件按 sha256 只存一份
+          </Text>
+        </Space>
+        <Button size="small" onClick={() => setMdOpen(true)}>
+          四引擎识别（实验）
+        </Button>
+      </div>
       <Alert
         type="info"
         showIcon
@@ -686,7 +702,25 @@ export default function IntakePage() {
       />
 
       {/* 已导入报告 */}
-      <ReportsPanel reports={reports} loadReports={loadReports} />
+      <Drawer
+        title="MedData 四引擎识别（实验）"
+        width="min(1200px, 96vw)"
+        open={mdOpen}
+        onClose={() => setMdOpen(false)}
+        destroyOnHidden
+      >
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          备用通道：同一份单据也可以走 MedData 的四引擎（本地 tesseract / macOS Vision / MinerU / AI 精读）。
+          结果同样落 MedBrief 的 data/reports.json。日常录入请用主路径，这里只在主路径识别不动时用。
+        </Text>
+        <div style={{ marginTop: 12 }}>
+          {mdOpen ? (
+            <Suspense fallback={<div style={{ padding: 40, textAlign: 'center' }}><Spin /></div>}>
+              <MedDataWorkbench onImported={() => { loadReports(); setMdOpen(false) }} />
+            </Suspense>
+          ) : null}
+        </div>
+      </Drawer>
     </Space>
   )
 }

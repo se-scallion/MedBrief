@@ -10,6 +10,7 @@ const BASE = process.env.MEDBRIEF_BASE || 'http://127.0.0.1:5174'
 // 菜单文案同时改动了两处（资料导入→资料录入、病历资料→病历交换包），这里同步。
 const TABS = [
   { label: '资料录入', probe: /病友|导入|资料卡/ },
+  { label: '报告库', probe: /报告库|报告|原件/ },
   { label: '病历交换包', probe: /近期指标|速览|病历/ },
   { label: '出诊监控', probe: /出诊中|停诊|两周总排班/ },
   { label: '挂号与预约', probe: /就诊人|医院/ },
