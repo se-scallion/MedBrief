@@ -18,7 +18,7 @@
 
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { normalizeRow, cleanName, isUnitLike, isRange, extractNameValue, repairColumnShift } from '../lib/labClean.mjs'
+import { normalizeRow, cleanName, isUnitLike, isRange, extractNameValue, repairColumnShift, normalizeUnitDisplay } from '../lib/labClean.mjs'
 import { classifyAnalyte } from '../lib/reportIntake.mjs'
 
 const SNAP = JSON.parse(fs.readFileSync(new URL('./fixtures/card-snapshot-v3.json', import.meta.url), 'utf8'))
@@ -69,10 +69,10 @@ it('干净行零改动：本来就对的字段一个不动', () => {
 it('列左移还原：真实 9 行的真值/区间/单位三列各归其位', () => {
   // 期望值来自原图原文（人工核对）：名称里被吞的那个数就是实测值
   const expected = [
-    ['凝血酶原时间（P12.2个T）', '12.2', '9.8-12.1', 'sec'],
+    ['凝血酶原时间（P12.2个T）', '12.2', '9.8-12.1', 'sec'], // 原文 `sec`；`seC` 写法由 normalizeUnitDisplay 归一到小写
     ['中性粒细胞百分87.2个比', '87.2', '40-75', '%'],
-    ['中性粒细胞计数12.59个', '12.59', '1.8-6.3', '10~9/L'],
-    ['活化部分凝血活35.7个酶时间（APTT）', '35.7', '25-31.3', 'seC'],
+    ['中性粒细胞计数12.59个', '12.59', '1.8-6.3', '10^9/L'],
+    ['活化部分凝血活35.7个酶时间（APTT）', '35.7', '25-31.3', 'sec'],
     ['D-二聚体（D-Di10.18个mer）', '10.18', '0-0.55', 'mg/L'],
     ['中性粒细胞百分15.8', '15.8', '40-75', '%'],
   ]
@@ -114,6 +114,14 @@ it('固有数字不剥：CO2 / pCO2 / CD34+ / 白介素6 / P190型 全部保持�
   for (const n of ['二氧化碳（CO2）', 'pCO2', 'CD34+细胞占有核细胞比例', '白介素6', 'BCR::ABL1（P190型）', 'HCO3-', 'BEecfC']) {
     assert.equal(cleanName(n), n, `「${n}」被改成了「${cleanName(n)}」（固有数字/编号不得剥离）`)
   }
+})
+
+it('单位写法归一：10-9/L → 10^9/L、SeC → sec、G/L → g/L（量纲不变，只修写法）', () => {
+  assert.equal(normalizeUnitDisplay('10-9/L'), '10^9/L')
+  assert.equal(normalizeUnitDisplay('10~12/L'), '10^12/L')
+  assert.equal(normalizeUnitDisplay('SeC'), 'sec')
+  assert.equal(normalizeUnitDisplay('G/L'), 'g/L')
+  assert.equal(normalizeUnitDisplay('Cel/UL'), 'Cel/UL', '不认识的单位原样保留，不得瞎改')
 })
 
 it('value 尾巴噪声：22.00小 → 22.00（且不改 <0.01 这类真值）', () => {
