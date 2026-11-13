@@ -242,15 +242,36 @@ it('材料清单：0 行报告不得出现「0 项」（聚合行用「仅原件
   assert.ok(/未结构化（仅存原件）/.test(seg), '图例必须写明「未结构化（仅存原件）」的完整含义')
 })
 
-it('材料清单：有原件 → 按钮指向 blob；text-only → 「无原件」', () => {
+it('卡面不得承载原件跳转（打印件点不了；另存/转发后 /api/intake/blob 是死链）', () => {
   const reports = makeReports()
   reports[0].fileBlobId = 'f_abc123'
   reports[1].source = 'text-only'
   const card = buildCard({ reports, mask: true, today: TODAY })
-  const seg = block(card.html, '⑤ 材料清单', '⑥ 关键趋势')
-  assert.ok(seg.includes('/api/intake/blob/f_abc123'), '原件按钮必须指向 /api/intake/blob/<id>')
-  assert.ok(/原件<\/button>|查看原件/.test(seg), '有原件时应出现原件按钮（表格窄，按钮文字简写为「原件」）')
-  assert.ok(seg.includes('无原件'), 'text-only 的记录应标「无原件」')
+  assert.ok(!card.html.includes('/api/intake/blob/'), '卡面不得出现原件接口链接（打印件点不了，脱离本机是死链）')
+  assert.ok(!/原件<\/button>|查看原件/.test(card.html), '卡面不得出现「原件」按钮')
+})
+
+it('卡面是静态印刷件：除「打印」按钮外不得有任何交互元素', () => {
+  const reports = makeReports()
+  reports[0].fileBlobId = 'f_abc123'
+  const card = buildCard({ reports, mask: true, today: TODAY })
+  const body = card.html.slice(card.html.indexOf('<body>'))
+  assert.ok(!/<a\s[^>]*href=/i.test(body), '卡面不得有超链接（纸上看不见、手机上跳出去就回不来）')
+  assert.ok(!/<input|<select|<textarea/i.test(body), '卡面不得有表单控件')
+  const buttons = body.match(/<button[^>]*>/gi) || []
+  assert.equal(buttons.length, 1, `卡面只允许 1 个按钮（打印/存 PDF），实际 ${buttons.length} 个：${buttons.join(' ')}`)
+  assert.ok(/window\.print\(\)/.test(body), '唯一那个按钮必须是打印')
+  const onclicks = body.match(/onclick=/gi) || []
+  assert.equal(onclicks.length, 1, `除打印外不得有 onclick，实际 ${onclicks.length} 个`)
+})
+
+it('材料清单：text-only 记录在 Web 数据里仍有标识（原件只在应用内看，卡面不承担）', () => {
+  const reports = makeReports()
+  reports[1].source = 'text-only'
+  const card = buildCard({ reports, mask: true, today: TODAY })
+  assert.equal(card.counts.material, 3)
+  // 卡面上「仅原件」只用于 0 指标组；text-only 的标识留在数据层（materialRows.source），供应用内列表用
+  assert.ok(card.materialRows.some((m) => m.source === 'text-only'), '数据层仍须保留 source，供应用内列表区分')
 })
 
 // ---------- 6. 趋势 ----------
