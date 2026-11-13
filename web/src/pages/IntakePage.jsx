@@ -88,7 +88,8 @@ export default function IntakePage() {
 
   const [card, setCard] = useState(null)
   const [cardLoading, setCardLoading] = useState(false)
-  const [mask, setMask] = useState(true)
+  // 2026-11-13 用户口径：卡片是给医生看的，默认不脱敏；需要给外部转发时再打开
+  const [mask, setMask] = useState(false)
 
   const [reports, setReports] = useState([])
   const iframeRef = useRef(null)
@@ -137,8 +138,9 @@ export default function IntakePage() {
     (fileList) => {
       const accepted = []
       for (const f of fileList) {
-        if (!/^image\//.test(f.type || '')) {
-          message.warning(`${f.name} 不是图片，已跳过`)
+        const isPdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name || '')
+        if (!isPdf && !/^image\//.test(f.type || '')) {
+          message.warning(`${f.name} 既不是图片也不是 PDF，已跳过`)
           continue
         }
         accepted.push({
@@ -146,7 +148,8 @@ export default function IntakePage() {
           name: f.name || '截图',
           size: f.size,
           status: 'pending',
-          source: 'upload',
+          source: isPdf ? 'pdf' : 'upload',
+          isPdf,
           dataUrl: '',
           text: '',
           rows: [],
@@ -166,7 +169,7 @@ export default function IntakePage() {
         fr.onerror = () => message.error(`${item.name} 读取失败`)
         fr.readAsDataURL(item._file)
       })
-      pushLog(`已加入 ${accepted.length} 张图片，等待识别`, 'info')
+      pushLog(`已加入 ${accepted.length} 个文件（图片/PDF），等待识别`, 'info')
     },
     [message, pushLog],
   )
@@ -206,7 +209,9 @@ export default function IntakePage() {
       return
     }
     const [a, b] = selected.map((id) => items.find((it) => it.id === id)).filter(Boolean)
-    if (!a || !b || !a.dataUrl || !b.dataUrl) {
+    if (!a || !b || !a.dataUrl || !b.dataUrl || a.isPdf || b.isPdf) {
+      if (a?.isPdf || b?.isPdf) message.warning('PDF 不能拼接，请直接识别（PDF 内部多页会自动按页处理）')
+      else message.warning('请选择两张已读取完成的图片')
       message.warning('图片还没读取完成，稍后再试')
       return
     }
@@ -251,7 +256,9 @@ export default function IntakePage() {
     try {
       // 拼接产物必须带 stitched:true：后端只对拼接结果做「重叠区重复行」合并。
       // 单图导入绝不能带——两次复查同名同值是正常的，合并就成了丢数据。
-      const payload = { image: item.dataUrl }
+      // PDF 走独立字段：后端会先用 PyMuPDF 判断「有没有文字层」——
+      // 有文字层直接抽文本（更快更准，不读图）；扫描件才栅格化成 PNG 走图像链。
+      const payload = item.isPdf ? { pdf: item.dataUrl } : { image: item.dataUrl }
       if (item.source === 'stitch') payload.stitched = true
       const { body } = await postJson('/api/intake/ocr', payload)
       if (!body.ok) {
@@ -328,7 +335,9 @@ export default function IntakePage() {
   // ---------- 4. 入库（重复必须二次确认，绝不静默丢弃） ----------
   const saveReport = async (item, { force = false } = {}) => {
     const payload = {
-      image: item.dataUrl || '',
+      image: item.isPdf ? '' : (item.dataUrl || ''),
+      // PDF 不入 sha256 查重图指纹（它是文档不是截图）；靠内容指纹查重
+      pdf: item.isPdf ? (item.dataUrl || '') : '',
       force,
       text: item.text || '',
       rows: item.rows || [],
@@ -671,7 +680,7 @@ export default function IntakePage() {
         <Space direction="vertical" size={10} style={{ width: '100%' }}>
           <Dragger
             multiple
-            accept="image/*"
+            accept="image/*,application/pdf"
             showUploadList={false}
             // 注意：antd 对每个文件都会调用一次 beforeUpload，且第二个参数是「整个批次」。
             // 若在这里 addFiles(fileList)，选 2 张就会被加进 2×2=4 条（重复导入）。
@@ -731,7 +740,11 @@ export default function IntakePage() {
                         }
                       >
                         <Space direction="vertical" size={6} style={{ width: '100%' }}>
-                          {item.dataUrl ? (
+                          {item.dataUrl && item.isPdf ? (
+                            <div style={{ height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f5f5f5', borderRadius: 8, color: '#8c8c8c', fontSize: 13 }}>
+                              PDF 文件
+                            </div>
+                          ) : item.dataUrl ? (
                             <Image src={item.dataUrl} height={120} style={{ objectFit: 'contain' }} />
                           ) : (
                             <Space>

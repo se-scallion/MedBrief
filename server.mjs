@@ -44,12 +44,15 @@ import {
   parseLabRows, buildReportFingerprint, groupForDoctorCard, summarizeForCard, dedupeStitchRows, mergeChunkRows,
 } from './lib/reportIntake.mjs'
 import { loadPatient, savePatient, buildCard } from './lib/intakeCard.js'
+import { saveBlob, getBlob, listBlobs, linkBlobToReport, blobStats } from './lib/blobStore.mjs'
 import { planChunks, cropChunks, imageSize, cropToContent } from './lib/imageChunker.mjs'
 import { autoDeskew } from './lib/deskew.mjs'
+import { readPdf, guessReportDate } from './lib/pdfIntake.mjs'
 import { summarizeState, formatSummaryText } from './lib/metricsSummary.js'
 import { buildVisitBrief } from './lib/visitBrief.js'
 import { fetchLiveDoctorSchedule } from './lib/bjcyhScraper.js'
 import { createGuahao114Service } from './lib/guahao114Service.js'
+import { mountMedData } from './meddata/mount.mjs'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -904,7 +907,8 @@ function getNextReleaseCountdown() {
   // 10b. 问诊资料卡：把已导入的报告渲染成 A4 一页（mask=0 关闭姓名脱敏，默认脱敏）
   if (req.method === 'GET' && pathname === '/api/intake/card') {
     try {
-      const mask = parsedUrl.searchParams.get('mask') !== '0'
+      // 2026-11-13 用户口径：默认不脱敏（给医生看），显式 mask=1 才脱敏
+      const mask = parsedUrl.searchParams.get('mask') === '1'
       const { reports } = readReports()
       const card = buildCard({ reports, mask })
       sendJson(res, 200, card) // { ok, masked, patient, counts, summary, groups, html }
@@ -927,6 +931,42 @@ function getNextReleaseCountdown() {
     return
   }
 
+  // 10d. 报告原件 Blob（表结构照 MedData blobs；以后升级识别模型可直接取回原件重跑识别）
+  if (pathname === '/api/intake/blob' && req.method === 'POST') {
+    const body = await readJsonBody(req)
+    try {
+      const raw = String(body.dataUrl || body.base64 || '')
+      if (!raw) return sendJson(res, 400, { ok: false, error: 'dataUrl/base64 不能为空' })
+      const m = raw.match(/^data:([^;]+);base64,([\s\S]*)$/)
+      const mime = m ? m[1] : String(body.mime || 'application/octet-stream')
+      const buf = Buffer.from(m ? m[2] : raw, 'base64')
+      if (!buf.length) return sendJson(res, 400, { ok: false, error: '解码后为空' })
+      const saved = saveBlob(buf, { kind: body.kind || 'original', type: mime, originPath: body.originPath || '', width: body.width || null, height: body.height || null })
+      sendJson(res, 200, { ok: true, ...saved })
+    } catch (e) {
+      sendJson(res, 500, { ok: false, error: `存原件失败：${e.message}` })
+    }
+    return
+  }
+
+  if (pathname === '/api/intake/blobs' && req.method === 'GET') {
+    try {
+      sendJson(res, 200, { ok: true, storage: blobStats(), blobs: listBlobs() })
+    } catch (e) {
+      sendJson(res, 500, { ok: false, error: e.message })
+    }
+    return
+  }
+
+  if (pathname.startsWith('/api/intake/blob/') && req.method === 'GET') {
+    const id = decodeURIComponent(pathname.slice('/api/intake/blob/'.length))
+    const row = getBlob(id)
+    if (!row) return sendJson(res, 404, { ok: false, error: 'blob 不存在' })
+    res.writeHead(200, { 'content-type': row.type || 'application/octet-stream', 'content-length': row.data.length, 'cache-control': 'no-store' })
+    res.end(row.data)
+    return
+  }
+
   if (pathname === '/api/intake/parse' && req.method === 'POST') {
     const body = await readJsonBody(req)
     try {
@@ -943,7 +983,10 @@ function getNextReleaseCountdown() {
     const body = await readJsonBody(req)
     try {
       const image = String(body.image || '')
-      if (!image.startsWith('data:image/')) return sendJson(res, 400, { ok: false, error: 'image 需要 data:image/*;base64,' })
+      const pdfData = String(body.pdf || '')
+      if (!image.startsWith('data:image/') && !(pdfData && /^data:application\/pdf/.test(pdfData))) {
+        return sendJson(res, 400, { ok: false, error: 'image 需要 data:image/*;base64,，pdf 需要 data:application/pdf;base64,' })
+      }
 
       // 单次 OCR（一块图 → 文本 + 行）
       const ocrOnce = async (dataUrl) => {
@@ -956,7 +999,6 @@ function getNextReleaseCountdown() {
         })
         const j = await r.json().catch(() => ({}))
         const blocks = Array.isArray(j.blocks) ? j.blocks : []
-        // 版式重建：Vision 按「列」返回块，直接拼文本会把项目名与数值分成两段
         const hasBoxes = blocks.some((b) => b && b.boundingBox)
         const layoutLines = hasBoxes ? blocksToLines(blocks) : []
         const text = layoutLines.length
@@ -965,69 +1007,128 @@ function getNextReleaseCountdown() {
         return { text, layoutLines, rows: parseLabRows(text), layout: hasBoxes ? 'reconstructed' : 'raw-text', upstream: j.ok === false ? j.error : undefined }
       }
 
-      // 倾斜矫正（真机第一号杀手）：整页一倾斜，「同一行 y 相近」的行聚类就崩（实测旋转 2° 掉 27%）。
-      // 先估角再回正；|angle| < 0.5° 不动（二次插值本身会糊字）。不调 OCR，实测 22–33ms。
-      const skew = await autoDeskew(image)
-      const workImage = skew.applied && skew.image ? skew.image : image
+      // 图像链（图片与「扫描版 PDF 的每一页」共用）：
+      //   deskew → cropToContent → planChunks → 逐块 OCR → 合并（mergeChunkRows）
+      const runImagePipeline = async (srcImage, { stitched = false } = {}) => {
+        const skew = await autoDeskew(srcImage)
+        const workImage = skew.applied && skew.image ? skew.image : srcImage
 
-      // 顺序铁律：deskew → cropToContent → planChunks。deskew 旋转会补白边把宽度撑大（内容没变宽），
-      // 不先归一到墨迹 bbox，planChunks 会拿「回正后」的尺寸把超重图误判成不超高
-      // （实测 2223×6490 h/w 2.92 → 回正后 2448×6564 h/w 2.68 → 判不切 → 48 行只出 43 行）。
-      const crop = await cropToContent(workImage).catch(() => null)
-      const sizedImage = crop && crop.cropped && crop.image ? crop.image : workImage
+        // 顺序铁律：deskew → cropToContent → planChunks。deskew 旋转会补白边把宽度撑大（内容没变宽），
+        // 不先归一到墨迹 bbox，planChunks 会拿「回正后」的尺寸把超重图误判成不超高
+        // （实测 2223×6490 h/w 2.92 → 回正后 2448×6564 h/w 2.68 → 判不切 → 48 行只出 43 行）。
+        const crop = await cropToContent(workImage).catch(() => null)
+        const sizedImage = crop && crop.cropped && crop.image ? crop.image : workImage
 
-      // 超高图自动切块：h/w ≤ 2.8 走单块路径（与未引入切块时逐像素一致）；
-      // h/w > 2.8 时 Vision 会内部降采样，中间带成片丢行（挂号实测 48→35），故按块分别 OCR 再合并。
-      let dim = null
-      try { dim = await imageSize(sizedImage) } catch { dim = null }
-      const plan = planChunks(dim || {}, {})
-      let parts = [sizedImage]
-      if (plan.chunked) {
-        const sliced = await cropChunks(sizedImage, plan.chunks)
-        parts = sliced.parts
+        let dim = null
+        try { dim = await imageSize(sizedImage) } catch { dim = null }
+        const plan = planChunks(dim || {}, {})
+        let parts = [sizedImage]
+        if (plan.chunked) {
+          const sliced = await cropChunks(sizedImage, plan.chunks)
+          parts = sliced.parts
+        }
+
+        // 块间并行（2026-11-12 实测：8008 可并发，12 路并行时单份延迟 1.7s、吞吐仍线性上升；
+        // 超高图 h/w 3.06 切 2 块时，串行 1.83s → 并行 1.09–1.29s）。Promise.all 保序，合并逻辑不受影响。
+        const results = await Promise.all(parts.map((part) => ocrOnce(part)))
+
+        const text = results.map((r) => r.text).filter(Boolean).join('\n')
+        const layoutLines = results.flatMap((r) => r.layoutLines)
+        const rawRows = results.flatMap((r) => r.rows)
+        const chunkMerge = plan.chunked ? mergeChunkRows(rawRows) : { rows: rawRows, merged: 0, conflicts: 0 }
+        const wantsDedupe = stitched === true || body.stitched === true || Number(body.stitchedFrom) > 1
+        const stitchedDedupe = wantsDedupe ? dedupeStitchRows(chunkMerge.rows) : { rows: chunkMerge.rows, merged: 0 }
+
+        return {
+          text,
+          lines: layoutLines,
+          rows: stitchedDedupe.rows,
+          rawRowCount: rawRows.length,
+          chunked: plan.chunked,
+          chunks: parts.length,
+          chunksPlanned: plan.planned,
+          chunkHeights: plan.chunks.map((c) => c.h),
+          chunkAspect: Number(plan.aspect.toFixed(2)),
+          chunkMerged: chunkMerge.merged || 0,
+          chunkValueConflicts: chunkMerge.conflicts || 0,
+          stitchedDeduped: stitchedDedupe.merged || 0,
+          cropped: !!(crop && crop.cropped),
+          cropBox: crop && crop.cropped ? crop.box : null,
+          contentWidth: dim ? dim.width : null,
+          contentHeight: dim ? dim.height : null,
+          deskewAngle: skew.angle,
+          deskewed: skew.applied,
+          deskewMs: skew.ms,
+          deskewConfidence: skew.confidence,
+          layout: results[0]?.layout || 'raw-text',
+          upstream: results.find((r) => r.upstream)?.upstream,
+        }
       }
 
-      // 并发跑各块（2026-11-12 实测 8008 可并发：12 路并行时单份延迟 1.7s、吞吐仍线性上升；
-      // 超高图 h/w 3.06 切 2 块时，串行 1.7s → 并行约 0.9s）。Promise.all 保序，不影响后续合并逻辑。
-      const results = await Promise.all(parts.map((part) => ocrOnce(part)))
+      // ---------- PDF：先认文字层，没有文字层才栅格化 ----------
+      if (pdfData) {
+        const parsed = await readPdf(pdfData, { rasterDpi: Number(body.rasterDpi) || 200 })
+        const pageTexts = parsed.pages.map((p) => p.text || '')
+        const allText = pageTexts.join('\n')
+        const textMode = allText.replace(/\s/g, '').length >= 40
 
-      const text = results.map((r) => r.text).filter(Boolean).join('\n')
-      const layoutLines = results.flatMap((r) => r.layoutLines)
-      const rawRows = results.flatMap((r) => r.rows)
+        if (textMode) {
+          // 有文字层：直接抽文本解析（快、准；报告类 PDF 可能出 0 行指标，那属正常 —— 它会以文本形式入库）
+          const rows = parseLabRows(allText)
+          return sendJson(res, 200, {
+            ok: true,
+            kind: 'pdf',
+            pdfMode: 'text',
+            pages: parsed.pageCount,
+            pageTexts,
+            text: allText,
+            rows,
+            rawRowCount: rows.length,
+            reportDate: guessReportDate(allText),
+            layout: 'pdf-text',
+            chunked: false,
+            chunks: pageTexts.length,
+            deskewed: false,
+            deskewAngle: 0,
+            engine: 'pdf-text(pymupdf)',
+          })
+        }
 
-      // 块间重叠会让被切断的行在相邻两块各出现一次 → 行级去重（键 = 名称|码 + 值 + 日期），留痕不静默删
-      // 块边界会切残行（残行常带错值「血小板 10」），故切块合并用「按值投票」而不是「值必须相同」
-      const chunkMerge = plan.chunked ? mergeChunkRows(rawRows) : { rows: rawRows, merged: 0, conflicts: 0 }
-      // 拼接产物再走一次去重（用户拍多张时的重叠），单图导入永不启用
-      const wantsDedupe = body.stitched === true || Number(body.stitchedFrom) > 1
-      const stitchedDedupe = wantsDedupe ? dedupeStitchRows(chunkMerge.rows) : { rows: chunkMerge.rows, merged: 0 }
+        // 扫描版 PDF：逐页栅格化后走图像链（每页独立 deskew/切块），再把各页行拼起来
+        const raster = await readPdf(pdfData, { rasterDpi: Number(body.rasterDpi) || 200, wantPng: true })
+        const rowsAll = []
+        const rasterTexts = []
+        let rawTotal = 0
+        let anyChunked = false
+        for (const page of raster.pages) {
+          const one = await runImagePipeline(`data:image/png;base64,${page.png}`)
+          rowsAll.push(...one.rows)
+          rasterTexts.push(one.text)
+          rawTotal += one.rawRowCount
+          anyChunked = anyChunked || one.chunked
+        }
+        return sendJson(res, 200, {
+          ok: true,
+          kind: 'pdf',
+          pdfMode: 'raster',
+          pages: raster.pageCount,
+          pageTexts: rasterTexts,
+          text: rasterTexts.filter(Boolean).join('\n'),
+          rows: rowsAll,
+          rawRowCount: rawTotal,
+          reportDate: guessReportDate(rasterTexts.join('\n')),
+          layout: 'reconstructed',
+          chunked: anyChunked,
+          chunks: raster.pages.length,
+          deskewed: false,
+          deskewAngle: 0,
+          engine: 'pdf-raster(pymupdf)→8008/ocr-vision',
+        })
+      }
 
-      sendJson(res, 200, {
-        ok: !!text,
-        text,
-        lines: layoutLines,
-        rows: stitchedDedupe.rows,
-        rawRowCount: rawRows.length,
-        chunked: plan.chunked,
-        chunks: parts.length,
-        chunksPlanned: plan.planned,
-        chunkHeights: plan.chunks.map((c) => c.h),
-        chunkAspect: Number(plan.aspect.toFixed(2)),
-        cropped: !!(crop && crop.cropped),
-        cropBox: crop && crop.cropped ? crop.box : null,
-        contentWidth: dim ? dim.width : null,
-        contentHeight: dim ? dim.height : null,
-        deskewAngle: skew.angle,
-        deskewed: skew.applied,
-        deskewMs: skew.ms,
-        deskewConfidence: skew.confidence,
-        chunkMerged: chunkMerge.merged || 0,
-        chunkValueConflicts: chunkMerge.conflicts || 0,
-        stitchedDeduped: stitchedDedupe.merged || 0,
-        engine: '8008/ocr-vision',
-        layout: results[0]?.layout || 'raw-text',
-        upstream: results.find((r) => r.upstream)?.upstream,
-      })
+      // ---------- 图片 ----------
+      const out = await runImagePipeline(image)
+      sendJson(res, 200, { ok: !!out.text, kind: 'image', engine: '8008/ocr-vision', ...out })
     } catch (e) {
       sendJson(res, 200, { ok: false, unavailable: true, reason: e.message, fallback: 'paste-text' })
     }
@@ -1039,8 +1140,13 @@ function getNextReleaseCountdown() {
     try {
       const store = readReports()
       const image = String(body.image || '')
-      const parsedRows = Array.isArray(body.rows) && body.rows.length ? body.rows : parseLabRows(body.text || '')
       const meta = body.meta || {}
+      // 全文型（结论/病理）报告 rows 为空是设计结果：绝不回退 parseLabRows(text)，
+      // 否则「检测结果(ISCN 2024)」这类版式表头会被重新解析成假指标（2026-11-12 实测）。
+      // 其它路径（网页纯文本导入、rows 被用户清空）保留原有回退语义，不改既有行为。
+      const parsedRows = meta.textOnly === true
+        ? (Array.isArray(body.rows) ? body.rows : [])
+        : (Array.isArray(body.rows) && body.rows.length ? body.rows : parseLabRows(body.text || ''))
       // 每条 row 都落日期：资料卡的「趋势段」按 row.measuredAt 取时间，缺失就退回 row.reportDate；
       // 两者都空则趋势段直接少行（不是空表就是静默丢数据）。故入库时统一用 meta.reportDate 兜底打戳。
       const reportDate = String(meta.reportDate || '')
@@ -1057,7 +1163,7 @@ function getNextReleaseCountdown() {
       // 否则这条记录永久不受查重覆盖（旧的前端兜底是「不带 image 重发」，那是查重盲区）
       const force = body.force === true
       if (!force) {
-        const dup = findDuplicate({ sha256, dhash }, store.reports)
+        const dup = findDuplicate({ sha256, dhash, reportDate: String(meta.reportDate || ''), barcode: String(meta.barcode || '') }, store.reports)
         if (dup.dup) return sendJson(res, 200, { ok: false, duplicate: dup, hint: '这张图已导入过' })
         const sameContent = store.reports.find((r) => r.fingerprint === fingerprint)
         if (sameContent) return sendJson(res, 200, { ok: false, duplicate: { dup: true, kind: 'content', of: sameContent.id }, hint: '同一份报告（内容一致）' })
@@ -1085,17 +1191,28 @@ function getNextReleaseCountdown() {
         patientName: meta.patientName || '',
         sourceFile: meta.sourceFile || '',
         imageRef: imageBuf ? `sha256:${sha256}` : '',
+        // 原件引用：blobs 表 id 列表（[{blobId, role}]）。role: original=原图/原件，stitched=跨屏拼接图
+        sourceBlobs: Array.isArray(body.sourceBlobs) ? body.sourceBlobs : (Array.isArray(meta.sourceBlobs) ? meta.sourceBlobs : []),
         text: String(body.text || ''),
         rows,
       }
       store.reports.push(rec)
       writeReports(store)
+      // 回填「原件 → 报告」关联，便于按报告取回原件重新识别
+      for (const b of rec.sourceBlobs) {
+        if (b && b.blobId) { try { linkBlobToReport(b.blobId, rec.id) } catch { /* 关联失败不影响入库 */ } }
+      }
       sendJson(res, 200, { ok: true, report: rec, total: store.reports.length })
     } catch (e) {
       sendJson(res, 500, { ok: false, error: e.message })
     }
     return
   }
+
+  // 8.5 MedData 页面独立挂载：/meddata 静态页、/tesseract 与 /traineddata 识别资源、
+  //     /api/data/* 本地镜像、MedData 页面用到的 /api/* 识别端点转 8008。
+  //     MedBrief 自有端点全部在上面优先处理；本模块不写 MedData 任何库（见 meddata/mount.mjs）。
+  if (await mountMedData(req, res, pathname, parsedUrl)) return
 
   // 9. 静态与页面托管
   //    /        → 新 React 壳（web/dist-next，构建：MEDBRIEF_WEB_BASE=/ MEDBRIEF_WEB_OUT=dist-next npm run build:web）

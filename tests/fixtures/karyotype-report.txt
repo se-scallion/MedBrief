@@ -1,0 +1,23 @@
+某医学检验实验室
+某市高新区某路999号某科创谷
+0000-0000000
+某医学检验实验室
+染色体核型分析报告单
+CG-R001.11(20211022)
+姓名(Name)： 张某 年龄(Age)：30岁 性别(Sex)：女 标本编号(No.)：G000000000
+就诊医院(Hospital)： 某军区总医院 科别(Department)： 血液科
+就诊类型(Visitimg Type)：住院 床号(Bed No.)：00 医生(Dr)：某医生
+标本类型(Specimen)：骨髓 病历号(Medical Record No.)：
+采集时间(Specimen Sampling Time)： 2026-07-15 12:51 接检时间(Specimen Receive Time)： 2026-07-17 10:07
+检测条码(Barcode)：V00000000000 身份证号(ID card)：
+临床诊断(Diagnosis)：AL?
+医生电话(Tel of Dr)： 外部条码(External barcode):
+检测方法(Test Method)：24h培养/G带200-300 检测设备(Test Equipment)：MetaSystems
+检测结果(ISCN 2024) 检测结论
+46,XX,t(9;22)(q34;q11.2)[2]/46,idem,del(9)(p22p13),add(15)(q26),add(16)
+结构异常
+(q22)[5]/46,XX[13]
+结果描述： 2个核型：t(9;22)；5个核型：9p-,t(9;22),15q+,16q+；13个核型：正常核型。
+结果解释： t(9;22)(q34;q11.2)易位形成BCR::ABL融合基因，仅供参考，请结合其它检测结果。
+1/1
+报告防伪
