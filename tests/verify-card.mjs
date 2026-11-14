@@ -536,6 +536,14 @@ it('日期去重：同一年内显示 MM-DD（不重复年份）', () => {
   assert.ok(/\b\d{2}-\d{2}\b/.test(seg), '日期应简写为 MM-DD')
 })
 
+// 2026-11-14 用户裁掉趋势卡底部的文字点位行：它只是复述折线上已有的点，且曾因 reverse 与折线反序。
+// 这条断言守的是「别再塞回来」——精确数值在第 1 页最新值与第 2 页全部指标里。
+it('趋势格只留折线：不得再出现底部文字点位行（那是图的复述，精确值在第 1/2 页）', () => {
+  const card = buildCard({ reports: makeTrendReports(), mask: true, today: TODAY })
+  assert.ok(card.trendRows.length > 0, '夹具应能画出至少一条趋势')
+  assert.ok(!/class="tpts"/.test(card.html), '卡片里不应再有 .tpts 文字点位行')
+})
+
 console.log('\n' + '='.repeat(46))
 console.log(fails.length === 0 ? `资料卡回归：${pass} 通过 / 0 失败` : `资料卡回归：${pass} 通过 / ${fails.length} 失败 → ${fails.join(', ')}`)
 process.exit(fails.length ? 1 : 0)
