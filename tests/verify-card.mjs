@@ -590,6 +590,22 @@ it('同名同值同日两行不得互相覆盖（旧实现按 name|value|date �
   assert.equal(new Set(keys).size, keys.length, `rowKey 必须唯一，实际 ${JSON.stringify(keys)}`)
 })
 
+// ---------- 6.8 counts 数字钉死（2026-11-14 只读体检建议：verify-card 只断言 html 文本，
+//            counts 只在日志里打印、从不断言 —— 数字漂移（如危急值从 4 变 3）不会被任何断言抓到） ----------
+it('counts 必须与可数的产物一致（数字漂移要红，不能只打印）', () => {
+  const card = buildCard({ reports: makeReports(), mask: true, today: TODAY })
+  const c = card.counts
+  assert.equal(c.reports, makeReports().length, 'reports 必须等于输入报告数')
+  assert.equal(c.rows, c.shown + c.excluded.reagentControl + c.excluded.emptyShell, 'rows = shown + 剔除项（三个分项只增不减）')
+  assert.equal(c.latest, card.latestRows.length, 'latest 必须等于「全部指标」实际行数')
+  assert.equal(c.p0, card.p0rows.length, 'p0 必须等于第 1 页展开行数')
+  assert.equal(c.p1, card.p1rows.length, 'p1 必须等于折叠行数')
+  assert.equal(c.critical, [...card.p0rows, ...card.p1rows].filter((r) => r.critical).length, 'critical 必须等于实际命中危急的行数')
+  assert.equal(c.trends, card.trendRows.length, 'trends 必须等于实际画的趋势格数')
+  assert.equal(c.trendsAll, card.trendAll.length, 'trendsAll 必须等于可画项总数（工作台据此勾选）')
+  assert.equal(c.material, card.materialRows.length, 'material 必须等于报告数')
+})
+
 // ---------- 7. 红线与体量 ----------
 it('红线：卡面不得出现诊断结论 / 用药建议词库', () => {
   const card = buildCard({ reports: makeReports(), mask: true, today: TODAY })

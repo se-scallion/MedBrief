@@ -12,6 +12,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { buildCard } from '../lib/intakeCard.js'
+import { normalizeRow } from '../lib/labClean.mjs'
 
 const SNAP = JSON.parse(fs.readFileSync(new URL('./fixtures/card-snapshot-v3.json', import.meta.url), 'utf8'))
 const TODAY = new Date('2026-11-14T09:00:00')
@@ -48,6 +49,22 @@ it('rowIndex 必须能精确回到原报告的那一行（不是靠名字/数值
     assert.ok(rep, `报告不存在：${r.reportId}`)
     assert.ok(Array.isArray(rep.rows) && rep.rows[r.rowIndex], `下标越界：${r.rowKey}`)
   }
+})
+
+it('行身份必须与源行**内容对应**：读数就是那一条（不是只证「存在」）', () => {
+  // 2026-11-14 只读体检指出：只断言 `assert.ok(r.reportId)` 属弱断言（truthy 即过）。
+  // 这里改成端到端恒等：card 行 → (reportId,rowIndex) → 源行 → normalizeRow → 必须与本行同值同单位。
+  const sample = card.latestRows.filter((r) => !r.qualitative && Number.isFinite(Number(r.num))).slice(0, 20)
+  assert.ok(sample.length >= 5, '样本太少，说明数据异常')
+  let checked = 0
+  for (const r of sample) {
+    const src = byId.get(r.reportId).rows[r.rowIndex]
+    const n = normalizeRow(src)
+    assert.equal(r.num, n.num, `第 ${r.rowKey} 行的数值与源行不一致：${r.num} vs ${n.num}`)
+    assert.equal(String(r.value ?? '').trim(), String(n.value ?? '').trim(), `第 ${r.rowKey} 行的值文本与源行不一致`)
+    checked++
+  }
+  assert.ok(checked >= 5, '实际核对行数不足')
 })
 
 it('fileBlobId：有原件必须非空；无原件的报告允许为空（hasBlob=false）', () => {
