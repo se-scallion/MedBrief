@@ -9,7 +9,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { App as AntApp, Button, Form, Space, Typography } from 'antd'
 import { jget } from '../api.js'
 import { useLog } from '../App.jsx'
-import ProfilePanel from './intake/ProfilePanel.jsx'
+import PatientForm from './intake/PatientForm.jsx'
+import CardPreview from './intake/CardPreview.jsx'
 import { postJson } from './intake/shared.js'
 
 const { Text } = Typography
@@ -127,20 +128,13 @@ export default function CardPage() {
           <Button size="small" onClick={openCardInNewWindow} disabled={!card?.html}>新窗口打开</Button>
         </Space>
       </div>
-      <ProfilePanel
-        form={form}
-        patient={patient}
-        patientSaving={patientSaving}
-        savePatient={savePatient}
+      <PatientForm form={form} patient={patient} saving={patientSaving} onSave={savePatient} />
+      <CardPreview
         card={card}
-        cardLoading={cardLoading}
-        makeCard={makeCard}
+        loading={cardLoading}
         mask={mask}
-        setMask={setMask}
+        onMaskChange={(v) => { setMask(v); if (card) makeCard(v) }}
         iframeRef={iframeRef}
-        printCard={printCard}
-        openCardInNewWindow={openCardInNewWindow}
-        hideActions
       />
     </Space>
   )

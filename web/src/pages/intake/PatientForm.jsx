@@ -1,33 +1,13 @@
-// ProfilePanel：从 IntakePage.jsx 原样切出的第 ③ 块（2026-11-13 抽页，JSX 逐字未改）
+// PatientForm —— 只管「病友档案录入」（2026-11-14 从 ProfilePanel 拆出，去掉 hideActions 反向开关）
+// 职责边界：只渲染表单与保存动作；不碰卡片生成/打印（那是 CardPreview 的事）。
 import React from 'react'
-import {
-  Alert, App as AntApp, Button, Card, Col, Collapse, Divider, Empty, Form, Image,
-  Input, Modal, Row, Select, Space, Spin, Switch, Table, Tag, Tooltip, Typography, Upload,
-} from 'antd'
-const { Dragger } = Upload
-import { ST, KIND_OPTIONS, FLAG_TEXT, uid, fmtSize, rawJson, postJson } from './shared.js'
+import { Button, Card, Col, Form, Input, Row, Select, Space, Typography } from 'antd'
 
 const { Text, Paragraph } = Typography
-export default function ProfilePanel({ form, patient, patientSaving, savePatient, card, cardLoading, makeCard, mask, setMask, iframeRef, printCard, openCardInNewWindow, hideActions = false }) {
-  // 5：资料卡
+
+export default function PatientForm({ form, patient, saving, onSave }) {
   return (
-    <Card
-      size="small"
-      title="③ 病友信息与问诊资料卡"
-      extra={
-        <Space>
-          <Text style={{ fontSize: 12 }}>脱敏打印</Text>
-          <Switch
-            size="small"
-            checked={mask}
-            onChange={(v) => {
-              setMask(v)
-              if (card) makeCard(v)
-            }}
-          />
-        </Space>
-      }
-    >
+    <Card size="small" title="① 病友信息（资料卡抬头）">
       <Form form={form} layout="vertical" size="small">
         <Row gutter={12}>
           <Col xs={24} md={6}>
@@ -102,19 +82,9 @@ export default function ProfilePanel({ form, patient, patientSaving, savePatient
             </Form.Item>
           </Col>
         </Row>
-        {!hideActions && (
-        <Space wrap>
-          <Button onClick={savePatient} loading={patientSaving}>
+        <Space wrap style={{ marginBottom: 8 }}>
+          <Button type="primary" onClick={onSave} loading={saving}>
             保存病友信息
-          </Button>
-          <Button type="primary" onClick={() => makeCard()} loading={cardLoading}>
-            生成资料卡
-          </Button>
-          <Button onClick={printCard} disabled={!card?.html}>
-            打印 / 存 PDF
-          </Button>
-          <Button onClick={openCardInNewWindow} disabled={!card?.html}>
-            新窗口打开
           </Button>
           {patient?.updatedAt && (
             <Text type="secondary" style={{ fontSize: 12 }}>
@@ -122,39 +92,10 @@ export default function ProfilePanel({ form, patient, patientSaving, savePatient
             </Text>
           )}
         </Space>
-        )}
         <Paragraph type="secondary" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
           身份证、手机号、住址一律不收集（后端会直接丢弃这三类字段）。资料卡不含诊断结论与治疗建议。
         </Paragraph>
       </Form>
-
-      <Divider style={{ margin: '12px 0' }} />
-
-      {cardLoading ? (
-        <Space>
-          <Spin size="small" />
-          <Text type="secondary">生成中…</Text>
-        </Space>
-      ) : card?.html ? (
-        <Space direction="vertical" size={8} style={{ width: '100%' }}>
-          <Space wrap align="center">
-            <Tag color={card.masked ? 'green' : 'orange'}>{card.masked ? '已脱敏（姓名打码）' : '未脱敏'}</Tag>
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              报告 {card.counts?.reports ?? 0} 份 · 指标 {card.counts?.latest ?? card.counts?.rows ?? 0} 项 ·
-              异常 {(card.counts?.p0 ?? 0) + (card.counts?.p1 ?? 0)} 项
-              {card.counts?.staleDays > 90 ? ` · ⚠️ 最新化验距今 ${card.counts.staleDays} 天` : ''}
-            </Text>
-          </Space>
-          <iframe
-            ref={iframeRef}
-            title="问诊资料卡预览"
-            srcDoc={card.html}
-            style={{ width: '100%', height: 'min(78vh, 1180px)', border: '1px solid #f0f0f0', borderRadius: 8, background: '#fff' }}
-          />
-        </Space>
-      ) : (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有生成资料卡" />
-      )}
     </Card>
   )
 }
