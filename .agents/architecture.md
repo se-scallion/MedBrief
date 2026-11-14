@@ -3,6 +3,7 @@
 > 只记录 MedBrief 自身的架构决策。
 > **跨项目接口契约**（与 MedData 的关系、OCR 调用、.meddata 格式）见 [`INTERFACE.md`](../INTERFACE.md)。
 > **禁止在此处复述 MedData 的内部架构**，只写 MedBrief 自己的。
+> **但功能开工前必须先去 MedData 找现成实现**，见下方「### MedData 的位置 / 铁律」。
 
 ---
 
@@ -358,6 +359,20 @@ ego lite 的 Chromium（真实指纹 + 独立 profile）可通过。故 `lib/ego
   不入库，见 `meddata/public/README.md`。
 - **MedData 四引擎工作台不再是并行入口**：收进资料录入页右上「四引擎识别（实验）」的 Drawer（`React.lazy`），
   与主路径不并列、不占导航。
+
+**铁律（2026-11-14 用户定）：任何功能开工前先去 MedData 找现成实现——先抄它的 bug 结论，再抄代码、组件、模块。**
+自创规则前必须先回答一句「MedData 里做没做过、在哪个文件」。前端一律用 antd 现成组件（Table / Drawer / Modal / Space），
+不手写列表容器——手写列表拿不到 sorter、展开、分页，报告库就是这么长出「没有排序、看不到内容」的。
+
+已证实同坑三处（均在 MedData 侧实测过）：
+
+| 需求 | 直接复用 | 禁止再做 |
+|---|---|---|
+| 报告类型识别 | `MedData/src/utils/parseDoc.js:148` 的 `detectDocType()`；类别单一事实源 `src/data/docKinds.js`；测试 `scripts/verify-doc-type.mjs`（25 条断言） | 自编关键字表。**尤其不许用 `EF/射血分数` 判心脏**——`parseDoc.js:190` 写明各彩超页脚都带 EF 注释，那是已踩的坑（实测本库 1 份心脏彩超被存成 `kind:lab`，MedData 判 `ultrasound / 超声心动图`） |
+| 表格排序 | `src/components/DataGrid.jsx:277-400`：默认→升→降→默认 三态循环、多列互斥、**缺失值恒排末位**、字符串 `localeCompare(x,'zh-Hans-CN')` | 自创排序键（如 `reportDate \|\| createdAt` 两段键） |
+| 原件存储 / 体检 | 写原件 `web/src/meddata/docFileStore.js:41-77`（`putBlob` 按 sha256 复用 + `takeBlobRefs()` → `sourceBlobs`）；体检口径 `MedData/scripts/check-blob-integrity.mjs`（「结构化引用里，有几份原件在库里根本不存在」），MedBrief 侧对应实现 `tools/check-blob-integrity.mjs`（`npm run check:blob`） | 各入口自己拼 payload —— `IntakePage.jsx:304-314` 没调 `/api/intake/blob`，实测漏 1 份原件（55 份里 54 有原件） |
+
+复用方式：跨项目能 import 的就 import；不能的**逐条搬判据与注释理由，不复制第二份规则表**（两份规则迟早打架）。
 
 ### 前置依赖（已知约束）
 
