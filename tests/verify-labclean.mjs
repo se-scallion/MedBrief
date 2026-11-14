@@ -136,6 +136,77 @@ it('名称噪声：圈号 / 尾部单字母 / 定性结果 / OCR 截断', () => 
   assert.equal(cleanName('中性粒细胞百分15.8'), '中性粒细胞百分比')
 })
 
+// 2026-11-14 事故：`caa4d15` 用「纯中文 ≥2 字 → 说明性短语」的规则，把 **31 个合法定性结果**
+// 全洗成了空值（阴性×22 / 阳性×4 / 未见×4 / 褐色稀便×1）。用户对比两份 PDF 逮到。
+// 不变量：定性结果必须原样保留；只有真正的说明性短语才清空。
+it('定性结果不得被当描述句清空：阴性 / 阳性 / 未见 / 褐色稀便 / neg 必须原样保留', () => {
+  const cases = [
+    ['Rh（D）血型鉴定', '阳性'],
+    ['乙肝表面抗原（HBsAg）', '阴性'],
+    ['艾滋病病毒抗体（Anti-HIV）', '阴性'],
+    ['虫卵', '未见'],
+    ['霉菌', '未见'],
+    ['粪便外观（WG）', '褐色稀便'],
+    ['ABO血型鉴定', 'B型'],
+  ]
+  for (const [name, value] of cases) {
+    const n = normalizeRow({ name, value })
+    assert.equal(n.value, value, `${name} 的值「${value}」被洗成了「${n.value}」`)
+    assert.ok(!n.repaired.includes('prose-dropped'), `${name} 不该被标 prose-dropped`)
+    assert.ok(n.qualitative, `${name} 必须标 qualitative（挡在趋势与高低判定之外）`)
+    assert.ok(!Number.isFinite(n.num), `${name} 不得产生数值（否则会被当 0 参与判定）`)
+  }
+  // 快照全量视角：不允许任何一行在「值非空」的前提下**被静默清空**
+  // （唯一允许的是被显式标记 prose-dropped 的说明性短语，如 NT-proBNP 的「慢性心衰」）
+  const orig = new Map(ALL_ROWS.map((r) => [`${r.name}|${r.measuredAt}`, r]))
+  const silently = ALL_ROWS.map(normalizeRow).filter((n) => {
+    const o = orig.get(`${n.nameRaw}|${n.measuredAt}`)
+    return o && String(o.value ?? '').trim() && !String(n.value ?? '').trim() && !n.repaired.includes('prose-dropped')
+  })
+  assert.deepEqual(silently.map((r) => r.name), [], `有值却被静默清空的行：${silently.map((r) => r.name).join('、')}`)
+})
+
+it('说明性短语仍必须清空：`慢性心衰` → 空值 + prose-dropped（原本要治的场景不能被放开）', () => {
+  const n = normalizeRow({ name: '前体NT-proBNP', value: '慢性心衰' })
+  assert.equal(n.value, '')
+  assert.ok(n.repaired.includes('prose-dropped'))
+  assert.ok(n.proseValue)
+})
+
+it('名称里粘连的结果 token 剥掉后必须能命中 code（否则第 1 页只能写「未录入」）', () => {
+  const pairs = [
+    ['乙肝表面抗原（H阴性（-）BsAg）', 'HBSAG'],
+    ['丙型肝炎抗体（A阴性（-）nti-HCV）', 'ANTI_HCV'],
+    ['艾滋病病毒抗体阴性（-）（Anti-HIV）', 'ANTI_HIV'],
+    ['梅毒螺旋体特异阴性（-）性抗体测定（Anti-TP）', 'ANTI_TP'],
+  ]
+  for (const [raw, code] of pairs) {
+    const cleaned = cleanName(raw)
+    assert.equal(classifyAnalyte(cleaned, {}).code, code, `${raw} → ${cleaned} 未解析出 ${code}`)
+  }
+  // 兼容两种写法：全角「（-）」与半角「(-)」
+  assert.equal(cleanName('乙肝表面抗原（H阴性(-)BsAg）'), '乙肝表面抗原（HBsAg）')
+})
+
+it('单位 OCR 归一：fI / f1 / fi → fL；wmol/L → umol/L（血小板平均体积曾因 fI 丢掉整条趋势）', () => {
+  for (const raw of ['fI', 'f1', 'fi', 'FL', 'fl', 'f']) {
+    assert.equal(normalizeUnitDisplay(raw), 'fL', `${raw} 应归一为 fL`)
+  }
+  assert.equal(normalizeUnitDisplay('wmol/L'), 'umol/L')
+  // 端到端：refRange 里装的是单位 → 移回 unit 并归一（两条历史行单位必须一致）
+  const a = normalizeRow({ name: '血小板平均体积', value: '8.3', refRange: 'fI' })
+  const b = normalizeRow({ name: '血小板平均体积', value: '7.9', refRange: 'fl' })
+  assert.equal(a.unit, 'fL'); assert.equal(b.unit, 'fL')
+  assert.equal(a.refRange, ''); assert.equal(b.refRange, '')
+})
+
+it('参考区间去排版噪声：前导 * / 尾部顿号（`*Rh血型阴性、` → `Rh血型阴性`）', () => {
+  assert.equal(normalizeRow({ name: 'Rh（D）血型鉴定', value: '阳性', refRange: '*Rh血型阴性、' }).refRange, 'Rh血型阴性')
+  assert.equal(normalizeRow({ name: '某项目', value: '1', refRange: '＊1.2-3.4，' }).refRange, '1.2-3.4')
+  // 真区间不得被误伤
+  assert.equal(normalizeRow({ name: '某项目', value: '1', refRange: '9.8-12.1' }).refRange, '9.8-12.1')
+})
+
 it('NT-proBNP 脏名必须被别名消灭（含「按年龄分层 + pg/ml 阈值」的说明文字不再当项目名）', () => {
   const dirty = ALL_ROWS.map(normalizeRow).filter((r) => r.nameDirty)
   assert.equal(dirty.length, 0, `快照里不应再有脏名，实际还有 ${dirty.length} 行：${dirty.map((r) => r.name.slice(0, 30)).join('、')}`)

@@ -358,6 +358,104 @@ it('单位不一致不硬拼趋势：给「未绘制」说明，而不是画一�
   assert.ok(/未绘制（单位不一致/.test(card.html), '卡面必须说明为什么没画')
 })
 
+// ---------- 6.5 安全基线 & 非病人数据剔除（2026-11-14 用户对比两份 PDF 逮到的丢值事故） ----------
+// 教训：v3.3 上线时这一整块**没有任何断言**，于是 31 个定性结果被清洗层洗空、卡面照样 1 页 A4、
+// 测试照样全绿 —— 「渲染静默丢数据」不能只靠肉眼比对 PDF。
+const SAFETY_LAB = (card) => {
+  const m = card.html.match(/<div class="sb-t">治疗安全基线<\/div><div class="sb-l">([\s\S]*?)<\/div><\/div>/)
+  return m ? m[1].replace(/<[^>]+>/g, '') : ''
+}
+
+it('安全基线：血型/传染病取的是**真实值**，不得把已查到的阴性写成「未录入」', () => {
+  const reports = [{
+    reportDate: '2026-07-15',
+    rows: [
+      { name: 'ABO血型鉴定', value: 'B型' },
+      { name: 'Rh（D）血型鉴定', value: '阳性', refRange: '*Rh血型阴性、' },
+      { name: '乙肝表面抗原（HBsAg）', value: '阴性' },
+      { name: '丙型肝炎抗体（Anti-HCV）', value: '阴性' },
+      { name: '艾滋病病毒抗体（Anti-HIV）', value: '阴性' },
+      { name: '梅毒螺旋体特异性抗体测定（Anti-TP）', value: '阴性' },
+    ],
+  }]
+  const lab = SAFETY_LAB(buildCard({ reports, today: TODAY }))
+  assert.ok(/B型/.test(lab), `血型应为 B型，实际「${lab}」`)
+  assert.ok(/Rh\(\+\)/.test(lab), `Rh 阳性应渲染为 Rh(+)，实际「${lab}」`)
+  assert.ok(/传染病四项\s*均阴性/.test(lab), `四项都阴性应压成一行，实际「${lab}」`)
+  // 已查到的项不得退化回「未录入 / 待核」（伴随病史三项不在此断言范围：那是用户可填项，见下一条）
+  assert.ok(!/Rh 待核/.test(lab), `Rh 已查到阳性，不得写「待核」，实际「${lab}」`)
+  assert.ok(!/HBsAg 未录入|丙肝抗体 未录入|HIV 抗体 未录入|梅毒抗体 未录入/.test(lab), `四项传染病已查到阴性，不得写「未录入」，实际「${lab}」`)
+})
+
+it('安全基线：没查到就写「未录入 / 待核」，绝不把空值写成「阴性」', () => {
+  const reports = [{ reportDate: '2026-07-15', rows: [{ name: 'ABO血型鉴定', value: 'B型' }] }]
+  const lab = SAFETY_LAB(buildCard({ reports, today: TODAY }))
+  assert.ok(/Rh 待核/.test(lab), `Rh 缺失必须写「待核」，实际「${lab}」`)
+  assert.ok(/乙肝 HBsAg 未录入/.test(lab), `HBsAg 缺失必须写「未录入」，实际「${lab}」`)
+  assert.ok(!/均阴性/.test(lab), '有缺项时不得压缩成「均阴性」')
+  assert.ok(!/阴性/.test(lab), `空值区域不得出现「阴性」，实际「${lab}」`)
+})
+
+it('安全基线：单项阳性不得被「均阴性」吞掉', () => {
+  const reports = [{
+    reportDate: '2026-07-15',
+    rows: [
+      { name: '乙肝表面抗原（HBsAg）', value: '阳性' },
+      { name: '丙型肝炎抗体（Anti-HCV）', value: '阴性' },
+      { name: '艾滋病病毒抗体（Anti-HIV）', value: '阴性' },
+      { name: '梅毒螺旋体特异性抗体测定（Anti-TP）', value: '阴性' },
+    ],
+  }]
+  const lab = SAFETY_LAB(buildCard({ reports, today: TODAY }))
+  assert.ok(!/均阴性/.test(lab), '有一项阳性时不得压缩')
+  assert.ok(/乙肝 HBsAg 阳性/.test(lab), `阳性项必须单独可见，实际「${lab}」`)
+})
+
+it('试剂质控行（内部对照/阳性对照）不得当病人指标出现在任何位置', () => {
+  const reports = [{
+    reportDate: '2026-07-18',
+    rows: [
+      { name: '肺炎支原体核酸检测', value: '阴性' },
+      { name: '内部对照', value: '阳性', status: 'positive' },
+      { name: '阳性对照', value: '阳性', status: 'positive' },
+    ],
+  }]
+  const card = buildCard({ reports, today: TODAY })
+  assert.ok(!/内部对照|阳性对照/.test(card.html), '质控行不得出现在卡面')
+  assert.equal(card.counts.excluded.reagentControl, 2, '质控行必须计入 excluded.reagentControl')
+})
+
+it('清洗丢弃的空壳行不输出（NT-proBNP「慢性心衰」），但传染病空值仍必须保留「未录入」', () => {
+  const reports = [{
+    reportDate: '2026-08-02',
+    rows: [
+      { name: '前体NT-proBNP', value: '慢性心衰' },
+      { name: '艾滋病病毒抗体（Anti-HIV）', value: '' },
+    ],
+  }]
+  const card = buildCard({ reports, today: TODAY })
+  assert.ok(!/慢性心衰/.test(card.html), '说明性短语不得冒充测量值')
+  assert.equal(card.counts.excluded.emptyShell, 1, '空壳行必须计入 excluded.emptyShell')
+  assert.ok(/艾滋病病毒抗体（Anti-HIV）/.test(card.html), '空值传染病项必须保留并写「未录入」')
+  assert.ok(/未录入/.test(SAFETY_LAB(card)), '空值传染病在基线区必须写「未录入」')
+})
+
+it('完整性自洽：counts.rows（入库行）== 卡面渲染行 + 白名单剔除项', () => {
+  const reports = [{
+    reportDate: '2026-08-02',
+    rows: [
+      { name: '白细胞', value: '3.27', unit: '10^9/L', refRange: '3.5-9.5' },
+      { name: '内部对照', value: '阳性', status: 'positive' },
+      { name: '前体NT-proBNP', value: '慢性心衰' },
+    ],
+  }]
+  const card = buildCard({ reports, today: TODAY })
+  const ex = card.counts.excluded.reagentControl + card.counts.excluded.emptyShell
+  assert.equal(card.counts.rows, 3, '入库行总数必须如实统计（不因剔除而变小）')
+  assert.equal(card.counts.shown, card.counts.rows - ex, 'shown 必须等于 rows - 剔除项')
+  assert.equal(card.latestRows.length, 1, '被剔除的两行不得进入「全部指标」')
+})
+
 // ---------- 7. 红线与体量 ----------
 it('红线：卡面不得出现诊断结论 / 用药建议词库', () => {
   const card = buildCard({ reports: makeReports(), mask: true, today: TODAY })
