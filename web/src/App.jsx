@@ -32,13 +32,13 @@ const APP_MOBILE_CSS = `
 @media (max-width: 575px) {
   .ant-layout-sider { display: none !important; }
   .ant-layout-header { flex-wrap: nowrap !important; height: auto; padding-inline: 12px !important; padding-block: 6px; }
-  /* 汉堡按钮是左 Space 第 1 项之外的 Header 直接子元素（见 JSX）：桌面 display:none，
-     窄屏绝对定位在左侧；MedBrief / 院区 Tag / 副标题仍是左 Space 的第 1/2/3 项。
-     只隐藏第 2、3 项，标题保持可见（旧 CardPage 规则按 2|3 隐藏会误伤，已搬走删除）。
+  /* 汉堡按钮是 Header 直接子元素（见 JSX）：桌面 display:none，窄屏绝对定位在左侧。
+     左 Space 现在只剩两项：MedBrief（第 1 项）+ 副标题（第 2 项）—— 2026-11-14 用户要求
+     去掉「北京朝阳医院 · 血液内科 · 主鸿鹄」Tag（项目面向多病人多医院，不为单一医生定制）。
+     所以只隐藏第 2 项（副标题），标题保持可见。
      padding-inline 必须 !important：Header 有内联 style paddingInline:20，层叠最高。 */
   .ant-layout-header { position: relative; }
-  .mb-header-left > .ant-space-item:nth-child(2),
-  .mb-header-left > .ant-space-item:nth-child(3) { display: none !important; }
+  .mb-header-left > .ant-space-item:nth-child(2) { display: none !important; }
   .mb-header-left { margin-left: 36px; }
   .mb-nav-trigger { display: inline-flex !important; }
   .ant-layout-content { padding: 12px !important; }
@@ -160,7 +160,6 @@ export default function App() {
           </Button>
           <Space className="mb-header-left" size={12} align="center">
             <span style={{ color: '#fff', fontSize: 18, fontWeight: 700, letterSpacing: 1 }}>MedBrief</span>
-            <Tag color="red">北京朝阳医院 · 血液内科 · 主鸿鹄</Tag>
             <Text style={{ color: '#94a3b8', fontSize: 12 }}>挂号与问诊资料整理工作台</Text>
           </Space>
           <Space>

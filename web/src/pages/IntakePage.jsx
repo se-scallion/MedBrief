@@ -556,7 +556,7 @@ export default function IntakePage() {
         <Input
           size="small"
           style={{ width: 160 }}
-          placeholder="如：北京朝阳医院"
+          placeholder="如：某某医院"
           value={item.meta.hospital}
           onChange={(e) => patchItem(item.id, (it) => ({ meta: { ...it.meta, hospital: e.target.value } }))}
         />

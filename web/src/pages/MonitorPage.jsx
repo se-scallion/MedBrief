@@ -242,7 +242,7 @@ export default function MonitorTab() {
       <Card size="small" style={{ marginTop: 16 }} title="两周排班明细">
         {loading && !slots.length ? (
           <div style={{ textAlign: 'center', padding: 30 }}>
-            <Spin /> <Text type="secondary">正在穿透官网抓取主鸿鹄主任排班…</Text>
+            <Spin /> <Text type="secondary">正在穿透官网抓取目标医生排班…</Text>
           </div>
         ) : slots.length === 0 ? (
           <Empty description="暂无排班数据，点「立即穿透探测」" />

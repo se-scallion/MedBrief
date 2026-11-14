@@ -68,7 +68,7 @@ export default function PatientForm({ open = true, onClose, form, patient, savin
           </Col>
           <Col xs={24} md={6}>
             <Form.Item name="hospital" label="就诊医院">
-              <Input placeholder="如 北京朝阳医院" />
+              <Input placeholder="如 某某医院" />
             </Form.Item>
           </Col>
           <Col xs={24} md={6}>

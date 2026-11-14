@@ -172,6 +172,7 @@ try {
         const byText = (kw) => [...left.children].find((x) => (x.textContent || '').includes(kw))
         const disp = (el) => el ? getComputedStyle(el).display : 'missing'
         const brand = byText('MedBrief'), tag = byText('北京朝阳医院'), sub = byText('挂号与问诊资料整理工作台')
+        // tag 现在应为 undefined（Tag 已移除）：disp() 会返回 'missing'，正是期望值。
         return {
           headerH: Math.round(h.getBoundingClientRect().height),
           de: document.documentElement.scrollWidth,
@@ -184,8 +185,10 @@ try {
       else fail(`375×812 顶栏瘦身未达标：${JSON.stringify(slim)}`)
       if (!slim.missing && slim.flexWrap === 'nowrap') pass('375×812 顶栏保持 flex-wrap:nowrap（未用换行换宽度）')
       else fail(`375×812 顶栏仍是 wrap：${JSON.stringify(slim)}`)
-      if (!slim.missing && slim.tagDisplay === 'none' && slim.subtitleDisplay === 'none') pass('375×812 院区 Tag / 副标题已隐藏（按文本定位，不受汉堡按钮下标偏移影响）')
-      else fail(`375×812 院区 Tag / 副标题未隐藏：${JSON.stringify(slim)}`)
+      // 2026-11-14 用户要求：顶栏「北京朝阳医院 · 血液内科 · 主鸿鹄」Tag 已移除（项目面向多病人多医院）。
+      // 判据：Tag 必须不存在（missing），副标题必须隐藏；两者都不许回潮。
+      if (!slim.missing && slim.tagDisplay === 'missing' && slim.subtitleDisplay === 'none') pass('375×812 院区 Tag 已移除、副标题已隐藏（按文本定位）')
+      else fail(`375×812 院区 Tag / 副标题状态不对：${JSON.stringify(slim)}`)
       // W10 更正 1：首屏内容起点 ≤96px（防「顶栏压到 79 却把内容往下挤」）。
       // 用 content.top + scrollY 取文档坐标，滚动到中部也照样能判。
       const contentTop = await mobile.evaluate(() => Math.round(document.querySelector('.ant-layout-content').getBoundingClientRect().top + window.scrollY))
