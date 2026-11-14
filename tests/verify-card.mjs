@@ -494,6 +494,23 @@ it('第 1 页必须用 1 行小字如实声明「未检出的白血病核心项�
   assert.ok(!/建议|应做|必须做|提示(?:白血|复发)|预后/.test(line[1]), `声明行不得写解读，实际「${line[1]}」`)
 })
 
+it('分子标签区只放阳性：同名的阴性变体（BCR::ABL1 P210/P230 阴性）不得挤进来', () => {
+  const reports = [{
+    reportDate: '2026-07-18',
+    rows: [
+      { name: 'BCR::ABL1（P190型）', value: '阳性', status: 'positive' },
+      { name: 'BCR::ABL1（P210型）', value: '阴性', status: 'negative' },
+      { name: 'BCR::ABL1（P230型）', value: '阴性', status: 'negative' },
+    ],
+  }]
+  const card = buildCard({ reports, today: TODAY })
+  const tags = card.safetyBaseline.geneTags
+  assert.equal(tags.filter((t) => /BCR/.test(t.label)).length, 1, `BCR 只应留阳性那一条，实际 ${JSON.stringify(tags)}`)
+  assert.ok(tags[0].positive, '留下的必须是阳性那条')
+  const lab = card.html.match(/分子与高危基因<\/div><div class="sb-l">([\s\S]*?)<\/div>/)
+  assert.ok(!/BCR::ABL1 阴性/.test(lab ? lab[1] : ''), '标签区不得出现「BCR::ABL1 阴性」')
+})
+
 it('0 份报告 → empty:true（前端据此渲染引导页，不渲染空壳卡）', () => {
   const card = buildCard({ reports: [], today: TODAY })
   assert.equal(card.empty, true)
