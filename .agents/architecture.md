@@ -428,3 +428,18 @@ ego lite 的 Chromium（真实指纹 + 独立 profile）可通过。故 `lib/ego
 - 口径文档：`docs/导入工作流.md`（`docs/报告导入流程.md`、`docs/截图报告工作流.md` 已加指针，冲突以导入工作流为准）。
 - 判重四层：sha256 / archive 同字节 / 库里同单号+报告日期 / 批内同单号+报告类型+报告日期；**dHash 只用「同单号或同日期」的近重复提示**。
 - 门禁：`node tests/verify-import-workflow.mjs`（6 项断言）。
+
+## 手机端导航形态与顶栏归属（2026-11-14，W10）
+
+- **≤575px：隐藏左侧 Sider**（原来压成 56px、菜单文字竖排成单字，不可读不可点，还白占 56px），
+  改由 Header 左上角「☰」（`.mb-nav-trigger`，`aria-label="打开导航菜单"`）打开 antd `Drawer`，
+  复用同一份 `menuItems`（两组共 7 项），点条目走原 `go(key)` 并自动关闭抽屉。
+- **≥992px 桌面完全不变**：Sider 168px 常驻、`KEY_ALIAS` 旧链兼容、`?tab=` 语义一律不动。
+- **顶栏窄屏样式单一 owner = `App.jsx` 的 `APP_MOBILE_CSS`**：`CardPage` 的 `CARD_MOBILE_CSS`
+  只留卡片专属规则（`.mb-compact-row`、`.mb-trends-grid`、`.mb-source-*`、`.ant-tabs-nav` 吸顶等），
+  不再碰 `.ant-layout-header`。两处各写一份必然漂移。
+- 判据（`tests/verify-ui.mjs` 常驻）：375 下 `header ≤80px` 且 `scrollWidth ≤375` **同时成立**、
+  首屏内容起点 ≤96px、滚到中部仍 ≤80px、Sider 不可见、菜单 7 项可点切页、7 个菜单页「改后 ≤ 改前」。
+- **改动陷阱（已踩过两次）**：给顶栏加/删元素会让 `nth-child` 序号整体位移；antd `Space` 会为
+  `display:none` 的 item 仍保留 gap（桌面整体右移 12px）。所以：按文本/稳定 class 选元素，
+  按钮放 Header 直接子元素而非 `Space` 内。
