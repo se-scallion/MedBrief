@@ -46,10 +46,11 @@ import {
   parseLabRows, buildReportFingerprint, groupForDoctorCard, summarizeForCard, dedupeStitchRows, mergeChunkRows,
 } from './lib/reportIntake.mjs'
 import { loadPatient, savePatient, buildCard } from './lib/intakeCard.js'
-import { saveBlob, getBlob, listBlobs, linkBlobToReport, blobStats } from './lib/blobStore.mjs'
+import { saveBlob, saveBlobIfAbsent, getBlob, listBlobs, linkBlobToReport, blobStats } from './lib/blobStore.mjs'
 import { planChunks, cropChunks, imageSize, cropToContent } from './lib/imageChunker.mjs'
 import { autoDeskew } from './lib/deskew.mjs'
 import { readPdf, guessReportDate } from './lib/pdfIntake.mjs'
+import { classifyReport } from './lib/reportClassify.mjs'
 import { summarizeState, formatSummaryText } from './lib/metricsSummary.js'
 import { buildVisitBrief } from './lib/visitBrief.js'
 import { fetchLiveDoctorSchedule } from './lib/bjcyhScraper.js'
@@ -918,7 +919,45 @@ function getNextReleaseCountdown() {
       normalized,
       reports: attachBlobIds(store.reports).map((r) => ({
         ...r, rows: shape(r), images: undefined, text: undefined, hasImage: !!r.sha256,
+        // 原件类型（前端列表用来显示「PDF / 原件」标签）：取 role=original 的第一个 blob 的 mime
+        fileBlobType: (() => {
+          const b = (r.sourceBlobs || []).find((x) => x.role === 'original')
+          if (!b || !b.blobId) return ''
+          try { const row = getBlob(b.blobId); return row ? row.type || '' : '' } catch { return '' }
+        })(),
       })),
+    })
+    return
+  }
+
+  // 10d. 单份详情（报告库「查看」用）：列表接口为省负载把 text 剥掉了（text: undefined），
+  //     全文型报告因此「在库里但界面上任何地方都读不到」。全文与逐行清洗视图只从这里取。
+  if (req.method === 'GET' && /^\/api\/intake\/reports\/[^/]+$/.test(pathname)) {
+    const id = decodeURIComponent(pathname.slice('/api/intake/reports/'.length))
+    const store = readReports()
+    const rep = store.reports.find((r) => r.id === id)
+    if (!rep) return sendJson(res, 404, { ok: false, error: `报告不存在：${id}` })
+    const [withBlob] = attachBlobIds([rep])
+    // 逐行给**清洗后视图**（与编辑弹窗、资料卡同一口径），原始行留在 rawRows 供回查
+    const viewRows = (rep.rows || []).map((row) => {
+      const n = normalizeRow(row)
+      return { ...n, code: row.code || classifyAnalyte(n.name, { loose: !!n.nameDirty }).code || null }
+    })
+    const originals = (rep.sourceBlobs || [])
+      .filter((b) => b && b.blobId)
+      .map((b) => {
+        try { const row = getBlob(b.blobId); return row ? { blobId: b.blobId, role: b.role || 'original', type: row.type || '', size: row.size || 0 } : null } catch { return null }
+      })
+      .filter(Boolean)
+    // 单图导入且服务端代存过原件的（没有 sourceBlobs）也要能看到原件
+    const fallbackOriginal = withBlob.fileBlobId ? [{ blobId: withBlob.fileBlobId, role: 'original', type: withBlob.fileBlobType || '', size: 0 }] : []
+    sendJson(res, 200, {
+      ok: true,
+      report: { ...withBlob, rows: undefined, text: rep.text || '', rowCount: (rep.rows || []).length },
+      rows: viewRows,
+      rawRows: rep.rows || [],
+      originals: originals.length ? originals : fallbackOriginal,
+      patchLog: rep.patchLog || [],
     })
     return
   }
@@ -939,9 +978,15 @@ function getNextReleaseCountdown() {
     const changed = []
     const push = (field, from, to) => { if (String(from ?? '') !== String(to ?? '')) { log.push({ at, field, from: from ?? '', to: to ?? '' }); changed.push(field) } }
 
-    // 报告级白名单：只有这两个
-    for (const f of ['hospital', 'reportDate']) {
-      if (body[f] !== undefined) { push(f, rep[f], String(body[f]).trim()); rep[f] = String(body[f]).trim() }
+    // 报告级白名单：医院/日期 + 类型（2026-11-14 扩：用户要求列表显示「对应类型」，如 超声-床旁超声 / CT-胸部）
+    // kind 只能在固定枚举内（前端 KIND_OPTIONS 与 meddata/store.js 的 lab/影像分流都依赖它）
+    const KIND_ENUM = ['lab', 'pathology', 'imaging', 'discharge', 'drug', 'unknown']
+    for (const f of ['hospital', 'reportDate', 'reportType', 'kind']) {
+      if (body[f] === undefined) continue
+      const v = String(body[f]).trim()
+      if (f === 'kind' && !KIND_ENUM.includes(v)) continue
+      if (f === 'reportType' && !v) continue
+      push(f, rep[f], v); rep[f] = v
     }
     // 行级白名单：name / value / unit / refRange，按行在数组里的 index 定位（不引 rowId，保持数据形状不变）
     if (Array.isArray(body.rows)) {
@@ -1260,6 +1305,29 @@ function getNextReleaseCountdown() {
       // 报告级字段对齐 MedData 的 record 模型（records[] = { date, report_type, notes, data_points }）：
       //   reportDate→date、reportType→report_type、rows→data_points。
       // 其余为「单据抬头」事实字段，一律照抄原报告，读不到就空串（不填默认值）。
+      // 类型识别（2026-11-14 用户要求「识别时按内容推断报告类型」）：
+      // 截图导入的抬头常常没有「报告类型」这一行，入库后只剩 kind 默认值 'lab' —— 一份心脏彩超
+      // 就被存成化验单。口径照 MedData parseDoc.detectDocType（见 lib/reportClassify.mjs 文件头）。
+      // **推断值必须可分辨**：写 reportTypeInferred / kindInferred，人工填过的一律不覆盖。
+      const cls = classifyReport({
+        text: String(body.text || ''),
+        rows,
+        kind: meta.kind || '',
+        reportType: meta.reportType || '',
+      })
+      // 原件兜底：页面导入路径从不传 sourceBlobs，于是「图在内存里、字节没落库」，以后既不能回看也不能重识别
+      // （实测 55 份里 1 份如此，字节已不可恢复）。这里由服务端自己存一份，把「有图必有原件」变成接口保证。
+      let sourceBlobs = Array.isArray(body.sourceBlobs) ? body.sourceBlobs : (Array.isArray(meta.sourceBlobs) ? meta.sourceBlobs : [])
+      let serverSavedOriginal = false
+      if (imageBuf && !sourceBlobs.some((b) => b && b.blobId)) {
+        try {
+          const saved = saveBlobIfAbsent(imageBuf, { kind: 'original', type: 'image/png', originPath: String(meta.sourceFile || '') })
+          if (saved && saved.id) {
+            sourceBlobs = [{ blobId: saved.id, role: 'original', sha256, reused: !!saved.reused }]
+            serverSavedOriginal = true
+          }
+        } catch (e) { /* 存原件失败不阻塞入库，但要留痕（下面是 warnings） */ sourceBlobs = sourceBlobs || [] }
+      }
       const rec = {
         id: `rep_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`,
         createdAt: new Date().toISOString(),
@@ -1268,8 +1336,10 @@ function getNextReleaseCountdown() {
         // 混在真实报告里让人误以为是导入的化验单。无原图 = 无法核对、无法查重，只能当草稿。
         source: imageBuf ? 'image' : 'text-only',
         sha256, dhash, fingerprint,
-        kind: meta.kind || 'lab',
-        reportType: meta.reportType || '',
+        kind: cls.kind || meta.kind || 'lab',
+        reportType: cls.reportType || meta.reportType || '',
+        // 推断值必须可分辨（红线：认不出的不瞎填，但推断出来的要标出来）
+        ...(cls.inferred ? { reportTypeInferred: true, kindInferred: cls.kind !== (meta.kind || ''), inferEvidence: cls.evidence } : {}),
         reportDate: meta.reportDate || '',
         hospital: meta.hospital || '',
         labName: meta.labName || '',
@@ -1281,7 +1351,7 @@ function getNextReleaseCountdown() {
         sourceFile: meta.sourceFile || '',
         imageRef: imageBuf ? `sha256:${sha256}` : '',
         // 原件引用：blobs 表 id 列表（[{blobId, role}]）。role: original=原图/原件，stitched=跨屏拼接图
-        sourceBlobs: Array.isArray(body.sourceBlobs) ? body.sourceBlobs : (Array.isArray(meta.sourceBlobs) ? meta.sourceBlobs : []),
+        sourceBlobs,
         text: String(body.text || ''),
         rows,
       }
@@ -1291,7 +1361,7 @@ function getNextReleaseCountdown() {
       for (const b of rec.sourceBlobs) {
         if (b && b.blobId) { try { linkBlobToReport(b.blobId, rec.id) } catch { /* 关联失败不影响入库 */ } }
       }
-      sendJson(res, 200, { ok: true, report: rec, total: store.reports.length })
+      sendJson(res, 200, { ok: true, report: rec, total: store.reports.length, serverSavedOriginal, inferred: cls.inferred ? { reportType: cls.reportType, kind: cls.kind, evidence: cls.evidence } : null })
     } catch (e) {
       sendJson(res, 500, { ok: false, error: e.message })
     }

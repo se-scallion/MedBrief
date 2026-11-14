@@ -14,7 +14,7 @@
 //   **受控排序**：列头只负责显示箭头（`sorter: true` + `sortOrder`），真正的排序在本文件里做，
 //   这样「缺值恒末位」这条才守得住。
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, App as AntApp, Button, Card, Empty, Input, Modal, Space, Table, Tag, Tooltip, Typography } from 'antd'
+import { Alert, App as AntApp, Button, Card, Descriptions, Drawer, Empty, Input, Modal, Space, Spin, Table, Tabs, Tag, Tooltip, Typography } from 'antd'
 import { jget, jpost } from '../../api.js'
 import { KIND_OPTIONS } from './shared.js'
 import { DEFAULT_SORT, sortReports, nextSort } from './reportSort.js'
@@ -43,6 +43,9 @@ export default function ReportsPanel() {
   // 初值必须来自 ?normalized=1（清洗后视图），否则「三列左移」的原始行会在编辑框里错位
   const [editing, setEditing] = useState(null) // { id, hospital, reportDate, rows: [...] }
   const [saving, setSaving] = useState(false)
+  // 「查看」抽屉（2026-11-14）：列表接口为省负载把 text 剥掉了，全文型报告在界面上**任何地方都读不到**。
+  // 单份详情走 GET /api/intake/reports/:id —— 全文 + 逐行清洗视图 + 原件 + patchLog 一次给全。
+  const [viewing, setViewing] = useState(null) // { id, loading, data, error }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -57,6 +60,17 @@ export default function ReportsPanel() {
   }, [message])
 
   useEffect(() => { load() }, [load])
+
+  const openView = useCallback(async (id) => {
+    setViewing({ id, loading: true, data: null, error: '' })
+    try {
+      const j = await jget(`/api/intake/reports/${encodeURIComponent(id)}`)
+      if (!j.ok) throw new Error(j.error || '读取失败')
+      setViewing({ id, loading: false, data: j, error: '' })
+    } catch (e) {
+      setViewing({ id, loading: false, data: null, error: e.message })
+    }
+  }, [])
 
   const openEdit = useCallback(async (id) => {
     try {
@@ -139,7 +153,16 @@ export default function ReportsPanel() {
       key: 'type',
       width: 130,
       ...sortable('type'),
-      render: (_, r) => kindLabel(r) || '—',
+      render: (_, r) => (
+        <Space size={4}>
+          <span>{kindLabel(r) || '—'}</span>
+          {r.reportTypeInferred && (
+            <Tooltip title={`按内容推断（${r.inferEvidence || '内容特征'}）。原始单据上没有「报告类型」这一行，可在「编辑」里改`}>
+              <Tag color="orange" style={{ marginInlineEnd: 0 }}>推断</Tag>
+            </Tooltip>
+          )}
+        </Space>
+      ),
     },
     {
       title: '单号',
@@ -193,6 +216,7 @@ export default function ReportsPanel() {
       width: 96,
       render: (_, r) => (
         <Space size={2}>
+          <Button size="small" type="link" style={{ paddingInline: 4 }} onClick={() => openView(r.id)}>查看</Button>
           <Button size="small" type="link" style={{ paddingInline: 4 }} onClick={() => openEdit(r.id)}>编辑</Button>
           {r.patchedAt && <Tooltip title={`最近改动 ${r.patchedAt}`}><Tag color="success" style={{ marginInlineStart: 0 }}>已核对</Tag></Tooltip>}
         </Space>
@@ -242,6 +266,97 @@ export default function ReportsPanel() {
           locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={kw ? `没有匹配「${kw}」的报告` : '还没有入库的报告，先去「资料录入」上传'} /> }}
         />
       </Card>
+
+      <Drawer
+        open={!!viewing}
+        onClose={() => setViewing(null)}
+        width={760}
+        destroyOnHidden
+        title={viewing ? `报告内容 · ${viewing.id}` : '报告内容'}
+        extra={viewing?.data?.originals?.length ? (
+          <Space>
+            {viewing.data.originals.map((o) => (
+              <Button key={o.blobId} size="small" onClick={() => window.open(`/api/intake/blob/${encodeURIComponent(o.blobId)}`, '_blank')}>
+                {o.type === 'application/pdf' ? 'PDF 原件' : '查看原件'}
+              </Button>
+            ))}
+          </Space>
+        ) : <Text type="secondary" style={{ fontSize: 12 }}>无原件（导入时未保存原图字节）</Text>}
+      >
+        {viewing?.loading && <Spin />}
+        {viewing?.error && <Alert type="error" showIcon message={`读取失败：${viewing.error}`} />}
+        {viewing?.data && (
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Descriptions size="small" column={2} bordered items={[
+              { key: 'date', label: '报告日期', children: viewing.data.report.reportDate || '未提供（只看入库时间）' },
+              { key: 'created', label: '入库时间', children: fmtWhen(viewing.data.report.createdAt) },
+              { key: 'hospital', label: '医院', children: viewing.data.report.hospital || '未填' },
+              {
+                key: 'type',
+                label: '类型',
+                children: (
+                  <Space size={4}>
+                    <span>{kindLabel(viewing.data.report) || '—'}</span>
+                    {viewing.data.report.reportTypeInferred && <Tag color="orange">推断</Tag>}
+                  </Space>
+                ),
+              },
+              { key: 'barcode', label: '单号', children: viewing.data.report.barcode || '—' },
+              { key: 'rows', label: '指标行', children: `${viewing.data.rows.length} 行（原始 ${viewing.data.rawRows.length} 行）` },
+            ]} />
+            <Tabs
+              defaultActiveKey={viewing.data.rows.length ? 'rows' : 'text'}
+              items={[
+                {
+                  key: 'rows',
+                  label: `指标（${viewing.data.rows.length}）`,
+                  children: viewing.data.rows.length ? (
+                    <Table
+                      size="small"
+                      rowKey={(_, i) => i}
+                      pagination={viewing.data.rows.length > 50 ? { pageSize: 50 } : false}
+                      dataSource={viewing.data.rows}
+                      scroll={{ y: 420 }}
+                      columns={[
+                        { title: '项目', dataIndex: 'name', render: (v, r) => <span>{v}{r.nameDirty && <Tag color="warning" style={{ marginInlineStart: 4 }}>名称待核</Tag>}{r.noteRow && <Tag>说明文本·已剔除</Tag>}</span> },
+                        { title: '数值', dataIndex: 'value', width: 150, render: (v, r) => <span>{v}{r.unit ? ` ${r.unit}` : ''}</span> },
+                        { title: '参考区间', dataIndex: 'refRange', width: 130, render: (v) => v || '—' },
+                      ]}
+                    />
+                  ) : <Text type="secondary">这份报告没有指标行（全文型：结论/病理/影像），请看「原文」。</Text>,
+                },
+                {
+                  key: 'text',
+                  label: '原文（OCR 全文）',
+                  children: (
+                    <pre style={{ whiteSpace: 'pre-wrap', fontSize: 12, lineHeight: 1.5, background: '#fafafa', border: '1px solid #f0f0f0', borderRadius: 4, padding: 10, maxHeight: 460, overflow: 'auto', margin: 0 }}>
+                      {viewing.data.report.text || '（这份报告没有保存全文）'}
+                    </pre>
+                  ),
+                },
+                {
+                  key: 'log',
+                  label: `改动记录（${(viewing.data.patchLog || []).length}）`,
+                  children: (viewing.data.patchLog || []).length ? (
+                    <Table
+                      size="small"
+                      rowKey={(_, i) => i}
+                      pagination={false}
+                      dataSource={viewing.data.patchLog}
+                      columns={[
+                        { title: '时间', dataIndex: 'at', width: 160, render: (v) => fmtWhen(v) },
+                        { title: '字段', dataIndex: 'field', width: 140 },
+                        { title: '原值', dataIndex: 'from', ellipsis: true },
+                        { title: '新值', dataIndex: 'to', ellipsis: true },
+                      ]}
+                    />
+                  ) : <Text type="secondary">没有人工改动记录。</Text>,
+                },
+              ]}
+            />
+          </Space>
+        )}
+      </Drawer>
 
       <Modal
         open={!!editing}
