@@ -145,7 +145,7 @@ it('完备性：105 行输入 → counts.rows=105，35 个项目一个不少', (
 
 it('完备性：第 2 页「全部指标」渲染行数 == counts.latest，且不得退化成「组数」', () => {
   const card = buildCard({ reports: makeReports(), mask: true, today: TODAY })
-  const seg = block(card.html, '④ 全部指标', '⑤ 材料清单')
+  const seg = block(card.html, '④ 全部指标', '⑤ 关键趋势')
   assert.ok(seg, '找不到「④ 全部指标」段')
   const dataRows = trCount(seg) - 2 // 两栏并排，各 1 行表头
   assert.ok(dataRows >= card.counts.latest, `全部指标段渲染 ${dataRows} 行 < 应有的 ${card.counts.latest} 行`)
@@ -157,7 +157,9 @@ it('第 1 页只放「最新状态」的异常项：3 份历史 × 3 项异常 �
   const card = buildCard({ reports: makeReports(), mask: true, today: TODAY })
   const seg = block(card.html, '② 核心异常项', '③ 家属三问')
   const rows = trCount(seg) - 1
-  assert.equal(card.counts.p0, 3, `P0 应为 3 项（血红蛋白/红细胞/红细胞压积各一项最新），实际 ${card.counts.p0}`)
+  // 2026-11-14 口径：红细胞(RBC)/红细胞压积(HCT) 已下沉 P1，第 1 页只剩血红蛋白
+  assert.equal(card.counts.p0, 1, `P0 应为 1 项（仅血红蛋白；RBC/HCT 已下沉 P1），实际 ${card.counts.p0}`)
+  assert.ok(card.counts.p1 >= 2, `RBC/HCT 应落到 P1，实际 P1=${card.counts.p1}`)
   assert.equal(rows, card.counts.p0, `第 1 页异常表渲染 ${rows} 行，应为 ${card.counts.p0} 行（历史重复不得进第 1 页）`)
   // 同一项目名不得在第 1 页出现两次
   const names = [...seg.matchAll(/<td>([^<]+)<\/td>/g)].map((m) => m[1].trim())
@@ -176,21 +178,45 @@ it('P1 折叠：非核心异常不进第 1 页表格，只留一行摘要（不�
   assert.ok(/另有 \d+ 项非核心异常/.test(seg), '第 1 页必须有 P1 折叠摘要行')
 })
 
-// ---------- 3. 危急值（置顶 + 底纹，不允许只有绿标造成安全错觉） ----------
-it('危急值：命中阈值 → 置顶 + 底纹 + 「危急」标记（且低值不只是一片绿）', () => {
+// ---------- 3. 危急值（2026-11-14 改口径：不再置顶，只靠底纹 + 微标） ----------
+it('危急值：命中阈值 → 保留底纹 + 「危急」标记，但**不再插队置顶**', () => {
   const reports = makeReports()
-  // WBC 0.6 < 1.0（危急），但参考区间判为 low —— 旧版式只会画成绿色
+  // WBC 0.6 < 1.0（危急），日期 2026-09-20；血红蛋白 09-20 同日、另有 09-03/08-27 的历史（取最新仍是 09-20）
   reports[0].rows.push({ name: '白细胞', value: '0.6', num: 0.6, unit: '10^9/L', refRange: '3.5-9.5', measuredAt: '2026-09-20', status: 'low', flag: 'low' })
   const card = buildCard({ reports, mask: true, today: TODAY })
   assert.equal(card.counts.critical, 1, `危急项应为 1，实际 ${card.counts.critical}`)
   const seg = block(card.html, '② 核心异常项', '③ 家属三问')
   assert.ok(/class="crit"/.test(seg), '危急行必须有底纹样式类 crit')
   assert.ok(/危急/.test(seg), '危急行必须有「危急」标记')
-  const firstRow = seg.slice(seg.indexOf('<tbody>') + 7)
-  assert.ok(/白细胞/.test(firstRow.slice(0, 220)), '危急项必须排在 P0 表第一行')
+  // 同一日期下允许任意先后，但**不得**因为危急而被提到严格时间轴之外：
+  const dates = [...seg.matchAll(/<td class="d">([^<]*)</g)].map((m) => m[1].slice(0, 10))
+  const sorted = dates.slice().sort((a, b) => b.localeCompare(a))
+  assert.deepEqual(dates, sorted, `危急值不得打乱时间轴（日期应严格新→旧）：${dates.join(' → ')}`)
 })
 
-// ---------- 4. 缺项与时效（临床安全：不能让医生把 100 天前的数当本周的） ----------
+it('第 1 页 P0 表：危急置顶 → 按器官系统聚合 → 同系统内时间倒序', () => {
+  const reports = makeReports()
+  // 造一条危急项（WBC 0.6 < 1.0），它必须在最前面
+  reports[0].rows.push({ name: '白细胞', value: '0.6', num: 0.6, unit: '10^9/L', refRange: '3.5-9.5', measuredAt: '2026-09-20', status: 'low', flag: 'low' })
+  const card = buildCard({ reports, mask: true, today: TODAY })
+  const rows = card.p0rows
+  assert.ok(rows.length > 0, 'P0 表不应为空')
+  const nCrit = rows.filter((r) => r.critical).length
+  assert.ok(nCrit >= 1, '应至少有一条危急项')
+  assert.deepEqual(rows.slice(0, nCrit).map((r) => !!r.critical), Array(nCrit).fill(true), '危急项必须置顶')
+
+  // 系统聚合顺序：凝血(1) → 炎症(2) → 血常规(3) → 肝肾功(4) → 尿便血气(5) → 其他(9)
+  const SYS = { COAG: 1, INFLAM: 2, IMMUNE: 2, CBC: 3, DISEASE: 3, CHEM: 4, IRON: 4, URINE: 5, GAS: 5, MICRO: 6 }
+  const ranks = rows.map((r) => SYS[r.catKey] || 9)
+  assert.deepEqual(ranks, ranks.slice().sort((a, b) => a - b), `系统聚合顺序错：${ranks.join(',')}`)
+
+  // 同系统内按时间倒序
+  for (const rk of new Set(ranks)) {
+    const ds = rows.filter((_, i) => ranks[i] === rk).map((r) => String(r.measuredAt))
+    assert.deepEqual(ds, ds.slice().sort((a, b) => b.localeCompare(a)), `系统 rank ${rk} 内日期未倒序：${ds.join(',')}`)
+  }
+})
+
 it('缺项：ANC 缺失必须写进 missingBasics（粒缺判定不能靠百分比猜）', () => {
   // 造一份**真的缺 ANC** 的报告集（makeReports 里是有 ANC 的，直接拿它会测不到缺失分支）
   const reports = makeReports().map((rep) => ({ ...rep, rows: rep.rows.filter((r) => !/中性粒细胞绝对值/.test(r.name)) }))
@@ -262,19 +288,23 @@ it('材料清单：text-only 记录在 Web 数据里仍有标识（原件只在�
 })
 
 // ---------- 6. 趋势 ----------
-it('趋势截断：10 个可比较项目 → trends ≤ 8 且 trendsAll == 10，关键项必须留', () => {
+it('趋势只画血液科核心 8 项：WBC/ANC/Hb/PLT/LDH/FBG/D-二聚体/PCT，骨髓/MRD/CRP 不上图', () => {
   const card = buildCard({ reports: makeTrendReports(), mask: true, today: TODAY })
   assert.equal(card.counts.trendsAll, 10, `trendsAll 应为 10（可比较项目总数），实际 ${card.counts.trendsAll}`)
   assert.ok(card.counts.trends <= 8, `趋势段上限 8 项，实际 ${card.counts.trends}`)
-  const seg = block(card.html, '⑥ 关键趋势')
-  const keep = ['骨髓原始', 'MRD', '白细胞', '中性粒', '血红蛋白', '血小板']
+  const seg = block(card.html, '⑤ 关键趋势')
+  const keep = ['白细胞', '中性粒', '血红蛋白', '血小板', '乳酸脱氢']
   const missing = keep.filter((k) => !seg.includes(k))
-  assert.deepEqual(missing, [], `趋势段缺关键项：${missing.join('、')}（关键项应优先于边缘项）`)
+  assert.deepEqual(missing, [], `趋势段缺核心项：${missing.join('、')}`)
+  // 2026-11-14 口径：低频/低信息量项不进趋势图（首页与第 2 页有原文）
+  for (const notTrend of ['骨髓原始', '微小残留', 'MRD', 'C反应蛋白']) {
+    assert.ok(!seg.includes(notTrend), `「${notTrend}」不应出现在趋势段（第 3 页只留核心 8 项）`)
+  }
 })
 
 it('趋势段不得谎报：段标题里的项数 == counts.trends', () => {
   const card = buildCard({ reports: makeTrendReports(), mask: true, today: TODAY })
-  const head = block(card.html, '⑥ 关键趋势').slice(0, 300)
+  const head = block(card.html, '⑤ 关键趋势').slice(0, 300)
   const m = head.match(/关键趋势[\s\S]*?共 (\d+) 项/)
   assert.ok(m, '趋势段标题应带「共 N 项」')
   assert.equal(Number(m[1]), card.counts.trends, `标题写 ${m[1]} 项，实际渲染 ${card.counts.trends} 项`)
@@ -307,11 +337,14 @@ it('趋势图不得收定性值：阴性 / 阳性 / 未见 这类文本一律不
 
 it('跨院参考区间不同：必须给警示，且**不得**画单一虚假绿带', () => {
   const reports = makeTrendReports()
-  // 同项两次、参考区间不同（跨院）
-  reports[0].rows[0].refRange = '3.5-9.5'
-  reports[1].rows[0].refRange = '4.0-10.0'
+  // 同项两次、参考区间不同（跨院）。必须挑**进趋势白名单**的项（白细胞 index=2），
+  // 否则它压根不上图，这条断言会退化成「空过」。
+  const wbcIdx = reports[0].rows.findIndex((r) => /^白细胞$/.test(r.name))
+  assert.ok(wbcIdx >= 0, '夹具里应有白细胞')
+  reports[0].rows[wbcIdx].refRange = '3.5-9.5'
+  reports[1].rows[wbcIdx].refRange = '4.0-10.0'
   const card = buildCard({ reports, mask: true, today: TODAY })
-  const seg = block(card.html, '⑥ 关键趋势')
+  const seg = block(card.html, '⑤ 关键趋势')
   assert.ok(/跨院参考区间不同/.test(seg), '必须输出跨院参考区间差异提示')
   assert.ok(!/<rect/.test(seg), '跨院区间不一致时不得绘制绿色参考带（那是虚假精度）')
 })
@@ -472,6 +505,35 @@ it('真实 fixture 已脱敏：不含姓名 / 病历号 / 条码 / 床号 / 医�
 
 it('双栏 fixture 已脱敏：院名换了、院址也必须换（换名漏地址）', () => {
   assertRedacted(REAL2, '双栏 fixture')
+})
+
+it('黑白打印友好：高低用 ▲/▽ + 字重（不只靠红绿），危急用 [危急] 黑底徽章', () => {
+  const reports = makeReports() // 夹具里血红蛋白/红细胞/红细胞压积是 low
+  // 再补一条 high（血小板升高）与一条危急，确保三种标记都被渲染
+  reports[0].rows.push({ name: '白细胞', value: '0.6', num: 0.6, unit: '10^9/L', refRange: '3.5-9.5', measuredAt: '2026-09-20', status: 'low', flag: 'low' })
+  reports[0].rows.push({ name: '乳酸脱氢酶', value: '900', num: 900, unit: 'U/L', refRange: '120-250', measuredAt: '2026-09-20', status: 'high', flag: 'high' })
+  const card = buildCard({ reports, mask: true, today: TODAY })
+  assert.ok(/▲ 高/.test(card.html), '偏高必须用「▲ 高」而不是只有红箭头')
+  assert.ok(/▽ 低/.test(card.html), '偏低必须用「▽ 低」而不是只有绿箭头')
+  assert.ok(/\[危急\]/.test(card.html), '危急项必须带 [危急] 徽章文本')
+  assert.ok(/crit-tag \{ background: #111/.test(card.html), '危急徽章必须是黑底白字（灰度打印可见）')
+  assert.ok(/tr\.crit td:first-child \{ border-left: 4px solid #111/.test(card.html), '危急行必须有左侧黑粗线')
+})
+
+it('趋势 SVG：参考区间画上下两条虚线（不靠绿带），点形状区分正常/异常/危急', () => {
+  // 必须用**带参考区间**的夹具：makeTrendReports 的 refRange 为空，画不出参考线
+  const card = buildCard({ reports: makeReports(), mask: true, today: TODAY })
+  const svg = block(card.html, '⑤ 关键趋势')
+  assert.ok(/stroke-dasharray/.test(svg), '参考区间必须用虚线（灰度打印不能只靠绿色填充）')
+  assert.ok(/上界|下界/.test(svg), '虚线要有文字标注')
+  assert.ok(/fill="#fff" stroke=/.test(svg), '正常点应为空心圆（fill=#fff + stroke）')
+  assert.ok(!/<rect/.test(svg), '不得再用绿色矩形色带')
+})
+
+it('日期去重：同一年内显示 MM-DD（不重复年份）', () => {
+  const card = buildCard({ reports: makeReports(), mask: true, today: TODAY })
+  const seg = block(card.html, '② 核心异常项', '③ 家属三问')
+  assert.ok(/\b\d{2}-\d{2}\b/.test(seg), '日期应简写为 MM-DD')
 })
 
 console.log('\n' + '='.repeat(46))

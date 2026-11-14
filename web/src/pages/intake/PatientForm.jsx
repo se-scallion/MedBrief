@@ -81,6 +81,21 @@ export default function PatientForm({ form, patient, saving, onSave }) {
               <Input placeholder="如：7-17 流式 异常细胞 85.76%" />
             </Form.Item>
           </Col>
+          <Col xs={24} md={8}>
+            <Form.Item name="comorbidities" label="基础病（可选，进安全基线）">
+              <Input placeholder="如：高血压、2 型糖尿病" />
+            </Form.Item>
+          </Col>
+          <Col xs={24} md={8}>
+            <Form.Item name="allergies" label="过敏史（可选）">
+              <Input placeholder="如：青霉素过敏" />
+            </Form.Item>
+          </Col>
+          <Col xs={24} md={8}>
+            <Form.Item name="medications" label="在用药（可选）">
+              <Input placeholder="如：泼尼松 20mg qd" />
+            </Form.Item>
+          </Col>
         </Row>
         <Space wrap style={{ marginBottom: 8 }}>
           <Button type="primary" onClick={onSave} loading={saving}>

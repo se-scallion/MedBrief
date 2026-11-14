@@ -47,6 +47,9 @@ export default function CardPage() {
           lastChemo: j.patient.clinicalContext?.lastChemo || '',
           recentTxOrGcsf: j.patient.clinicalContext?.recentTxOrGcsf || '',
           marrowSummary: j.patient.clinicalContext?.marrowSummary || '',
+          comorbidities: j.patient.comorbidities || '',
+          allergies: j.patient.allergies || '',
+          medications: j.patient.medications || '',
         })
       }
     } catch (e) {
@@ -76,6 +79,7 @@ export default function CardPage() {
         name: v.name || '', sex: v.sex || '', age: v.age || '',
         diagnosis: v.diagnosis || '', subtype: v.subtype || '', stage: v.stage || '',
         hospital: v.hospital || '', attending: v.attending || '',
+        comorbidities: v.comorbidities || '', allergies: v.allergies || '', medications: v.medications || '',
         questions: { focus: v.focus || '', confirm: v.confirm || '', nextVisit: v.nextVisit || '' },
         clinicalContext: {
           lastChemo: v.lastChemo || '',
