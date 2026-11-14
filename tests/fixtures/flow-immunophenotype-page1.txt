@@ -1,0 +1,56 @@
+V00000000000 V00000000000
+某 某检验实验室 某
+某市某区某路0号
+0000-0000000
+V00000000000 某检验实验室 V00000000000
+血液肿瘤免疫分型报告单
+Hematological Tumor Immunotype Report
+某 某
+FC-R014.06(20201116)
+52 V00000000000 V00000000000
+姓名(Name)： 张某 年龄(Age)：30岁 性别(Sex)：女 标本编号(No.)：F000000000
+就诊医院(Hospital)： 某军区总医院 科别(Department)： 血液科
+某 某
+就诊类型(Visitimg Type)：住院 床号(Bed No.)：0 医生(Dr)：某医生
+V00000000000 标本类型(Specimen)：骨髓 病历号(Medical V00000000000 Record No.)：
+采集时间(Specimen Sampling Time)： 2026-07-15 12:51 接检时间(Specimen Receive Time)： 2026-07-16 11:19
+某 检测条码(Barcode)：V00000000000 身份证号(ID 某 card)： 某
+临床诊断(Diagnosis)： AL?
+V00000000000 V00000000000
+医生电话(Tel of Dr)： 外部条码(External barcode):
+检测方法(Test Method)：流式细胞术 检测设备(Test Equipment)：BD Cantoll
+某 某
+所检测的抗原(Antigens examined in this test)：HLA-DR、CD3、CD4、CD5、CD7、CD8、CD10、CD11b、
+CD13、CD14、CD15、CD16、CD19、CD20、CD33、CD34、CD36、CD38、CD56、CD64、CD71、CD117、CD123、
+V00000000000 V00000000000
+cKappa、cLambda、CD22、TdT、cCD79a、MPO、cCD3、cIgM、CD45。
+获取和分析细胞数(Total 某 Events):5-10万 CD45-SSC圈门(CD45-SSC Gates) 某
+各群细胞占有核细胞比例(Cell Population Proportion)：
+52 V00000000000 V00000000000
+淋巴细胞(绿色) Lymphocyte(Green) 2.19%
+单核细胞(紫色) Monocyte(Purple) 0.27%
+某 某
+粒细胞(蓝色) Granulocyte(Blue) 9.27%
+异常细胞(红色) Abnormal cell(Red) 85.76%
+V00000000000 V00000000000
+有核红细胞(灰色) Erythroblast(Gray) 2.51%
+某 某 某
+CD34+细胞占有核细胞比例（CD34+ Cells Proportion in Nuclear Cells）：84.42 ％
+V00000000000 V00000000000
+印象（Impression）：在CD45/SSC点图上设门分析，原始向CD45阴性延伸的分布区域可见异常细胞群体，
+约占有核细胞的85.76%，表达HLA-DR、CD10、CD19、CD22、CD34、TdT、cCD79a，部分细胞表达 CD13、
+CD33、CD38，不表达cIgM。
+某 某
+结论（Conclusion）：急性B淋巴细胞白血病（Common-B-ALL可能）；请结合其他检测结果和临床综合判
+断。 V00000000000 V00000000000
+某 某
+52 注：本次检测结果仅对本次标本负责，结果仅供临床医生参考。由于标本保存有一定期限，若对报告结果有疑问，请在自 V00000000000 V00000000000
+报告日期起的三天内提出复检申请，逾期不再受理复检。
+Note: The test results are only in charge of the specimenand for clinicians’reference only.
+某 某
+报告日期： 2026-07-17 操作者：某甲 检验者： 某乙 审核者：
+V00000000000 (Report Time) (Operator) V00000000000 (Analyzer) (Reviewer)
+主检实验室:某主检实验室
+某 某 某
+1/4 F000000000
+报告防伪

@@ -85,6 +85,27 @@ POST http://127.0.0.1:8008/api/ai-docread
 
 ---
 
+### 通道 1.5：报告导入的字段口径（MedBrief 写自己的库，不写 MedData）
+
+报告导入（图片/PDF → 结构化 → 资料卡）**只落 MedBrief 自己的 `data/reports.json`**，从不写 8787。
+但字段名与 code 一律按 MedData 的 `records[] / data_points[] / diseaseMetrics[]` 口径命名，
+目的是将来导出时不用二次翻译。**权威表**：[`docs/字段字典.md`](docs/字段字典.md)。
+
+| code | 归属 | MedData 侧需要做什么 |
+|---|---|---|
+| `FCM_MRD_PCT` | 复用（`STREAMS.fcm.code`，定义=异常表型细胞/有核细胞 %） | 无 |
+| `FCM_CD34_PCT` | **本仓新建标准 code** | 要进 MedData 字典/`SUMMARY_DISEASE_CODES` 才能出现在 `/api/summary`（改动在 MedData 仓） |
+| `custom:fcm-gran-pct` / `-lymph-` / `-mono-` / `-nrbc-` | 本仓新建自定义字段（MedData 字典外项目命名空间） | 按既有约定落进 `store.customFields` |
+
+> 2026-11-12 第一批样本（流式免疫分型报告单）落地时新增：报告级 7 字段、行级 5 字段，
+> 列表与语义见 `docs/字段字典.md` §二/§三/§四。改这里必须同步那份文件。
+>
+> 同日第二批（染色体核型分析报告单）：新增报告类型 `KARYOTYPE` 的**全文型报告**——`rows: []` 是合法形态
+> （核型公式/结论属自由文本，不字段化），全文存 `report.text`，原件存 `sourceFile`，卡片只体现为「报告数 +1」。
+> 请求体 `meta.textOnly=true` 只用于让服务端跳过「空 rows 回退解析」，**不落库**；这批没有新增存储字段。
+
+---
+
 ### 通道 2：本地数据直通（8787，本人电脑就诊前快速同步）
 
 **适用场景**：用户本人在电脑前操作，准备去门诊前快速载入最新指标。
@@ -192,3 +213,21 @@ const fs=require('node:fs');
 | 疗程/费用/发票追踪 | 放号倒计时与声光预警 |
 | 体温/输液/输血记录 | 114 登录链路与 WAF 绕过 |
 | AI 精读任务队列 | .meddata 导入/导出 UI |
+
+---
+
+## 六、MedData 页面在 MedBrief 的独立挂载（2026-11-13 落地）
+
+用户拍板「搬页面代码，逻辑代码尽量保持，识别引擎一起搬」，实现方式是**源码副本 + 隔离运行时**，不合并仓库、不改 MedData 主仓。
+
+| 项 | 事实 |
+|---|---|
+| 入口 | `http://127.0.0.1:5174/meddata`（HashRouter：`#/reports/add?flow=lab\|doc`），与 MedBrief 主壳同一端口、互不侵入 |
+| 源码 | `meddata/src/` 逐字节复制自 MedData（含 `ocr.js` / `normalize.js` / `ocrEngines.js` / 组件与字典），`meddata/public/` 含 tesseract wasm 与 traineddata；**未改任何一行逻辑代码** |
+| 构建 | `npm run build:meddata` → `web/dist-meddata/`（`meddata/vite.config.js`，base `/meddata/`） |
+| 运行时 | `meddata/mount.mjs`：托管 `/meddata`、`/tesseract`、`/traineddata`；MedBrief `server.mjs` 只在静态段前加一次调用（自有端点全部优先） |
+| 数据红线 | `/api/data/*` 落 `data/meddata-mirror/`（state 增量 + blob 原件），**绝不连 8787、绝不写 MedData 任何库**；空库起步，不读 MedData 现有记录 |
+| 网关 | 仅白名单端点（`/api/agent-mode`、`/api/ai-*`、`/api/ocr-*`、`/api/log`、`/api/feedback*`、`/api/patches`、`/api/gaps`、`/api/engine-status`、`/api/review-status`）转发 8008；AI 任务列表是 8008 logs 的真相源，**含 MedData 侧发起的任务**，不是 MedBrief 独立队列 |
+| 实测 | 三个路由渲染 + AI 任务抽屉 + 上传后本地 OCR 36s 出 11 项核对网格，console 零错误；686KB 图片 POST 经代理到 Vision OCR 返回 31 blocks；MedBrief 既有 UI 9 项 / 单元 23 项门禁全绿 |
+
+**已知边界（沿用 MedData 原逻辑，未改）**：化验单原图走 `saveRecordImage()`，每次上传按 `r_<ts>_<rand>` 新 id 存一份，不按 sha256 去重（`saveDocFile()` 才有内容寻址）。同一张图重复上传会产生多份原件；如需去重须单独评审，不要顺手改副本里的逻辑。

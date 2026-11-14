@@ -220,6 +220,19 @@ const tools = {
     return { ok: true, patient: j.patient, notStored: j.notStored || [] }
   },
 
+  // 报告级纠错（类型/医院/日期 + 行级 name/value/unit/refRange）：走 /patch，落 patchLog 可审计
+  async intake_update_report(args = {}) {
+    const id = String(args.reportId || args.id || '').trim()
+    if (!id) throw new Error('reportId 必填')
+    const body = {}
+    for (const k of ['reportType', 'kind', 'hospital', 'reportDate']) if (args[k] !== undefined) body[k] = args[k]
+    if (Array.isArray(args.rows)) body.rows = args.rows
+    if (!Object.keys(body).length) throw new Error('没有要改的字段（reportType/kind/hospital/reportDate/rows）')
+    const j = await call(`/api/intake/reports/${encodeURIComponent(id)}/patch`, body)
+    if (!j.ok) throw new Error(j.error || '修改失败')
+    return { ok: true, id: j.id, changed: j.changed, patchedAt: j.patchedAt, report: j.report ? { reportType: j.report.reportType, kind: j.report.kind, reportDate: j.report.reportDate, hospital: j.report.hospital } : null }
+  },
+
   async intake_get_card(args = {}) {
     const mask = args.mask === false || args.mask === 0 || args.mask === '0' ? 0 : 1
     const j = await call(`/api/intake/card?mask=${mask}`)
@@ -335,6 +348,22 @@ const toolSchemas = [
           properties: { focus: { type: 'string' }, confirm: { type: 'string' }, nextVisit: { type: 'string' } },
         },
       },
+    },
+  },
+  {
+    name: 'intake_update_report',
+    description: '修改已入库报告的类型/医院/日期，或逐行纠正指标（走 /patch，记 patchLog 可审计；不提供删除）。用于「报告列表类型显示不对」这类纠错。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        reportId: { type: 'string', description: '报告 id（rep_ 开头）' },
+        reportType: { type: 'string', description: '人类可读类型，如 超声-床旁超声 / CT-胸部 / 血常规 / 凝血四项 / 融合基因' },
+        kind: { type: 'string', description: '只能 lab|pathology|imaging|discharge|drug|unknown（决定按化验还是按文档归档）' },
+        hospital: { type: 'string' },
+        reportDate: { type: 'string', description: 'YYYY-MM-DD' },
+        rows: { type: 'array', description: '行级纠正：[{index, name?, value?, unit?, refRange?}]' },
+      },
+      required: ['reportId'],
     },
   },
   {

@@ -8,6 +8,15 @@ data/114-flow/
 # 前端构建产物（按需 npx vite build --config web/vite.config.js）
 web/dist/
 web/dist-next/
+# MedData 独立页面：构建产物 / vite 缓存 / 本地数据镜像（不入库）
+web/dist-meddata/
+meddata/.vite/
+data/meddata-mirror/
 data/intake/
 # 用户导入的报告原件索引与结构化结果（本机数据，不入库）
 data/reports.json
+# 报告原件 SQLite（本机数据，不入库）
+data/medbrief.db
+data/medbrief.db-journal
+data/reports.json.bak-*
+data/tmp/inbox/manifest.json
