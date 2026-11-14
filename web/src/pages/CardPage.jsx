@@ -42,6 +42,9 @@ const CARD_MOBILE_CSS = `
   .mb-compact-row > span:nth-child(3) { display: none !important; }
   .mb-trends-grid { grid-template-columns: repeat(auto-fit, minmax(0, 1fr)) !important; }
   .mb-source-left, .mb-source-right { min-width: 0 !important; flex-basis: 100% !important; }
+  /* W13-A3：原件轴窄屏行块，摘要整行两行截断，不撑宽文档 */
+  .mb-timeline-blocks { width: 100%; overflow: hidden; }
+  .mb-timeline-row { width: 100%; max-width: 100%; box-sizing: border-box; }
   /* W3b：Tab 栏吸顶，滚到页面中部也能切视图（2026-11-14 实测确定 top:0 —— header 为 static，
      祖先链无 overflow:hidden；弹窗 zIndex=1000，此处 2 不会遮挡打印预览）。
      antd 的 CSS-in-JS 自带 .ant-tabs-nav{position:relative} 且层叠更高，实测不加 !important 不生效。 */
@@ -60,6 +63,9 @@ export default function CardPage() {
   const [patientSaving, setPatientSaving] = useState(false)
   const [card, setCard] = useState(null)
   const [cardLoading, setCardLoading] = useState(false)
+  // 打印预览弹窗 iframe 专用：/api/intake/card?...&embed=1 的输出没有浮动打印条（W13-A2）。
+  // 新窗口「新窗口打开纯净打印页」仍用 card.html 全量版（保留「打印 / 存 PDF」按钮）。
+  const [embedHtml, setEmbedHtml] = useState('')
   const [mask, setMask] = useState(false)     // 默认不脱敏（给医生看）
 
   const [tab, setTab] = useState('overview')
@@ -106,6 +112,12 @@ export default function CardPage() {
     try {
       const j = await jget(`/api/intake/card?mask=${nextMask ? 1 : 0}`)
       setCard(j)
+      // 同一份卡再取一次 embed=1 版给弹窗 iframe：默认行为不变，新窗口仍走 card.html。
+      // 旧进程尚未支持 embed 时，CardPreview 会做幂等剥离兜底（不重启服务）。
+      try {
+        const e = await jget(`/api/intake/card?mask=${nextMask ? 1 : 0}&embed=1`)
+        setEmbedHtml(e.html || '')
+      } catch { setEmbedHtml('') }
       pushLog(`资料卡已生成（${nextMask ? '脱敏' : '未脱敏'}）`, 'ok')
     } catch (e) {
       message.error(`生成资料卡失败：${e.message}`)
@@ -277,6 +289,7 @@ export default function CardPage() {
         open={printOpen}
         onClose={() => setPrintOpen(false)}
         card={card}
+        embedHtml={embedHtml}
         loading={cardLoading}
         mask={mask}
         onMaskChange={(v) => { setMask(v); if (card) makeCard(v) }}

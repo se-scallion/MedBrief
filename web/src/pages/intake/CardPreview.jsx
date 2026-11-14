@@ -15,9 +15,12 @@ import { Button, Modal, Space, Spin, Switch, Tag, Typography } from 'antd'
 
 const { Text } = Typography
 
-export default function CardPreview({ open, onClose, card, loading, mask, onMaskChange, iframeRef, onNotify }) {
+export default function CardPreview({ open, onClose, card, embedHtml, loading, mask, onMaskChange, iframeRef, onNotify }) {
   const innerRef = useRef(null)
   const frame = iframeRef || innerRef
+  // 弹窗 iframe 只吃 embed=1 版（无浮动打印条）。服务进程仍是旧模块时会返回带条的 html，
+  // 这里做一次幂等剥离兜底，保证「右下角没有浮动打印条」而不依赖重启。
+  const frameHtml = (embedHtml || card?.html || '').replace(/<div class="printbar">[\s\S]*?<\/div>/g, '')
 
   const print = useCallback(() => {
     const win = frame.current?.contentWindow
@@ -64,9 +67,13 @@ export default function CardPreview({ open, onClose, card, loading, mask, onMask
       }
       styles={{ body: { background: '#525659', padding: 12, borderRadius: 6 } }}
       footer={[
-        <Space key="l" size={8} style={{ float: 'left' }}>
-          <Text style={{ color: '#fff', fontSize: 12 }}>脱敏</Text>
-          <Switch size="small" checked={mask} onChange={onMaskChange} />
+        <Space key="l" size={8} onClick={() => onMaskChange(!mask)}
+          style={{ float: 'left', minHeight: 32, alignItems: 'center', cursor: 'pointer',
+            background: 'rgba(15,23,42,0.88)', padding: '0 10px', borderRadius: 6 }}>
+          <Text style={{ color: '#fff', fontSize: 14, fontWeight: 600, lineHeight: '32px' }}>姓名脱敏</Text>
+          {/* 阻止冒泡：点 Switch 只由 onChange 切换一次，不会被外层 onClick 再翻回去 */}
+          <span onClick={(e) => e.stopPropagation()}><Switch size="small" checked={mask} onChange={onMaskChange} /></span>
+          <Tag color={mask ? 'green' : 'orange'} style={{ marginInlineEnd: 0 }}>{mask ? '已脱敏' : '未脱敏'}</Tag>
         </Space>,
         <Button key="win" onClick={openWindow}>新窗口打开纯净打印页</Button>,
         <Button key="close" onClick={onClose}>关闭</Button>,
@@ -82,7 +89,7 @@ export default function CardPreview({ open, onClose, card, loading, mask, onMask
           <iframe
             ref={frame}
             title="问诊资料卡打印预览"
-            srcDoc={card.html}
+            srcDoc={frameHtml}
             style={{ width: '100%', height: 'calc(100vh - 240px)', minHeight: 420, border: 'none', display: 'block' }}
           />
         </div>

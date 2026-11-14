@@ -6,7 +6,7 @@
 // 区分同一天多份报告（实测 2026-10-16 一天 8 份、其中 4 份都叫「磁共振-头颈」）：
 // 摘要用「类型 · 报告单号 · 报告时间(时分)」，而不是只写类型 —— 单号/时间从报告 OCR 正文里取
 // （实测 55 份中单号可提取 45 份、报告时间 47 份、项目名称 26 份），取不到就写「未识别」。
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Card, Empty, Input, Segmented, Space, Table, Tag, Typography } from 'antd'
 
 const { Text } = Typography
@@ -16,6 +16,14 @@ const KIND_LABEL = { lab: '化验', pathology: '病理/骨穿', imaging: '影像
 export default function TimelineTab({ card, onOpenSource }) {
   const [kind, setKind] = useState('全部')
   const [q, setQ] = useState('')
+  // W13-A3：≤575px 改上下紧凑行块（桌面仍用 Table，见下方分支），media 变化即时切形态。
+  const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 575px)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 575px)')
+    const onChange = (e) => setNarrow(e.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
   const all = card?.timeline || []
 
   const filtered = useMemo(() => {
@@ -69,6 +77,24 @@ export default function TimelineTab({ card, onOpenSource }) {
     },
   ]
 
+  // 窄屏行块：第一行「报告时间 · 类型 · 医院（截断）」，第二行摘要占满整行宽（最多 2 行省略）。
+  // 同日多份的 #序号 保留，整行仍可点开原件；桌面 Table 一行不动。
+  const RowBlock = ({ r, index }) => {
+    const meta = [r.reportTime || r.date || '日期未识别', r.reportType || KIND_LABEL[r.kind] || '其他', r.hospital || '未记录'].join(' · ')
+    const summary = [r.summary, r.reportNo ? `单号 ${r.reportNo}` : '', r.itemName ? r.itemName : ''].filter(Boolean).join(' · ')
+    return (
+      <div className="mb-timeline-row" onClick={() => open(r)} style={{ cursor: 'pointer', padding: '6px 8px', borderBottom: '1px solid #f0f0f0' }}>
+        <div style={{ fontSize: 12, color: '#374151', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <Text strong style={{ marginInlineEnd: 6 }}>#{index + 1}</Text>{meta}
+          {r.hasBlob ? <Tag color="blue" style={{ marginInlineStart: 6 }}>原件 1 份</Tag> : null}
+        </div>
+        <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word' }}>
+          {summary || '（无摘要）'}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
       <Card size="small" title={`全病程原件轴（${all.length} 份）`} extra={
@@ -85,15 +111,17 @@ export default function TimelineTab({ card, onOpenSource }) {
                 {date}
                 <Text type="secondary" style={{ fontSize: 12, fontWeight: 400, marginInlineStart: 8 }}>{list.length} 份</Text>
               </div>
-              <Table
-                className="mb-timeline-table"
-                size="small"
-                rowKey="id"
-                dataSource={list}
-                columns={columns}
-                pagination={false}
-                onRow={(r) => ({ onClick: () => open(r), style: { cursor: 'pointer' } })}
-              />
+              {narrow
+                ? <div className="mb-timeline-blocks">{list.map((r, i) => <RowBlock key={r.id || i} r={r} index={i} />)}</div>
+                : <Table
+                    className="mb-timeline-table"
+                    size="small"
+                    rowKey="id"
+                    dataSource={list}
+                    columns={columns}
+                    pagination={false}
+                    onRow={(r) => ({ onClick: () => open(r), style: { cursor: 'pointer' } })}
+                  />}
             </div>
           ))}
           {!filtered.length && <Empty description="没有匹配的报告" />}

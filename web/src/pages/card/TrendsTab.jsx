@@ -19,12 +19,42 @@ function TrendChart({ series, onOpenSource, height = 150 }) {
   let min = Math.min(...nums)
   let max = Math.max(...nums)
   if (max === min) { max += 1; min -= 1 }
-  const x = (i) => pad.l + (i * (w - pad.l - pad.r)) / (pts.length - 1)
+  // X 轴按**真实日期比例**（W13-A1，与打印版 lib/intakeCard.js svgTrend 同一套规则）：
+  // 隔 9 天必须比隔 1 天宽 9 倍，否则会误导病情变化速度。
+  // 退化路径一律回退等距（有效日期 <2 / 全同一天 / 该点无日期），绝不产生 NaN。
+  const tsOf = (pt) => {
+    const raw = String(pt.measuredAt || '').trim()
+    if (!/^\d{4}-\d{2}-\d{2}/.test(raw)) return null
+    const t = Date.parse(`${raw.slice(0, 10)}T00:00:00Z`)
+    return Number.isFinite(t) ? t : null
+  }
+  const times = pts.map(tsOf)
+  const validTimes = times.filter((t) => t !== null)
+  const t0 = validTimes.length ? Math.min(...validTimes) : null
+  const t1 = validTimes.length ? Math.max(...validTimes) : null
+  const useTime = validTimes.length >= 2 && t1 > t0
+  const plotW = w - pad.l - pad.r
+  const x = (i) => (useTime && times[i] !== null
+    ? pad.l + ((times[i] - t0) / (t1 - t0)) * plotW
+    : pad.l + (i * plotW) / (pts.length - 1))
   const y = (v) => height - pad.b - ((v - min) / (max - min)) * (height - pad.t - pad.b)
   const path = pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(Number(p.num)).toFixed(1)}`).join(' ')
   const ticks = [min, (min + max) / 2, max]
+  // 日期标签两级避让（与打印版同规则）：相邻 <26px 奇偶两行错位、底部加高 8px 防 viewBox 裁切；
+  // 仍 <13px 则抽稀（留首点、末点、每月首个点），点值标签与 hover tooltip 不受影响。
+  const xs = pts.map((_, i) => x(i))
+  let minGap = Infinity
+  for (let i = 1; i < xs.length; i++) minGap = Math.min(minGap, xs[i] - xs[i - 1])
+  const twoRows = xs.length > 1 && minGap < 26
+  const H = height + (twoRows ? 8 : 0)
+  const tooTight = xs.length > 1 && minGap < 13
+  const keepLabel = (i) => {
+    if (i === 0 || i === xs.length - 1) return true
+    if (!tooTight) return true
+    return String(pts[i].measuredAt || '').slice(0, 7) !== String(pts[i - 1].measuredAt || '').slice(0, 7)
+  }
   return (
-    <svg viewBox={`0 0 ${w} ${height}`} width="100%" height={height} style={{ display: 'block' }}>
+    <svg viewBox={`0 0 ${w} ${H}`} width="100%" height={H} style={{ display: 'block' }}>
       {ticks.map((v, i) => (
         <g key={i}>
           <line x1={pad.l} y1={y(v)} x2={w - pad.r} y2={y(v)} stroke="#f0f0f0" strokeWidth="0.8" />
@@ -46,9 +76,9 @@ function TrendChart({ series, onOpenSource, height = 150 }) {
           </g>
         )
       })}
-      {pts.map((p, i) => (
-        <text key={`d${i}`} x={x(i)} y={height - 5} fontSize="9" fill="#9ca3af" textAnchor="middle">{String(p.measuredAt || '').slice(5)}</text>
-      ))}
+      {pts.map((p, i) => (keepLabel(i) ? (
+        <text key={`d${i}`} x={xs[i]} y={twoRows && i % 2 ? H - 10 : H - 2.5} fontSize="9" fill="#9ca3af" textAnchor="middle">{String(p.measuredAt || '').slice(5)}</text>
+      ) : null))}
     </svg>
   )
 }
