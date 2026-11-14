@@ -39,7 +39,7 @@ import { chromium } from 'playwright'
 import { createGuahaoManager } from './lib/guahaoCore.js'
 import { buildMedDataBundle, parseMedDataBundle } from './lib/meddataBundle.js'
 import { blocksToLines } from './lib/visionLayout.mjs'
-import { normalizeRow } from './lib/labClean.mjs'
+import { normalizeRow, looksColumnShifted } from './lib/labClean.mjs'
 import { classifyAnalyte } from './lib/reportIntake.mjs'
 import {
   sha256Bytes, findDuplicate, stitchVertically,
@@ -991,6 +991,24 @@ function getNextReleaseCountdown() {
       if (f === 'kind' && !KIND_ENUM.includes(v)) continue
       if (f === 'reportType' && !v) continue
       push(f, rep[f], v); rep[f] = v
+    }
+    // 护栏④（2026-11-14，沙箱实证后新增）：**左移行不许半写**。
+    //   存储形如 `{value:"9.8-12.1", refRange:"sec"}` 的行，真参考区间只存在于 value 里；
+    //   若只提交 value，读侧还原不再触发 → 参考区间永久丢失，还会被标成 repaired:["unit-range-swap"]
+    //   这种「假修复」。整行回写（name/value/unit/refRange）才是唯一干净出口。
+    if (Array.isArray(body.rows)) {
+      for (const patch of body.rows) {
+        const i = Number(patch?.index)
+        if (!Number.isInteger(i) || !Array.isArray(rep.rows) || i < 0 || i >= rep.rows.length) continue
+        if (patch.value === undefined || patch.refRange !== undefined || patch.unit !== undefined) continue
+        if (!looksColumnShifted(rep.rows[i])) continue
+        return sendJson(res, 400, {
+          ok: false,
+          error: '该行是读侧修复的左移行，必须同时提交 name / unit / refRange —— 只写 value 会把参考区间永久丢掉',
+          field: `rows[${i}]`,
+          hint: '前端请用 web/src/pages/intake/shared.js 的 buildRowPatch() 生成整行载荷',
+        })
+      }
     }
     // 行级白名单：name / value / unit / refRange，按行在数组里的 index 定位（不引 rowId，保持数据形状不变）
     if (Array.isArray(body.rows)) {

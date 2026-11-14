@@ -10,7 +10,7 @@
 
 import assert from 'node:assert/strict'
 import { buildRowPatch } from '../web/src/pages/intake/shared.js'
-import { normalizeRow } from '../lib/labClean.mjs'
+import { normalizeRow, looksColumnShifted } from '../lib/labClean.mjs'
 import { judgeFlag } from '../lib/intakeCard.js'
 
 let pass = 0
@@ -77,6 +77,27 @@ it('空值行不得被补成假值：空字段原样传空串（不写 null / un
   assert.equal(p.value, '')
   assert.equal(p.unit, '')
   assert.equal(p.refRange, '')
+})
+
+it('服务端护栏的判据：只有「value 像区间 + refRange 像单位」才算左移行（宁可漏判不误拦）', () => {
+  assert.equal(looksColumnShifted({ value: '9.8-12.1', refRange: 'sec' }), true, '典型左移行必须识别')
+  assert.equal(looksColumnShifted({ value: '3.5-9.5', refRange: '10^9/L' }), true)
+  // 不得误拦：正常行、单边区间、定性结果、缺字段
+  assert.equal(looksColumnShifted({ value: '12.2', refRange: '9.8-12.1' }), false, '正常行不许拦')
+  assert.equal(looksColumnShifted({ value: '3182.00', refRange: '<125' }), false, '单边区间不是左移')
+  assert.equal(looksColumnShifted({ value: '阴性', refRange: '阴性' }), false)
+  assert.equal(looksColumnShifted({ value: '9.8-12.1' }), false, '缺 refRange 不判左移（保守）')
+  assert.equal(looksColumnShifted({}), false)
+})
+
+it('护栏与四元组回写自洽：四元组载荷不会触发护栏，只提交 value 会', () => {
+  const stored = { name: '凝血酶原时间（P12.2个T）', value: '9.8-12.1', refRange: 'sec' }
+  assert.equal(looksColumnShifted(stored), true, '前提：这行确实是左移行')
+  // 前端 buildRowPatch 生成的载荷：四个字段都在 → 不触发护栏
+  const full = buildRowPatch([normalizeRow(stored)])[0]
+  const wouldTripGuard = (patch) => patch.value !== undefined && patch.refRange === undefined && patch.unit === undefined && looksColumnShifted(stored)
+  assert.equal(wouldTripGuard(full), false, '四元组不该被拦')
+  assert.equal(wouldTripGuard({ index: 0, value: '10.5' }), true, '只给 value 必须被拦')
 })
 
 console.log(`\n${'='.repeat(46)}`)

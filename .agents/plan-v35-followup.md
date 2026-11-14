@@ -99,7 +99,14 @@
   3. 提交：`feat(card): 工作台移动端适配（375px 无横向滚动）`。
 - 禁止：改 `lib/**`、改打印件、破坏 1440px 现有布局（改完必须同时出一张 1440 截图对比）。
 
-### W4 ·【写｜阻塞中】服务端「半写」护栏（暂不派，等 `server.mjs` 干净）
+### W4 ·【已由我完成 2026-11-14】服务端「半写」护栏
+
+- 状态：**已完成**（`server.mjs` 变干净后我立刻做了，未外派 —— 共享文件 + 风险点）。
+- 判据落在 `lib/labClean.mjs:looksColumnShifted()`（`isRange(value) && isUnitLike(refRange)`，宁可漏判不误拦）。
+- 实测：只提交 `value` → `400`（附 `field`/`hint`）；四元组 → `200`；两种调用后真实库 sha256 均未变。
+- 遗留：`ReportsPanel.jsx` 的前端护栏**不归我**（那是代诊-报告的文件）—— 服务端已兜住，工作台已用 `buildRowPatch()`。
+
+### W4-原卡（历史留档）
 
 - `request_id`: `medbrief-w4-patch-guard-1114`（**触发条件：`git status --short server.mjs` 输出为空**）
 - 可写白名单：`server.mjs`（单 hunk）、`tests/verify-rowpatch.mjs`（或新增 `tests/verify-patch-guard.mjs`）
