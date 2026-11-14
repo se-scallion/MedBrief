@@ -14,8 +14,9 @@
 //   **受控排序**：列头只负责显示箭头（`sorter: true` + `sortOrder`），真正的排序在本文件里做，
 //   这样「缺值恒末位」这条才守得住。
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, App as AntApp, Button, Card, Descriptions, Drawer, Empty, Input, Modal, Space, Spin, Table, Tabs, Tag, Tooltip, Typography } from 'antd'
+import { Alert, App as AntApp, Button, Card, Descriptions, Drawer, Empty, Input, Modal, Popconfirm, Segmented, Space, Spin, Table, Tabs, Tag, Tooltip, Typography } from 'antd'
 import { jget, jpost } from '../../api.js'
+import { rawJson } from './shared.js'
 import { KIND_OPTIONS } from './shared.js'
 import { DEFAULT_SORT, sortReports, nextSort } from './reportSort.js'
 
@@ -46,20 +47,59 @@ export default function ReportsPanel() {
   // 「查看」抽屉（2026-11-14）：列表接口为省负载把 text 剥掉了，全文型报告在界面上**任何地方都读不到**。
   // 单份详情走 GET /api/intake/reports/:id —— 全文 + 逐行清洗视图 + 原件 + patchLog 一次给全。
   const [viewing, setViewing] = useState(null) // { id, loading, data, error }
+  // 回收站（2026-11-14 用户新决策：报告要能删，但必须可恢复 —— 见服务端 10s 段）
+  //   tab: active=报告库 / trash=回收站；trashCount 用于顶部入口显示「回收站（N）」
+  const [tab, setTab] = useState('active')
+  const [trashCount, setTrashCount] = useState(0)
+  const [acting, setActing] = useState('') // 正在删除/恢复的那份 id（按钮 loading）
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (which = tab) => {
     setLoading(true)
     try {
-      const j = await jget('/api/intake/reports')
+      const j = await jget(`/api/intake/reports${which === 'trash' ? '?trash=1' : ''}`)
       setReports(j.reports || []) // 排序交给表格（受控），这里不再预排
+      setTrashCount(Number(j.trashCount || 0))
     } catch (e) {
       message.error(`报告清单读取失败：${e.message}`)
     } finally {
       setLoading(false)
     }
-  }, [message])
+  }, [message, tab])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { load(tab) }, [load, tab])
+
+  // 软删除 → 可在回收站恢复；彻底删除只在回收站里提供（服务端也会拒活报告直接 purge）
+  const doDelete = useCallback(async (id) => {
+    setActing(id)
+    try {
+      const { body } = await rawJson(`/api/intake/reports/${encodeURIComponent(id)}`, { method: 'DELETE' })
+      if (!body.ok) throw new Error(body.error || '删除失败')
+      message.success(`已移入回收站（共 ${body.trashCount} 份）—— 可在报告库顶部的「回收站」里恢复`)
+      load(tab)
+    } catch (e) { message.error(e.message) } finally { setActing('') }
+  }, [load, tab, message])
+
+  const doRestore = useCallback(async (id) => {
+    setActing(id)
+    try {
+      const { body } = await jpost(`/api/intake/reports/${encodeURIComponent(id)}/restore`, {})
+      if (!body.ok) throw new Error(body.error || '恢复失败')
+      message.success('已恢复到报告库原位（字段未改动）')
+      load(tab)
+    } catch (e) { message.error(e.message) } finally { setActing('') }
+  }, [load, tab, message])
+
+  const doPurge = useCallback(async (id) => {
+    setActing(id)
+    try {
+      const { body } = await rawJson(`/api/intake/reports/${encodeURIComponent(id)}?purge=1`, { method: 'DELETE' })
+      if (!body.ok) throw new Error(body.error || '彻底删除失败')
+      message.success(body.bytesKept
+        ? '记录已彻底删除；原件字节被其他报告共用，已保留'
+        : '记录与原件字节均已彻底删除')
+      load(tab)
+    } catch (e) { message.error(e.message) } finally { setActing('') }
+  }, [load, tab, message])
 
   const openView = useCallback(async (id) => {
     setViewing({ id, loading: true, data: null, error: '' })
@@ -213,12 +253,48 @@ export default function ReportsPanel() {
     {
       title: '操作',
       key: 'op',
-      width: 96,
+      width: tab === 'trash' ? 210 : 170,   // 回收站多一个「彻底删除」，列宽跟着放宽
       render: (_, r) => (
         <Space size={2}>
           <Button size="small" type="link" style={{ paddingInline: 4 }} onClick={() => openView(r.id)}>查看</Button>
-          <Button size="small" type="link" style={{ paddingInline: 4 }} onClick={() => openEdit(r.id)}>编辑</Button>
-          {r.patchedAt && <Tooltip title={`最近改动 ${r.patchedAt}`}><Tag color="success" style={{ marginInlineStart: 0 }}>已核对</Tag></Tooltip>}
+          {tab === 'active' ? (
+            <>
+              <Button size="small" type="link" style={{ paddingInline: 4 }} onClick={() => openEdit(r.id)}>编辑</Button>
+              <Popconfirm
+                title="删除这份报告？"
+                description="该报告的指标与分类会一并从资料卡移除；删除后可在报告库顶部的『回收站』里恢复。"
+                okText="移入回收站"
+                cancelText="不删"
+                okButtonProps={{ danger: true }}
+                onConfirm={() => doDelete(r.id)}
+              >
+                <Button size="small" type="link" danger loading={acting === r.id} style={{ paddingInline: 4 }}>删除</Button>
+              </Popconfirm>
+            </>
+          ) : (
+            <>
+              <Popconfirm
+                title="恢复到报告库？"
+                description="会回到原位，字段不变（删除时未改动任何字段）。"
+                okText="恢复"
+                cancelText="取消"
+                onConfirm={() => doRestore(r.id)}
+              >
+                <Button size="small" type="link" loading={acting === r.id} style={{ paddingInline: 4 }}>恢复</Button>
+              </Popconfirm>
+              <Popconfirm
+                title="彻底删除？原件字节也会一并删除，不可恢复。"
+                description="只有当没有其他报告共用这份原件时才真的删字节；否则只删记录，字节保留。"
+                okText="彻底删除"
+                cancelText="取消"
+                okButtonProps={{ danger: true }}
+                onConfirm={() => doPurge(r.id)}
+              >
+                <Button size="small" type="link" danger loading={acting === r.id} style={{ paddingInline: 4 }}>彻底删除</Button>
+              </Popconfirm>
+            </>
+          )}
+          {r.patchedAt && tab === 'active' && <Tooltip title={`最近改动 ${r.patchedAt}`}><Tag color="success" style={{ marginInlineStart: 0 }}>已核对</Tag></Tooltip>}
         </Space>
       ),
     },
@@ -235,6 +311,15 @@ export default function ReportsPanel() {
           </Text>
         </Space>
         <Space>
+          <Segmented
+            size="small"
+            value={tab}
+            onChange={(v) => setTab(v)}
+            options={[
+              { label: '报告库', value: 'active' },
+              { label: `回收站${trashCount ? `（${trashCount}）` : ''}`, value: 'trash' },
+            ]}
+          />
           <Input.Search
             allowClear
             size="small"
@@ -263,7 +348,7 @@ export default function ReportsPanel() {
           }}
           pagination={{ pageSize: 20, hideOnSinglePage: true, showSizeChanger: false, showTotal: (t) => `共 ${t} 份` }}
           scroll={{ x: 'max-content' }}
-          locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={kw ? `没有匹配「${kw}」的报告` : '还没有入库的报告，先去「资料录入」上传'} /> }}
+          locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={kw ? `没有匹配「${kw}」的报告` : (tab === 'trash' ? '回收站是空的' : '还没有入库的报告，先去「资料录入」上传')} /> }}
         />
       </Card>
 

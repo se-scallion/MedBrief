@@ -46,7 +46,7 @@ import {
   parseLabRows, buildReportFingerprint, groupForDoctorCard, summarizeForCard, dedupeStitchRows, mergeChunkRows,
 } from './lib/reportIntake.mjs'
 import { loadPatient, savePatient, buildCard } from './lib/intakeCard.js'
-import { saveBlob, saveBlobIfAbsent, getBlob, listBlobs, linkBlobToReport, blobStats } from './lib/blobStore.mjs'
+import { saveBlob, saveBlobIfAbsent, getBlob, listBlobs, linkBlobToReport, deleteBlob, blobStats } from './lib/blobStore.mjs'
 import { planChunks, cropChunks, imageSize, cropToContent } from './lib/imageChunker.mjs'
 import { autoDeskew } from './lib/deskew.mjs'
 import { readPdf, guessReportDate } from './lib/pdfIntake.mjs'
@@ -169,6 +169,18 @@ function serveStatic(req, res, filePath) {
   fs.createReadStream(filePath).pipe(res)
 }
 
+// ---------- 报告库文件位置（模块级常量） ----------
+// 为什么放这里而不是 request handler 里：整站路由都在下面那个 createServer 回调里，
+// 回调里的 const 在 `server.listen` 回调里看不到（会直接 ReferenceError），所以路径常量必须在模块级。
+// 2026-11-14 用户批准：加环境变量兜底，**只有测试进程会设它**（副本库跑删除/恢复，绝不碰真实库）。
+// 默认路径与行为一个字不变；设了变量但文件不存在 → 立刻报错退出，
+// 绝不「找不到就新建空库」（那会把一次路径笔误变成一次静默数据丢失）。
+const REPORTS_FILE = process.env.MEDBRIEF_REPORTS_FILE || path.join(__dirname, 'data', 'reports.json')
+if (process.env.MEDBRIEF_REPORTS_FILE && !fs.existsSync(REPORTS_FILE)) {
+  console.error(`[MedBrief] MEDBRIEF_REPORTS_FILE 指向的文件不存在：${REPORTS_FILE}`)
+  process.exit(1)
+}
+
 const server = http.createServer(async (req, res) => {
   setCors(res)
 
@@ -283,13 +295,22 @@ async function readJsonBody(req) {
 }
 
 // ---------- 报告入库存储（data/reports.json，本机文件，不入 git） ----------
-const REPORTS_FILE = path.join(__dirname, 'data', 'reports.json')
+/**
+ * 读报告库。v2 起多两个库级字段：
+ *   - `trashed[]`：**软删除**的报告（连同原 patchLog 一起搬过来，字段一个不改，可原样恢复）
+ *   - `audit[]`：彻底删除的记录（报告本体已不在了，只剩这条审计，可回查谁删的、删前长什么样）
+ * 旧文件（无这两个字段）照读，默认空数组 —— 不迁移、不改写历史数据。
+ */
 function readReports() {
   try {
     const j = JSON.parse(fs.readFileSync(REPORTS_FILE, 'utf8'))
-    return { reports: Array.isArray(j.reports) ? j.reports : [] }
+    return {
+      reports: Array.isArray(j.reports) ? j.reports : [],
+      trashed: Array.isArray(j.trashed) ? j.trashed : [],
+      audit: Array.isArray(j.audit) ? j.audit : [],
+    }
   } catch {
-    return { reports: [] }
+    return { reports: [], trashed: [], audit: [] }
   }
 }
 
@@ -316,7 +337,12 @@ function attachBlobIds(reports = []) {
 }
 function writeReports(store) {
   fs.mkdirSync(path.dirname(REPORTS_FILE), { recursive: true })
-  fs.writeFileSync(REPORTS_FILE, JSON.stringify({ version: 1, reports: store.reports }, null, 2), 'utf8')
+  // ⚠️ 必须把 trashed / audit 一起写：早先这里只写 {version, reports}，
+  // 软删除的记录会在下一次写入时凭空消失（= 一重启就复活），那是「删了又回来」的经典坑。
+  const out = { version: 2, reports: store.reports }
+  if (Array.isArray(store.trashed)) out.trashed = store.trashed
+  if (Array.isArray(store.audit)) out.audit = store.audit
+  fs.writeFileSync(REPORTS_FILE, JSON.stringify(out, null, 2), 'utf8')
 }
 
 function getNextReleaseCountdown() {
@@ -903,6 +929,9 @@ function getNextReleaseCountdown() {
   //     数据只来自用户导入；不读 MedData 任何库（MedData 只当 OCR 引擎）。
   if (req.method === 'GET' && pathname === '/api/intake/reports') {
     const store = readReports()
+    // ?trash=1 → 只列**回收站**里的（软删除）；默认只列活报告。两边的行形状完全一致（同一套清洗/原件反查），
+    // 回收站里看到的就是「恢复后原样回来」的那一份。
+    const wantTrash = parsedUrl.searchParams.get('trash') === '1'
     // ?normalized=1：返回**清洗后视图**（列左移还原 / 单位↔区间 / 名称别名 / code 补全），
     // 供报告库的编辑表单与控制台核对使用。默认仍是原始行 —— 不动存储，只换读出形态。
     const normalized = parsedUrl.searchParams.get('normalized') === '1'
@@ -915,9 +944,11 @@ function getNextReleaseCountdown() {
     }
     sendJson(res, 200, {
       ok: true,
-      total: store.reports.length,
+      total: (wantTrash ? store.trashed : store.reports).length,
+      trashCount: store.trashed.length,
+      trash: wantTrash,
       normalized,
-      reports: attachBlobIds(store.reports).map((r) => ({
+      reports: attachBlobIds(wantTrash ? store.trashed : store.reports).map((r) => ({
         ...r, rows: shape(r), images: undefined, text: undefined,
         // hasImage 必须是**真判据**：此前写的是 `!!r.sha256`（有指纹就算有图），
         // 而 rep_mwg22hwaloc 正是 sha256 有、字节不在 —— 这个假信号让「能不能回看原件」判不出来。
@@ -964,6 +995,93 @@ function getNextReleaseCountdown() {
       patchLog: rep.patchLog || [],
     })
     return
+  }
+
+  // 10s. 报告软删除 / 恢复 / 彻底删除（2026-11-14 用户新决策：报告要能删，但必须可恢复）
+  //
+  // 口径（Manager 2026-11-14 批准）：
+  //   ① **软删除**：把报告从 `store.reports` 搬进 `store.trashed[]`，字段一个不改、原 patchLog 一起搬
+  //      → 资料卡（/api/intake/card 只读 store.reports）自动不含它，lib/intakeCard.js 一行不用改。
+  //   ② **恢复**：搬回 `store.reports`，位置/字段原样；不改任何业务字段。
+  //   ③ **彻底删除**：**只允许对回收站里的报告**（活报告上来就 400）—— 挡掉「误点一次就永久没了」。
+  //      原件字节只在「没有别的报告引用同一 sha256/blobId」时才删（库内 blob 按 sha256 复用，
+  //      共享字节被删会把另一份报告的原件一起弄没 —— MedData 有过「GC 误删 33 张原图」的先例）。
+  //   ④ **审计**：软删/恢复写进该报告的 patchLog；彻底删除时报告本体已不在，写进库级 `store.audit[]`。
+  if (req.method === 'DELETE' && /^\/api\/intake\/reports\/[^/]+$/.test(pathname)) {
+    const id = decodeURIComponent(pathname.slice('/api/intake/reports/'.length))
+    const purge = parsedUrl.searchParams.get('purge') === '1'
+    const store = readReports()
+    const at = new Date().toISOString()
+    const live = store.reports.find((r) => r.id === id)
+    const dead = store.trashed.find((r) => r.id === id)
+
+    if (!purge) {
+      if (!live) return sendJson(res, 404, { ok: false, error: dead ? `已在回收站里：${id}` : `报告不存在：${id}` })
+      live.patchLog = Array.isArray(live.patchLog) ? live.patchLog : []
+      live.patchLog.push({ at, field: 'deleted', from: 'active', to: 'trashed', reason: '用户手动删除（可恢复）', by: 'manual' })
+      live.deletedAt = at
+      store.reports = store.reports.filter((r) => r.id !== id)
+      store.trashed.push({ ...live, deletedBy: 'manual' })
+      writeReports(store)
+      return sendJson(res, 200, { ok: true, id, action: 'delete', trashCount: store.trashed.length, deletedAt: at })
+    }
+
+    // ── 彻底删除 ──
+    if (live) return sendJson(res, 400, { ok: false, error: '先删除进回收站，再从回收站彻底删除' })
+    if (!dead) return sendJson(res, 404, { ok: false, error: `回收站里没有这份报告：${id}` })
+    // 原件字节：先算「这份报告引用了哪些 blob」，再看是否还有别的报告（活的或回收站里的）引用同一 sha256
+    let blobs = []
+    try { blobs = listBlobs() } catch { blobs = [] }
+    const byId = new Map(blobs.map((b) => [b.id, b]))
+    const refs = new Set((dead.sourceBlobs || []).map((b) => b && b.blobId).filter(Boolean))
+    const linked = blobs.find((b) => b.report_id === id)
+    if (linked) refs.add(linked.id)
+    const others = [...store.reports, ...store.trashed.filter((r) => r.id !== id)]
+    const stillReferenced = (blobId) => {
+      const b = byId.get(blobId)
+      const hex = b ? b.sha256 : ''
+      for (const r of others) {
+        if ((r.sourceBlobs || []).some((x) => x && (x.blobId === blobId || (hex && x.sha256 === hex)))) return true
+        if (hex && String(r.sha256 || '') === hex) return true
+      }
+      return false
+    }
+    const deleted = []
+    const kept = []
+    for (const blobId of refs) {
+      if (stillReferenced(blobId)) { kept.push(blobId); continue }
+      try { deleteBlob(blobId); deleted.push(blobId) } catch (e) { console.error('[purge] deleteBlob 失败', blobId, e.message); kept.push(blobId) }
+    }
+    store.trashed = store.trashed.filter((r) => r.id !== id)
+    store.audit.push({
+      at,
+      action: 'purge',
+      reportId: id,
+      by: 'manual',
+      snapshot: { reportDate: dead.reportDate || '', hospital: dead.hospital || '', reportType: dead.reportType || '', kind: dead.kind || '', barcode: dead.barcode || '', rowCount: (dead.rows || []).length, deletedAt: dead.deletedAt || '' },
+      blobsDeleted: deleted,
+      blurbsKept: kept,
+      bytesKept: kept.length > 0,
+    })
+    writeReports(store)
+    return sendJson(res, 200, { ok: true, id, action: 'purge', bytesKept: kept.length > 0, blobsDeleted: deleted, blobsKept: kept, audit: store.audit[store.audit.length - 1] })
+  }
+
+  if (req.method === 'POST' && /^\/api\/intake\/reports\/[^/]+\/restore$/.test(pathname)) {
+    const id = decodeURIComponent(pathname.slice('/api/intake/reports/'.length, -'/restore'.length))
+    const store = readReports()
+    const dead = store.trashed.find((r) => r.id === id)
+    if (!dead) return sendJson(res, 404, { ok: false, error: store.reports.some((r) => r.id === id) ? `该报告本来就在报告库里：${id}` : `回收站里没有这份报告：${id}` })
+    const at = new Date().toISOString()
+    const back = { ...dead }
+    delete back.deletedAt
+    delete back.deletedBy
+    back.patchLog = Array.isArray(back.patchLog) ? back.patchLog : []
+    back.patchLog.push({ at, field: 'restored', from: 'trashed', to: 'active', reason: '用户手动恢复', by: 'manual' })
+    store.trashed = store.trashed.filter((r) => r.id !== id)
+    store.reports.push(back)
+    writeReports(store)
+    return sendJson(res, 200, { ok: true, id, action: 'restore', total: store.reports.length, trashCount: store.trashed.length })
   }
 
   // 10r. 已入库报告的人工纠错（2026-11-14，用户批准的最小闭环）
@@ -1448,6 +1566,8 @@ function getNextReleaseCountdown() {
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`[MedBrief] 服务已在独立端口 ${PORT} 启动: http://127.0.0.1:${PORT}`)
+  // 一眼看出这次跑的是真库还是副本（测试进程会设 MEDBRIEF_REPORTS_FILE 指向 /tmp 的副本）
+  console.log(`[MedBrief] reportsFile=${REPORTS_FILE}${process.env.MEDBRIEF_REPORTS_FILE ? '（MEDBRIEF_REPORTS_FILE 覆盖，非真实库）' : ''}`)
 })
 
 export default server

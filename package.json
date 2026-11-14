@@ -28,7 +28,8 @@
     "test:codealias": "node tests/verify-codealias.mjs",
     "check:blob": "node tools/check-blob-integrity.mjs",
     "test:reportsort": "node tests/verify-reportsort.mjs",
-    "test:classify": "node tests/verify-classify.mjs"
+    "test:classify": "node tests/verify-classify.mjs",
+    "test:reportdelete": "node tests/verify-report-delete.mjs"
   },
   "keywords": [
     "guahao",
