@@ -12,8 +12,10 @@
 
 ## 微信对象 WeixinJSBridge 与 114 的关系（2026-11-14 实测，ego lite 只读首页）
 
-- **挂号不需要它**：不注入时 `typeof window.WeixinJSBridge === 'undefined'`，首页仍渲染「共 309 家医院」，
-  科室/查号链路正常 → 114 的硬门槛始终是 UA 含 `MicroMessenger` + 真实指纹环境，**不是**微信 bridge。
+- **实测范围（别当全局结论）**：只测了「未登录、只读首页」——不注入时 `typeof window.WeixinJSBridge === 'undefined'`，
+  首页仍渲染「共 309 家医院」、页面无报错。**登录后的查号/选号/下单链路没跑过**，
+  因此只能说「首页不依赖它」，不能说「挂号不需要它」。已有的两条硬门槛（UA 含 `MicroMessenger` + 真实指纹）
+  另有独立证据，与 bridge 无关；bridge 是否为第三条必要条件**仍未验证**。
 - **注入会被页面感知**：桥存在时页面立刻 `invoke("setFontSizeCallback", {fontSize:0})` 并 `on("menu:setfont")`（无害）。
 - **全站唯一业务级 bridge 调用是医保**：`invoke("invokeMiniProgramAPI", {name:"openMedicalInsuranceService",
   arg:{appId,path,envVersion,extraData}})`；另一条降级路径走页面自带 jweixin 1.6.0 的 `wx.miniProgram.navigateTo`

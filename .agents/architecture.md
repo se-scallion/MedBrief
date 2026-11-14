@@ -162,7 +162,8 @@ ego lite 的 Chromium（真实指纹 + 独立 profile）可通过。故 `lib/ego
 2. 渠道用 `pathchannel=jt`（京通，value 16）；用 `dp`（点评）→ 业务层返回 `code 8888`
 
 **微信对象（`WeixinJSBridge`）不是第三条必要条件（2026-11-14 实测）**：
-不注入时 `typeof window.WeixinJSBridge === 'undefined'`，首页照常渲染「共 309 家医院」，查号链路正常。
+不注入时 `typeof window.WeixinJSBridge === 'undefined'`，首页照常渲染「共 309 家医院」（**只测了未登录只读首页**，
+登录后的查号/下单链路未实测，别把这条外推成「挂号不需要它」）。
 驱动层因此把注入做成**显式开关**：`egoRun(script, { wxBridge: true })` 在 `prep()` 里用 CDP
 `Page.addScriptToEvaluateOnNewDocument` 注册 `WX_BRIDGE_SRC`（早于 `page.goto`），默认关闭；
 自检入口 `egoProbeWxBridge({ url })` 回「页面是否看见 bridge / 就绪事件命中几次 / 页面自己调了什么」。

@@ -27,7 +27,11 @@ https://www.114yygh.com/newhlwyl/mobile/appointmentRegisterHome?pathchannel=jt
 
 ### 可选：注入微信对象（只有分析医保链路时才需要）
 
-挂号流程**不需要**注入——缺 `WeixinJSBridge` 也能正常查号。要截「页面想拉起什么」时用：
+首页**不需要**注入也能正常渲染（实测仅覆盖「未登录、只读首页」；登录后查号/下单链路**未实测**）。
+要截「页面想拉起什么」时用：
+
+> ⚠️ **桩的 `invoke` 回调是伪成功**（固定回 `{err_msg:"<api>:ok"}`）。它只用于**观察**页面会调什么，
+> **绝不能用它跑真实挂号/支付**——那会得到「假成功」而不是真实结果。真实链路必须不带 `wxBridge` 跑。
 
 ```js
 const r = await egoProbeWxBridge({ spaceName: "medbrief-wxbridge-probe", url: "<目标页>" })
