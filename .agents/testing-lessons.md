@@ -229,6 +229,10 @@
 - **自审抓到的坑**：页面自带的 `jweixin` 是异步 `<script>`，在 `DOMContentLoaded` 之后才赋值 ——
   只挂 `DOMContentLoaded` 会漏包 `wx.miniProgram`（"包上了"是错觉）。**hook 第三方异步对象要挂三个时机**
   （`DOMContentLoaded` / `load` / `setTimeout 0`），并用 `miniProgram.__wrapped === true` 实测确认。
+- **已知偏离（复核提出，暂不修）**：真微信只派发一次 `WeixinJSBridgeReady`，我们的桩派发两次
+  （文档开始 + `load`）→ 在 `load` 之前挂了监听且**非幂等**的处理器会被执行两遍。
+  只做「观察页面调什么」时无碍；**再触发条件**：一旦要拿注入档做真实交互，
+  改成只在 `DOMContentLoaded` 派发一次（并同步去掉 `load` 那次），再跑一遍 `egoProbeWxBridge` 确认 `readyHits=1`。
 
 ## 2026-11-14 · 断言贴着数据结构，就抓不到「用户看到的是相反的」
 
