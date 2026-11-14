@@ -119,6 +119,29 @@
   文中所有按钮名称必须与页面实际文案一致（自查方式：对照 `web/src/pages/CardPage.jsx` 的按钮文本）。
 - 禁止：改代码、改已有文档。
 
+### W6 ·【写·沙箱】patch 端到端回放沙箱（派：代诊-挂号）
+
+- `request_id`: `medbrief-w6-patch-replay-1114`
+- 路径：`/Users/scallion/Documents/projects/MedBrief`
+- 可写白名单：**新建** `tools/patch-replay.mjs`（+ 如需说明可新建 `.agents/patch-sandbox.md`）
+- 为什么：我在「修正数值」上只验证到「表单能打开、四字段齐全」，**从没在数据上真跑过保存**
+  （真实病历库不能拿来试）。要一个可复现的沙箱，把行为钉死，也是 W4 护栏的回归载体。
+- 做法（**全程不碰真实库**）：
+  1. `git worktree add /tmp/mb-replay HEAD` 建临时工作树；
+  2. 把 `data/reports.json` **复制**到 `/tmp/mb-replay/data/`（只读复制，源文件一字不改）；
+  3. 在 worktree 里起独立端口：`PORT=5199 node server.mjs`；
+  4. 用例 A（**当前风险**）：找一行「三列左移」的存储行
+     （判据：`value` 长得像区间且 `refRange` 是单位，可直接 `import` `lib/labClean.mjs` 的 `isRange`/`isUnitLike` 筛），
+     `POST /api/intake/reports/<id>/patch` **只给 value** → 读回 → 断言「参考区间丢失」；
+  5. 用例 B（**正确用法**）：同一行改用四元组（name/value/unit/refRange）→ 断言参考区间保住、
+     `repaired` 清空、`patchLog` 留有 `{from,to}` 记录；
+  6. 收尾：kill 5199、`git worktree remove --force /tmp/mb-replay`，清理临时目录。
+- 完成标准：`node tools/patch-replay.mjs` 一条命令跑完，输出 A/B 两段 `PASS/FAIL` 与逐字段前后对比；
+  跑完 `git status` 里**不出现** `data/reports.json` 的改动。
+- 禁止：写真实 `data/reports.json`；重启 5174；碰白名单以外的文件；把沙箱脚本挂进 `test:intake` 链
+  （它会起第二个服务，不适合放进常规门禁）。
+- 优先级：**低于 114 线**。114 有活就先做 114，这张卡随时可打断。
+
 ---
 
 ## 3. 验收命令（每张卡通用）
