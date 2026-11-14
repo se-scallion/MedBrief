@@ -161,7 +161,10 @@ it('定性结果不得被当描述句清空：阴性 / 阳性 / 未见 / 褐色�
   const orig = new Map(ALL_ROWS.map((r) => [`${r.name}|${r.measuredAt}`, r]))
   const silently = ALL_ROWS.map(normalizeRow).filter((n) => {
     const o = orig.get(`${n.nameRaw}|${n.measuredAt}`)
-    return o && String(o.value ?? '').trim() && !String(n.value ?? '').trim() && !n.repaired.includes('prose-dropped')
+    // 允许两类「显式标记」的清空：prose-dropped（说明性短语）、note-dropped（解释文本行）。
+    // 仍然禁止的是**静默**清空：清空了却没留任何标记。
+    const marked = n.repaired.includes('prose-dropped') || n.repaired.includes('note-dropped')
+    return o && String(o.value ?? '').trim() && !String(n.value ?? '').trim() && !marked
   })
   assert.deepEqual(silently.map((r) => r.name), [], `有值却被静默清空的行：${silently.map((r) => r.name).join('、')}`)
 })
@@ -200,8 +203,16 @@ it('单位 OCR 归一：fI / f1 / fi → fL；wmol/L → umol/L（血小板平�
   assert.equal(a.refRange, ''); assert.equal(b.refRange, '')
 })
 
-it('参考区间去排版噪声：前导 * / 尾部顿号（`*Rh血型阴性、` → `Rh血型阴性`）', () => {
-  assert.equal(normalizeRow({ name: 'Rh（D）血型鉴定', value: '阳性', refRange: '*Rh血型阴性、' }).refRange, 'Rh血型阴性')
+it('参考区间是注意事项文本 → 置空显示「—」，原值留痕（2026-11-14 用户口径）', () => {
+  // 此前只剥掉 `*` 与顿号，留下 `Rh血型阴性`，与左列的「阳性」并排会被读成自相矛盾；
+  // 用户口径：这是说明不是区间 → 参考列显示「—」，原文本留在 refRangeNote 供回查。
+  const n = normalizeRow({ name: 'Rh（D）血型鉴定', value: '阳性', refRange: '*Rh血型阴性、' })
+  assert.equal(n.refRange, '')
+  assert.equal(n.refRangeNote, 'Rh血型阴性')   // 留痕的是去噪后的说明文本（`*` 与顿号已剥）
+  // 纯定性参考值（阴性 / 阳性 / 正常）是**真参考**，不许一起清掉
+  assert.equal(normalizeRow({ name: '乙肝表面抗原（HBsAg）', value: '阴性', refRange: '阴性' }).refRange, '阴性')
+  // 数值区间照旧保留
+  assert.equal(normalizeRow({ name: '白细胞计数', value: '3.27', refRange: '3.5-9.5' }).refRange, '3.5-9.5')
   assert.equal(normalizeRow({ name: '某项目', value: '1', refRange: '＊1.2-3.4，' }).refRange, '1.2-3.4')
   // 真区间不得被误伤
   assert.equal(normalizeRow({ name: '某项目', value: '1', refRange: '9.8-12.1' }).refRange, '9.8-12.1')

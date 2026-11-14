@@ -531,7 +531,9 @@ it('体量上限：105 行 / 35 项 + 3 页版式时 <tr> ≤ 90、HTML ≤ 40 K
   const tr = trCount(card.html)
   const bytes = Buffer.byteLength(card.html)
   assert.ok(tr <= 90, `<tr> 已 ${tr} 行（上限 90）`)
-  assert.ok(bytes <= 40 * 1024, `HTML 已 ${(bytes / 1024).toFixed(1)} KB（上限 40 KB）`)
+  // 2026-11-14 预算从 40 KB 调到 44 KB：趋势图加了 Y 轴刻度 + 每个点的数值标注（用户要求「图要能读数」），
+  // 8 张图合计约 +2 KB。上限仍守住「不许滚雪球」的原意（实测 41.8 KB）。
+  assert.ok(bytes <= 44 * 1024, `HTML 已 ${(bytes / 1024).toFixed(1)} KB（上限 44 KB）`)
   console.log(`      实测：<tr> ${tr} 行 / ${(bytes / 1024).toFixed(1)} KB / counts=${JSON.stringify(card.counts)}`)
 })
 
@@ -702,6 +704,114 @@ it('趋势格只留折线：不得再出现底部文字点位行（那是图的�
   const card = buildCard({ reports: makeTrendReports(), mask: true, today: TODAY })
   assert.ok(card.trendRows.length > 0, '夹具应能画出至少一条趋势')
   assert.ok(!/class="tpts"/.test(card.html), '卡片里不应再有 .tpts 文字点位行')
+})
+
+// ---------- 12. 2026-11-14 19:20 版：趋势可读数 / 初诊≠MRD / 已见补流式 / 感染筛查折叠 ----------
+it('趋势图必须能读数：有 Y 轴刻度 + 每个点标数值，且数值顺序与 X 轴一致（左旧右新）', () => {
+  const card = buildCard({ reports: makeTrendReports(), mask: true, today: TODAY })
+  const svgs = [...card.html.matchAll(/<svg[\s\S]*?<\/svg>/g)].map((m) => m[0])
+  assert.ok(svgs.length > 0, '应有趋势图')
+  for (const [i, svg] of svgs.entries()) {
+    const ticks = [...svg.matchAll(/text-anchor="end">([^<]*)</g)].map((m) => m[1])
+    assert.ok(ticks.length >= 2, `第 ${i + 1} 张趋势图没有 Y 轴刻度（用户无法读数）`)
+    const vals = [...svg.matchAll(/font-weight="600"[^>]*>([^<]*)</g)].map((m) => m[1])
+    const dates = [...svg.matchAll(/font-size="7\.2"[^>]*>([^<]*)</g)].map((m) => m[1])
+    assert.equal(vals.length, dates.length, `第 ${i + 1} 张图：数值标注数 != 日期数`)
+    assert.ok(vals.length >= 2, `第 ${i + 1} 张图应标出每个点的数值`)
+  }
+  // 逐图核对：SVG 里日期的出现顺序必须等于 points 的顺序（左旧右新），不许图上图下相反
+  const first = card.trendRows[0]
+  const svg0 = svgs[0]
+  const domDates = [...svg0.matchAll(/font-size="7\.2"[^>]*>([^<]*)</g)].map((m) => m[1])
+  const wantDates = first.points.map((p) => String(p.measuredAt || '').slice(5))
+  assert.deepEqual(domDates, wantDates, `日期顺序与数据不一致：图 ${domDates.join('→')} / 数据 ${wantDates.join('→')}`)
+  const domVals = [...svg0.matchAll(/font-weight="600"[^>]*>([^<]*)</g)].map((m) => m[1])
+  assert.deepEqual(domVals, first.points.map((p) => String(p.value)), '数值标注必须与数据点一一对应（左旧右新）')
+})
+
+it('初诊流式的「异常细胞占有核细胞比例」不得写成 MRD；只有更晚的复查才标 MRD', () => {
+  const base = {
+    id: 'flow1', reportDate: '2026-07-15', kind: 'pathology', reportType: '流式免疫分型',
+    rows: [{ name: '异常细胞占有核细胞比例', value: '85.76', unit: '%', measuredAt: '2026-07-15', code: 'FCM_MRD_PCT' }],
+  }
+  const c1 = buildCard({ reports: [base], today: TODAY })
+  const t1 = c1.safetyBaseline.geneTags.find((g) => /异常细胞/.test(g.name))
+  assert.ok(t1, '初诊流式必须进第 1 页标签区')
+  assert.equal(t1.label, '初诊异常细胞', `初诊流式不得简写成 MRD，实际「${t1.label}」`)
+  assert.equal(t1.unit, '%')
+  assert.ok(/初诊异常细胞<\/b>\s*85\.76%/.test(c1.html), '卡面必须写「初诊异常细胞 85.76%」（带百分号）')
+  assert.ok(!/<b>MRD<\/b>\s*85\.76/.test(c1.html), '卡面不得出现「MRD 85.76」')
+
+  const follow = {
+    ...base, id: 'flow2', reportDate: '2026-09-20',
+    rows: [{ name: '异常细胞占有核细胞比例', value: '0.02', unit: '%', measuredAt: '2026-09-20', code: 'FCM_MRD_PCT' }],
+  }
+  const c2 = buildCard({ reports: [base, follow], today: TODAY })
+  const tags = c2.safetyBaseline.geneTags.filter((g) => /异常细胞/.test(g.name)).sort((a, b) => String(a.date).localeCompare(String(b.date)))
+  assert.equal(tags.length, 2, '两次流式应各占一个标签')
+  assert.equal(tags[0].label, '初诊异常细胞', '最早那次仍是初诊基线')
+  assert.equal(tags[1].label, 'MRD', '更晚那次才算 MRD 复查')
+})
+
+it('「已见」必须写「流式分型」：分型有、MRD 过期时不许让人以为流式没做过', () => {
+  const reports = [{
+    id: 'flow1', reportDate: '2026-07-15', kind: 'pathology', reportType: '流式免疫分型',
+    text: '流式细胞术 免疫分型',
+    rows: [{ name: '异常细胞占有核细胞比例', value: '85.76', unit: '%', measuredAt: '2026-07-15' }],
+  }]
+  const card = buildCard({ reports, today: TODAY })
+  assert.ok(/白血病核心项：已见/.test(card.html), '必须有体检声明行')
+  assert.ok(/流式分型/.test(card.html), '「已见」里必须出现「流式分型」')
+  assert.ok(/待补[^；]*MRD/.test(card.html), '待补里要写「MRD 复查」——缺的是复查不是分型')
+})
+
+it('其他感染筛查：血型四联并成 1 行、传染病四项单列、常规阴性项折叠且项数守恒', () => {
+  const mk = (name, value) => ({ name, value, measuredAt: '2026-07-17' })
+  const rows = [
+    mk('ABO血型鉴定', 'B型'), mk('ABO血型正定型', 'B型'), mk('ABO血型反定型', 'B型'), mk('ABO血型酶法鉴定', 'B型'),
+    mk('Rh（D）血型鉴定', '阳性'),
+    mk('乙肝表面抗原（HBsAg）', '阴性'), mk('丙型肝炎抗体（Anti-HCV）', '阴性'),
+    mk('艾滋病病毒抗体（Anti-HIV）', '阴性'), mk('梅毒螺旋体特异性抗体测定（Anti-TP）', '阴性'),
+    mk('肺炎支原体核酸检测', '阴性'), mk('呼吸道合胞病毒', '阴性'), mk('甲型流感病毒PCR', '阴性'),
+    mk('甲型肝炎抗体lgM（A-HAV-IgM）', '阴性'), mk('戊型肝炎抗体lgG（A-HEV-IgG）', '阴性'),
+  ]
+  const card = buildCard({ reports: [{ id: 'm1', reportDate: '2026-07-17', kind: 'lab', reportType: 'ABO+RhD 血型', rows }], today: TODAY })
+  const seg = block(card.html, '其他感染筛查', '<div class="page3">')
+  assert.ok(seg, '第 2 页必须有「其他感染筛查」组')
+  const names = [...seg.matchAll(/<td class="nm">([^<]*)</g)].map((m) => m[1].replace(/<[^>]*>/g, ''))
+  // ① 血型：ABO 四种做法合成 1 行 + Rh 1 行
+  assert.equal(names.filter((n) => /ABO血型/.test(n)).length, 1, `ABO 必须合并成 1 行，实际 ${names.filter((n) => /ABO/.test(n)).length} 行`)
+  assert.equal(names.filter((n) => /^Rh/.test(n)).length, 1, 'Rh 单列 1 行')
+  assert.ok(/8 项合成|4 项合成/.test(seg) || /B型/.test(seg), '合并行必须能看出结果 B型')
+  // ② 传染病四项永远单列（术前/输血前必查）
+  for (const k of ['HBsAg', 'Anti-HCV', 'Anti-HIV', 'Anti-TP']) {
+    assert.ok(names.some((n) => n.includes(k)), `${k} 必须单列，不得进「均阴性」汇总`)
+  }
+  // ③ 常规阴性项折成汇总行，且写清「N项（日期）：均阴性」
+  assert.ok(names.some((n) => /呼吸道病原筛查/.test(n)), '呼吸道病原 3 项应折成 1 行')
+  assert.ok(/3项（07-17）：均阴性/.test(seg), '汇总行必须写「N项（日期）：均阴性」')
+  assert.ok(names.some((n) => /甲\/戊肝抗体/.test(n)), '甲/戊肝 2 项应折成 1 行')
+  // ④ 项数守恒：折叠前后总数相等（不丢信息）
+  // 项数守恒：每行代表多少项 —— 汇总行看「N项」，ABO 合并行代表 4 项（正定型/反定型/鉴定/酶法鉴定），其余 1 项
+  const covered = [...seg.matchAll(/<td class="nm">([^<]*)[\s\S]{0,220}?(\d+)项（/g)]
+  const sumByRow = new Map(covered.map((m) => [m[1].replace(/<[^>]*>/g, ''), Number(m[2])]))
+  const accounted = names.reduce((a, n) => {
+    if (/^ABO血型/.test(n)) return a + 4                 // 四种做法合成 1 行
+    if (sumByRow.has(n)) return a + sumByRow.get(n)      // 折叠汇总行
+    return a + 1
+  }, 0)
+  assert.equal(accounted, rows.length, `折叠前后项数必须守恒：合计 ${accounted} != 原始 ${rows.length}（明细 ${names.join('/')}）`)
+})
+
+it('阳性结果不得被折进「均阴性」汇总：组内只要有一个不是阴性就整组逐项列出', () => {
+  const mk = (name, value) => ({ name, value, measuredAt: '2026-07-17' })
+  const rows = [
+    mk('肺炎支原体核酸检测', '阴性'), mk('甲型流感病毒PCR', '阳性'), mk('呼吸道合胞病毒', '阴性'),
+  ]
+  const card = buildCard({ reports: [{ id: 'm2', reportDate: '2026-07-17', kind: 'lab', reportType: '呼吸道病原', rows }], today: TODAY })
+  const seg = block(card.html, '其他感染筛查', '<div class="page3">')
+  assert.ok(/甲型流感病毒PCR/.test(seg), '阳性项必须逐项列出（不能被汇总吞掉）')
+  assert.ok(!/呼吸道病原筛查/.test(seg), '组内有阳性 → 不许折叠成「均阴性」')
 })
 
 console.log('\n' + '='.repeat(46))
