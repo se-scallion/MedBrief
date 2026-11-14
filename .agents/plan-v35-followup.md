@@ -276,6 +276,56 @@
 
 ---
 
+## 2.9 事故记录：暂存区共享导致的「提交合并」（2026-11-14 23:16）
+
+**现象**：`fe770cb fix(docs): 资料卡使用说明订正按钮位置与数量` 里实际含 **22 个文件 / 2157 行**，
+其中 21 个是报告导入线的代码/工具/夹具，只有 1 个是提交信息所说的文档。
+
+**时间线（秒级）**：
+```
+23:16:08  5874ee3  docs(import): 报告导入七阶段工作流 + 字段字典   ← 代诊-报告 的第 ① 条（4 份 docs）
+23:16:14  fe770cb  fix(docs): 资料卡使用说明订正按钮位置与数量      ← 我提交的，卷走了对方已 add 的 21 文件
+```
+
+**根因（是我，不是对方）**：多会话共用一个 index。对方 `git add` 25 个文件、提交 ① 后，**剩余 21 个仍留在暂存区**；
+我随后执行 `git add -- docs/资料卡使用说明.md && git commit -m ...`，**`git commit` 不带 pathspec 时会提交整个 index**，
+于是那 21 个文件被一起写进我这条「订正说明书」的提交。
+
+**内容完整性**：无丢失、无覆盖。25 份内容逐字都在 HEAD（4 份 docs 在 `5874ee3`，21 份在 `fe770cb`），工作树干净。
+**真正的损害是记录**：原定 ②③ 的语义拆分与门禁证据没有承载者。
+
+**处理**：不改写历史（本仓无 remote 也不改写，避免二次撞车），改为在本节留下原定提交信息与门禁证据（见下）。
+
+**两条判据（写死）**：
+1. **add 与 commit 必须连续**：同一条命令串里 `git add -- <文件…> && git commit -m …`，绝不跨会话把东西留在暂存区；
+   只提交单个文件时用 `git commit -m … -- <路径>`（带 pathspec），不要裸 `git commit`。
+2. **commit 前先 `git diff --cached --name-only`**：看一眼「这些是不是我要的」，多出来的当场就露。
+
+**原定 ② 的提交信息（chore/scaffold）**：
+```
+chore(scaffold): 忽略真实库与构建产物；补回 build:web 依赖的 CSS 构建脚本
+- .gitignore +9：web/dist-meddata/、meddata/.vite/、data/meddata-mirror/、data/medbrief.db(-journal)、
+  data/reports.json.bak-*、data/tmp/inbox/manifest.json —— 不忽略会把 36 MB 真实库扫进 git
+- 补 web/scripts/build-meddata-css.mjs：package.json:13 的 build:web 第一段就是它，缺它新克隆 build 直接失败
+```
+
+**原定 ③ 的提交信息（feat/import）**：
+```
+feat(import): 尿三项别名 + MCP 报告纠错工具 + 导入 CLI/版式适配器 + 门禁
+- lib/reportIntake.mjs：补尿三项别名（尿潜血/BLD、尿红细胞/U-RBC、尿白细胞/U-LEU）—— 这三项永远 P0，漏映射会折叠进 P1
+- mcp/intake-server.mjs：新增 intake_update_report（走 /api/intake/reports/:id/patch，落 patchLog，无删除能力）
+- INTERFACE.md：通道 1.5 报告导入字段口径 + MedData 页面独立挂载说明
+- tools/：import-inbox / import-report / ocr-table-rows / repair-import / workflow-screenshots / pdf-extract.py / dhash.py
+  + report-adapters/（5 个版式适配器）；写库一律 --apply 门控，无硬编码绝对路径
+- tests/：verify-import-report（24 断言，含「dry-run 不动 data/reports.json」）、verify-import-workflow（6 断言）
+- fixtures：flow-immunophenotype-page1.txt / lab-panel-simple.txt（已脱敏：张某 / 某军区总医院 / V00000000000 / 床号 0）
+
+门禁实测：import-report 24/0 · import-workflow 6/6 · intake 23/0 · live 8/0；
+data/reports.json sha256 f34de483… 前后一致（mtime/size 不变），medbrief.db 未被写。
+```
+
+---
+
 ## 3. 验收命令（每张卡通用）
 
 ```bash
