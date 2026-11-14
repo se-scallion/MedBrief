@@ -36,9 +36,6 @@ function MiniTrend({ points = [], height = 96 }) {
   return (
     <svg viewBox={`0 0 ${w} ${height}`} width="100%" height={height} style={{ display: 'block' }}>
       <line x1={pad.l} y1={height - pad.b} x2={w - pad.r} y2={height - pad.b} stroke="#d1d5db" strokeWidth="0.8" />
-      {[min, (min + max) / 2, max].map((v, i) => (
-        <text key={i} x={pad.l - 4} y={y(v) + 3} fontSize="9" fill="#9ca3af" textAnchor="end">{Number(v.toFixed(2))}</text>
-      ))}
       <path d={path} fill="none" stroke="#2563eb" strokeWidth="1.5" />
       {vals.map((p, i) => (
         <circle key={i} cx={x(i)} cy={y(Number(p.num))} r="2.8"

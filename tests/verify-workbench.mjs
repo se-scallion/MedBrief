@@ -179,6 +179,32 @@ it('打印 HTML 不得被交互化污染：无 <script>、无交互控件（mate
   assert.ok(/\.page1/.test(html) && /\.page2/.test(html) && /\.page3/.test(html))
 })
 
+// ---------- 7. 趋势图 Y 轴刻度不得再渲染成文字 ----------
+// 2026-11-14：Y 轴刻度文字与数据点值标签会把最大/最小值在同一张图里写两遍（视觉噪音）。
+// 判据看源码文本：ticks（或 [min, 中, max]）渲染块里只许有 <line> 网格线，不许有 <text>。
+it('趋势图 Y 轴只保留网格线：刻度渲染块里不得再出现 <text> 文字', () => {
+  const readSrc = (p) => fs.readFileSync(new URL(p, import.meta.url), 'utf8')
+  // 被删掉的那一行的特征：Y 轴 <text> 里写 Number(v.toFixed(2))
+  const axisText = /<text[^>]*>\s*\{Number\(v\.toFixed\(2\)\)\}\s*<\/text>/
+  // 「同一处渲染」判据：刻度数组的 .map(...) 块整体（TrendsTab 的 ticks / MiniTrend 的 [min,中,max]）
+  const tickRenders = (src) => [...src.matchAll(/\{(?:ticks|\[min[^\]]*\])\.map\([\s\S]*?\)\)\}/g)]
+
+  const main = readSrc('../web/src/pages/card/TrendsTab.jsx')
+  assert.ok(!axisText.test(main), 'TrendsTab.jsx 又把 Y 轴刻度写成了 <text> 文字')
+  const mainBlocks = tickRenders(main)
+  assert.ok(mainBlocks.length >= 1, 'TrendsTab.jsx 里找不到 ticks.map 网格线渲染块（断言会空过）')
+  for (const b of mainBlocks) {
+    assert.ok(/<line\b/.test(b[0]), 'Y 轴网格线 <line> 不能丢（须仍是 min/中/max 三条）')
+    assert.ok(!/<text\b/i.test(b[0]), 'ticks 渲染块里出现了 <text>：Y 轴刻度又被写成文字了')
+  }
+
+  const mini = readSrc('../web/src/pages/card/SourceModal.jsx')
+  assert.ok(!axisText.test(mini), 'SourceModal.jsx 的 MiniTrend 又把 Y 轴刻度写成了 <text> 文字')
+  for (const b of tickRenders(mini)) {
+    assert.ok(!/<text\b/i.test(b[0]), 'MiniTrend 的刻度渲染块里出现了 <text>')
+  }
+})
+
 console.log(`\n${'='.repeat(46)}`)
 console.log(`交互工作台数据契约：${pass} 通过 / ${fails.length} 失败`)
 if (fails.length) { console.log(`失败：${fails.join('、')}`); process.exit(1) }

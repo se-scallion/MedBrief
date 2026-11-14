@@ -28,7 +28,6 @@ function TrendChart({ series, onOpenSource, height = 150 }) {
       {ticks.map((v, i) => (
         <g key={i}>
           <line x1={pad.l} y1={y(v)} x2={w - pad.r} y2={y(v)} stroke="#f0f0f0" strokeWidth="0.8" />
-          <text x={pad.l - 5} y={y(v) + 3} fontSize="9.5" fill="#9ca3af" textAnchor="end">{Number(v.toFixed(2))}</text>
         </g>
       ))}
       <path d={path} fill="none" stroke="#2563eb" strokeWidth="1.6" />
