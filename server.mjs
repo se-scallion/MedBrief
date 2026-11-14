@@ -1183,8 +1183,11 @@ function getNextReleaseCountdown() {
     try {
       // 2026-11-13 用户口径：默认不脱敏（给医生看），显式 mask=1 才脱敏
       const mask = parsedUrl.searchParams.get('mask') === '1'
+      // embed=1：给「打印预览弹窗」里的 iframe 用 —— 不输出浮动打印条（避免与弹窗底部按钮重复、压住表格）。
+      // 默认不带，纯净页/新窗口打开仍是完整可打印版本。
+      const embed = parsedUrl.searchParams.get('embed') === '1'
       const { reports } = readReports()
-      const card = buildCard({ reports: attachBlobIds(reports), mask })
+      const card = buildCard({ reports: attachBlobIds(reports), mask, embed })
       sendJson(res, 200, card) // { ok, masked, patient, counts, summary, groups, html }
     } catch (e) {
       sendJson(res, 500, { ok: false, error: `生成资料卡失败：${e.message}` })

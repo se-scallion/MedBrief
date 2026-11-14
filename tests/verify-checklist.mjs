@@ -131,6 +131,32 @@ it('真实快照：MICM 至少检出融合基因 / 染色体核型，骨髓形�
   assert.ok(c.cardLine.length <= 90, `卡面那行小字必须能放进 1 行（限制 90 字），实际 ${c.cardLine.length} 字`)
 })
 
+// 中枢神经系统（CNS）资料核对提示（2026-11-14 用户口径）
+// 触发三条任一；已见腰穿/脑脊液报告则**不再提示**；且绝不能进 missing（它不是"缺项"，是提醒）。
+it('CNS 提示：Ph+ / 高 WBC / 头颅影像任一触发，已见腰穿则不再提示', () => {
+  const base = [{ id: 'r1', reportDate: '2026-11-01', kind: 'lab', reportType: '血常规', rows: [{ code: 'WBC', name: '白细胞计数', value: '3.2', num: 3.2 }], text: '' }]
+  // ① 都不满足 → 无提示
+  const none = buildChecklist(base, new Date('2026-11-14'))
+  assert.equal(none.hints.length, 0, `不该提示，实际 ${JSON.stringify(none.hints)}`)
+  // ② 高 WBC 触发
+  const high = buildChecklist([{ ...base[0], rows: [{ code: 'WBC', name: '白细胞计数', value: '79.67', num: 79.67 }] }], new Date('2026-11-14'))
+  assert.equal(high.hints.length, 1, 'WBC 79.67 ≥50 应触发 CNS 提示')
+  // ③ Ph+ 触发
+  const ph = buildChecklist([{ ...base[0], kind: 'pathology', reportType: '融合基因', rows: [{ code: 'BCR_ABL1', name: 'BCR::ABL1', value: '阳性', num: null, status: 'positive' }], text: '' }], new Date('2026-11-14'))
+  assert.equal(ph.hints.length, 1, 'BCR-ABL1 阳性应触发 CNS 提示')
+  // ④ 头颅影像触发
+  const img = buildChecklist([{ ...base[0], kind: 'imaging', reportType: '磁共振-头颈', text: '脑实质未见明显异常' }], new Date('2026-11-14'))
+  assert.equal(img.hints.length, 1, '头颅影像应触发 CNS 提示')
+  // ⑤ 已见腰穿/脑脊液 → 抑制提示
+  const withCsf = buildChecklist([
+    { ...base[0], kind: 'pathology', reportType: '融合基因', rows: [{ code: 'BCR_ABL1', value: '阳性', status: 'positive' }], text: '' },
+    { id: 'r9', reportDate: '2026-11-10', kind: 'pathology', reportType: '脑脊液检查', text: '脑脊液常规：未见异常' },
+  ], new Date('2026-11-14'))
+  assert.equal(withCsf.hints.length, 0, '已检测到腰穿/脑脊液报告就不该再提示')
+  // ⑥ 提示不许进 missing（否则会拉低体检完成度）
+  assert.ok(!high.missing.some((m) => /中枢|腰穿|脑脊液/.test(m)), 'CNS 提示不得进 missing 列表')
+})
+
 console.log(`\n${'='.repeat(46)}`)
 console.log(`白血病核心资料体检：${pass} 通过 / ${fails.length} 失败`)
 if (fails.length) { console.log(`失败：${fails.join('、')}`); process.exit(1) }

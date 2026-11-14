@@ -12,7 +12,7 @@
 
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { buildCard, DEFAULT_PATIENT, parseRefRange, judgeFlag } from '../lib/intakeCard.js'
+import { buildCard, DEFAULT_PATIENT, parseRefRange, judgeFlag, svgTrend } from '../lib/intakeCard.js'
 import { blocksToLines } from '../lib/visionLayout.mjs'
 import { parseLabRows, detectCbcCode, normalizeUnit, splitTwoColumnLine } from '../lib/reportIntake.mjs'
 
@@ -900,6 +900,47 @@ it('阳性结果不得被折进「均阴性」汇总：组内只要有一个不�
   const seg = block(card.html, '其他感染筛查', '<div class="page3">')
   assert.ok(/甲型流感病毒PCR/.test(seg), '阳性项必须逐项列出（不能被汇总吞掉）')
   assert.ok(!/呼吸道病原筛查/.test(seg), '组内有阳性 → 不许折叠成「均阴性」')
+})
+
+// X 轴必须按真实日期比例（2026-11-14 用户口径）：隔 9 天必须比隔 1 天宽 9 倍。
+// 反例：按数组序号等距时，07-17→07-18（1 天）与 07-18→07-27（9 天）画成一样宽，会误导病情变化速度。
+it('趋势图 X 轴按真实日期比例（3/1/9 天 → 3:1:9），退化路径不产生 NaN', () => {
+    const pts = [
+      { measuredAt: '2026-07-14', value: '59.16', num: 59.16, unit: '10^9/L', flag: 'high' },
+      { measuredAt: '2026-07-17', value: '79.67', num: 79.67, unit: '10^9/L', flag: 'high' },
+      { measuredAt: '2026-07-18', value: '71.90', num: 71.90, unit: '10^9/L', flag: 'high' },
+      { measuredAt: '2026-07-27', value: '3.27', num: 3.27, unit: '10^9/L', flag: 'low' },
+    ]
+    const svg = svgTrend(pts, { low: 3.5, high: 9.5 })
+    const cx = [...svg.matchAll(/<circle cx="([\d.]+)"/g)].map((m) => Number(m[1]))
+    assert.equal(cx.length, 4, `应有 4 个数据点圆，实际 ${cx.length}`)
+    const g = [cx[1] - cx[0], cx[2] - cx[1], cx[3] - cx[2]]
+    const ratio = (a, b) => a / b
+    assert.ok(Math.abs(ratio(g[0], g[1]) - 3) < 0.35, `07-14→07-17（3 天）应是 07-17→07-18（1 天）的 ~3 倍，实测 ${g[0].toFixed(1)} / ${g[1].toFixed(1)}`)
+    assert.ok(Math.abs(ratio(g[2], g[1]) - 9) < 1.0, `07-18→07-27（9 天）应是 1 天的 ~9 倍，实测 ${g[2].toFixed(1)} / ${g[1].toFixed(1)}`)
+    // 退化路径：全部同一天 → 等距，不许 NaN
+    const same = svgTrend([{ measuredAt: '2026-07-14', value: '1', num: 1 }, { measuredAt: '2026-07-14', value: '2', num: 2 }])
+    assert.ok(!/NaN/.test(same), '全同一天时 SVG 不许出现 NaN')
+    // 无日期 → 等距回退
+    const nodate = svgTrend([{ measuredAt: '', value: '1', num: 1 }, { measuredAt: '', value: '3', num: 3 }])
+    assert.ok(!/NaN/.test(nodate), '无日期时 SVG 不许出现 NaN')
+    // 隔 1 天贴很近时，日期标签必须两行错位或抽稀（不许叠成一坨）
+    const tight = svgTrend([
+      { measuredAt: '2026-07-17', value: '1', num: 1 },
+      { measuredAt: '2026-07-18', value: '2', num: 2 },
+      { measuredAt: '2026-08-31', value: '3', num: 3 },
+    ])
+    const labelYs = [...tight.matchAll(/<text x="[\d.]+" y="([\d.]+)" font-size="7\.2"/g)].map((m) => Number(m[1]))
+    assert.ok(labelYs.length >= 2, `日期标签至少两个，实际 ${labelYs.length}`)
+    assert.ok(new Set(labelYs.map((y) => y.toFixed(1))).size >= 2 || labelYs.length === 2, `贴很紧时日期标签应错位两行或抽稀，实测 y=${JSON.stringify(labelYs)}`)
+})
+
+// 打印预览弹窗内的 HTML 必须没有浮动打印条（2026-11-14 用户反馈：它压在表格上、与弹窗底部按钮重复）
+it('embed=1 的打印 HTML 不含浮动打印条；默认输出仍保留（不许修一个坏一个）', () => {
+  const plain = buildCard({ reports: [], embed: false })
+  const embed = buildCard({ reports: [], embed: true })
+  assert.ok(plain.html.includes('<div class="printbar">'), '默认 HTML 应保留浮动「打印 / 存 PDF」按钮')
+  assert.ok(!embed.html.includes('<div class="printbar">'), 'embed=1 的 HTML 不许包含浮动打印条')
 })
 
 console.log('\n' + '='.repeat(46))
