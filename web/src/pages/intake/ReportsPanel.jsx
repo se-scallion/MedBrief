@@ -14,7 +14,7 @@
 //   **受控排序**：列头只负责显示箭头（`sorter: true` + `sortOrder`），真正的排序在本文件里做，
 //   这样「缺值恒末位」这条才守得住。
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, App as AntApp, Button, Card, Descriptions, Drawer, Empty, Input, Modal, Popconfirm, Segmented, Space, Spin, Table, Tabs, Tag, Tooltip, Typography } from 'antd'
+import { Alert, App as AntApp, Button, Card, Descriptions, Drawer, Empty, Grid, Input, Modal, Popconfirm, Segmented, Space, Spin, Table, Tabs, Tag, Tooltip, Typography } from 'antd'
 import { jget, jpost } from '../../api.js'
 import { rawJson } from './shared.js'
 import { KIND_OPTIONS } from './shared.js'
@@ -52,6 +52,12 @@ export default function ReportsPanel() {
   const [tab, setTab] = useState('active')
   const [trashCount, setTrashCount] = useState(0)
   const [acting, setActing] = useState('') // 正在删除/恢复的那份 id（按钮 loading）
+  // 窄屏（<576px，antd xs）适配：2026-11-14 W12 回归 —— 加了「回收站」切换条与「删除」按钮后，
+  // 375 视口下 documentElement.scrollWidth 从 415 涨到 432（手机端验收线是「改后 ≤ 改前」）。
+  // 做法：xs 下只留「日期/医院/指标/操作」四列，其余列交给详情抽屉；表格不设 min-width；
+  //       操作列竖排、按钮文案压到最短。
+  const screens = Grid.useBreakpoint()
+  const isXs = !screens.sm
 
   const load = useCallback(async (which = tab) => {
     setLoading(true)
@@ -171,13 +177,14 @@ export default function ReportsPanel() {
     {
       title: '日期',
       key: 'date',
-      width: 150,
+      width: isXs ? 92 : 150,
       ...sortable('date'),
+      ellipsis: isXs,
       render: (_, r) => (r.reportDate
-        ? <Text>{r.reportDate}</Text>
+        ? <Text>{isXs ? r.reportDate.slice(5) : r.reportDate}</Text>
         : (
-          <Tooltip title="报告日期未识别：按**入库时间**参与排序，不会写进 reportDate（那是临床事实）">
-            <Text type="secondary" style={{ fontSize: 12 }}>未提供 · 入库 {fmtWhen(r.createdAt)}</Text>
+          <Tooltip title={`报告日期未识别（入库 ${fmtWhen(r.createdAt)}）：按入库时间参与排序，不会写进 reportDate`}>
+            <Text type="secondary" style={{ fontSize: 12 }}>{isXs ? '未提供' : `未提供 · 入库 ${fmtWhen(r.createdAt)}`}</Text>
           </Tooltip>
           )),
     },
@@ -192,6 +199,7 @@ export default function ReportsPanel() {
       title: '类型',
       key: 'type',
       width: 130,
+      responsive: ['md'],   // xs/sm 交给详情抽屉，别撑表格
       ...sortable('type'),
       render: (_, r) => (
         <Space size={4}>
@@ -208,6 +216,7 @@ export default function ReportsPanel() {
       title: '单号',
       key: 'barcode',
       width: 150,
+      responsive: ['md'],   // 单号在手机上看不清也用不上（详情抽屉里有）
       ...sortable('barcode', {
         // 单号有三种前缀（V02… / 20260727G… / P2026…），按字符串排会**按前缀分组**，不等于时间序
         showSorterTooltip: { title: '按单号字符串排序（三种前缀会分组，不等于时间序）；无单号的恒排最后' },
@@ -219,17 +228,21 @@ export default function ReportsPanel() {
     {
       title: '指标',
       key: 'rows',
-      width: 120,
+      width: isXs ? 76 : 120,
       ...sortable('rows'),
+      ellipsis: true,
       render: (_, r) => {
         const n = rowCountOf(r)
-        return n > 0 ? `${n} 项` : <Tag color="default">全文型（无指标行）</Tag>
+        if (n > 0) return `${n} 项`
+        // 窄屏不放长 Tag：它比列宽还宽，会溢到「操作」列把按钮压在下面（375 实测截图抓到的）
+        return isXs ? <Text type="secondary" style={{ fontSize: 12 }}>—</Text> : <Tag color="default">全文型（无指标行）</Tag>
       },
     },
     {
       title: '异常',
       key: 'abnormal',
       width: 96,
+      responsive: ['sm'],
       ...sortable('abnormal'),
       render: (_, r) => {
         const abn = abnormalOf(r)
@@ -240,6 +253,7 @@ export default function ReportsPanel() {
       title: '原件',
       key: 'blob',
       width: 110,
+      responsive: ['sm'],   // 手机上「原件」进详情抽屉
       render: (_, r) => (r.fileBlobId ? (
         <Button size="small" type="link" style={{ paddingInline: 0 }} onClick={() => window.open(`/api/intake/blob/${encodeURIComponent(r.fileBlobId)}`, '_blank')}>
           {r.fileBlobType === 'application/pdf' ? 'PDF' : '原件'}
@@ -253,13 +267,14 @@ export default function ReportsPanel() {
     {
       title: '操作',
       key: 'op',
-      width: tab === 'trash' ? 210 : 170,   // 回收站多一个「彻底删除」，列宽跟着放宽
+      width: isXs ? 96 : (tab === 'trash' ? 210 : 170),   // 回收站多一个「彻底删除」，列宽跟着放宽
       render: (_, r) => (
-        <Space size={2}>
+        <Space size={isXs ? 0 : 2} direction={isXs ? 'vertical' : 'horizontal'} style={{ lineHeight: 1.2 }}>
           <Button size="small" type="link" style={{ paddingInline: 4 }} onClick={() => openView(r.id)}>查看</Button>
           {tab === 'active' ? (
             <>
-              <Button size="small" type="link" style={{ paddingInline: 4 }} onClick={() => openEdit(r.id)}>编辑</Button>
+              {/* 窄屏把「编辑」收进详情抽屉（抽屉里已有编辑入口），操作列只留查看/删除 */}
+              {!isXs && <Button size="small" type="link" style={{ paddingInline: 4 }} onClick={() => openEdit(r.id)}>编辑</Button>}
               <Popconfirm
                 title="删除这份报告？"
                 description="该报告的指标与分类会一并从资料卡移除；删除后可在报告库顶部的『回收站』里恢复。"
@@ -294,7 +309,7 @@ export default function ReportsPanel() {
               </Popconfirm>
             </>
           )}
-          {r.patchedAt && tab === 'active' && <Tooltip title={`最近改动 ${r.patchedAt}`}><Tag color="success" style={{ marginInlineStart: 0 }}>已核对</Tag></Tooltip>}
+          {r.patchedAt && tab === 'active' && !isXs && <Tooltip title={`最近改动 ${r.patchedAt}`}><Tag color="success" style={{ marginInlineStart: 0 }}>已核对</Tag></Tooltip>}
         </Space>
       ),
     },
@@ -302,7 +317,7 @@ export default function ReportsPanel() {
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', maxWidth: '100%' }}>
         <Space direction="vertical" size={0}>
           <Text strong style={{ fontSize: 15 }}>报告库</Text>
           <Text type="secondary" style={{ fontSize: 12 }}>
@@ -310,7 +325,7 @@ export default function ReportsPanel() {
             {noOriginal > 0 && ` · 无原件 ${noOriginal} 份`}
           </Text>
         </Space>
-        <Space>
+        <Space wrap size={6} style={{ maxWidth: '100%' }}>
           <Segmented
             size="small"
             value={tab}
@@ -324,7 +339,7 @@ export default function ReportsPanel() {
             allowClear
             size="small"
             placeholder="搜医院 / 日期 / 类型 / 报告号"
-            style={{ width: 240 }}
+            style={{ width: isXs ? 150 : 240 }}
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
@@ -332,7 +347,7 @@ export default function ReportsPanel() {
         </Space>
       </div>
 
-      <Card size="small" styles={{ body: { padding: 0 } }}>
+      <Card size="small" styles={{ body: { padding: 0, maxWidth: '100%', overflowX: isXs ? 'hidden' : 'auto' } }}>
         <Table
           rowKey="id"
           size="small"
@@ -347,7 +362,7 @@ export default function ReportsPanel() {
             setSort(nextSort(sort, s?.columnKey || sort.key))
           }}
           pagination={{ pageSize: 20, hideOnSinglePage: true, showSizeChanger: false, showTotal: (t) => `共 ${t} 份` }}
-          scroll={{ x: 'max-content' }}
+          scroll={isXs ? undefined : { x: 'max-content' }}
           locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={kw ? `没有匹配「${kw}」的报告` : (tab === 'trash' ? '回收站是空的' : '还没有入库的报告，先去「资料录入」上传')} /> }}
         />
       </Card>
@@ -358,15 +373,19 @@ export default function ReportsPanel() {
         width={760}
         destroyOnHidden
         title={viewing ? `报告内容 · ${viewing.id}` : '报告内容'}
-        extra={viewing?.data?.originals?.length ? (
-          <Space>
-            {viewing.data.originals.map((o) => (
+        extra={(
+          <Space wrap>
+            {/* 窄屏操作列放不下「编辑」，入口收进抽屉（桌面端列表里仍有） */}
+            {viewing?.data?.report && tab === 'active' && (
+              <Button size="small" onClick={() => { const id = viewing.data.report.id; setViewing(null); openEdit(id) }}>编辑</Button>
+            )}
+            {viewing?.data?.originals?.length ? viewing.data.originals.map((o) => (
               <Button key={o.blobId} size="small" onClick={() => window.open(`/api/intake/blob/${encodeURIComponent(o.blobId)}`, '_blank')}>
                 {o.type === 'application/pdf' ? 'PDF 原件' : '查看原件'}
               </Button>
-            ))}
+            )) : <Text type="secondary" style={{ fontSize: 12 }}>无原件</Text>}
           </Space>
-        ) : <Text type="secondary" style={{ fontSize: 12 }}>无原件（导入时未保存原图字节）</Text>}
+        )}
       >
         {viewing?.loading && <Spin />}
         {viewing?.error && <Alert type="error" showIcon message={`读取失败：${viewing.error}`} />}
