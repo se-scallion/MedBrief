@@ -22,7 +22,8 @@
     "test:import": "node tests/verify-import-report.mjs",
     "import:report": "node tools/import-report.mjs",
     "test:pdf": "node tests/verify-pdf.mjs",
-    "test:codealias": "node tests/verify-codealias.mjs"
+    "test:codealias": "node tests/verify-codealias.mjs",
+    "check:blob": "node tools/check-blob-integrity.mjs"
   },
   "keywords": [
     "guahao",
