@@ -162,6 +162,45 @@ try {
       await mobile.screenshot({ path: `/tmp/w3-${t.key}.png`, fullPage: false })
       console.log(`       截图 /tmp/w3-${t.key}.png`)
     }
+
+    // 5.1 W3b 回归（2026-11-14）：375×812 滚到页面中部，Tab 栏仍吸顶可见且可点。
+    // 判据不只看 computed，还量视口内 y 坐标 + 真点击切换，防止「样式写了但被 antd 层叠压过」的空过。
+    try {
+      const half = await mobile.evaluate(() => Math.round((document.documentElement.scrollHeight - window.innerHeight) / 2))
+      await mobile.evaluate((y) => window.scrollTo(0, y), half)
+      // 等两帧：早先实测过切 Tab 后浏览器可能尚未重算 sticky，单帧读数会假阳性。
+      await mobile.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
+      const sticky = await mobile.evaluate(() => {
+        const nav = document.querySelector('.ant-tabs-nav')
+        if (!nav) return { missing: true }
+        const r = nav.getBoundingClientRect(), c = getComputedStyle(nav)
+        return {
+          scrollY: Math.round(window.scrollY),
+          position: c.position, top: Math.round(r.top), bottom: Math.round(r.bottom),
+          height: Math.round(r.height), de: document.documentElement.scrollWidth,
+        }
+      })
+      const visible = !sticky.missing && sticky.scrollY > 0 && sticky.position === 'sticky'
+        && sticky.top >= 0 && sticky.top <= 2 && sticky.bottom > 0 && sticky.bottom <= 812
+      if (visible) pass(`375×812 滚到中部（scrollY=${sticky.scrollY}）Tab 栏吸顶可见（top=${sticky.top}, bottom=${sticky.bottom}, position=${sticky.position}）`)
+      else fail(`375×812 滚到中部 Tab 栏未吸顶可见：${JSON.stringify(sticky)}`)
+      if (sticky.de <= 375) pass(`375×812 吸顶后仍无横向滚动（scrollWidth=${sticky.de}）`)
+      else fail(`375×812 吸顶后横向溢出（scrollWidth=${sticky.de} > 375）`)
+      await mobile.screenshot({ path: '/tmp/w3b-sticky.png', fullPage: false })
+      console.log('       截图 /tmp/w3b-sticky.png')
+      // 可点：滚到中部直接点「动态趋势看板」，并确认激活态真的切过去了
+      await mobile.locator('.ant-tabs-tab').filter({ hasText: '动态趋势看板' }).first().click({ timeout: 10000 })
+      await mobile.waitForTimeout(700)
+      const active = (await mobile.locator('.ant-tabs-tab-active').allInnerTexts()).join('')
+      if (/动态趋势看板/.test(active)) pass(`375×812 滚到中部 Tab 栏可点（激活=${active.replace(/\s+/g, '')}）`)
+      else fail(`375×812 滚到中部点击后未切到「动态趋势看板」（激活=${active}）`)
+      // 恢复原上下文：打印预览弹窗仍从最后一个标签页打开（与 W3 四条断言等价）
+      await mobile.locator('.ant-tabs-tab').filter({ hasText: '全病程原件轴' }).first().click({ timeout: 10000 })
+      await mobile.waitForTimeout(500)
+    } catch (e) {
+      fail(`375×812 吸顶回归异常：${e.message}`)
+    }
+
     // 打印预览弹窗：在最后一个标签页上打开，断言同样不溢出
     await mobile.getByRole('button', { name: /打印预览/ }).first().click()
     await mobile.waitForTimeout(1100)

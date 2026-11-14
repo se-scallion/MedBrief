@@ -44,6 +44,10 @@ const CARD_MOBILE_CSS = `
   .mb-compact-row > span:nth-child(3) { display: none !important; }
   .mb-trends-grid { grid-template-columns: repeat(auto-fit, minmax(0, 1fr)) !important; }
   .mb-source-left, .mb-source-right { min-width: 0 !important; flex-basis: 100% !important; }
+  /* W3b：Tab 栏吸顶，滚到页面中部也能切视图（2026-11-14 实测确定 top:0 —— header 为 static，
+     祖先链无 overflow:hidden；弹窗 zIndex=1000，此处 2 不会遮挡打印预览）。
+     antd 的 CSS-in-JS 自带 .ant-tabs-nav{position:relative} 且层叠更高，实测不加 !important 不生效。 */
+  .ant-tabs-nav { position: sticky !important; top: 0 !important; z-index: 2; background: #fff; }
 }
 `
 
