@@ -132,7 +132,16 @@
   文中所有按钮名称必须与页面实际文案一致（自查方式：对照 `web/src/pages/CardPage.jsx` 的按钮文本）。
 - 禁止：改代码、改已有文档。
 
-### W6 ·【写·沙箱】patch 端到端回放沙箱（派：代诊-挂号）
+### W6 ·【已完成 2026-11-14】patch 端到端回放沙箱（代诊-挂号 `cf9e069` + `c7eb665`）
+
+- 用法：`node tools/patch-replay.mjs`（在 **HEAD** 上跑，验「护栏有效」）；
+  `MB_REPLAY_REF=cf9e069 node tools/patch-replay.mjs`（回放**加护栏之前**的提交，复现「丢区间」证据）。
+- 我两种模式都实测过：默认档 C1–C5（半写→400、`changed=[]`、库 sha256 不变）+ A0（路径已封死）+ B1–B5 全 PASS；
+  历史档 C1–C5 显示 200 并写入、A1–A3 复现「参考区间读成空串」。
+- 不挂进 `test:intake` 链（它要起第二个服务，5199），属于**手动回归**工具。
+- 产物：`tools/patch-replay.mjs`；真实库全程只读（sha256 前后比对）。
+
+### W6-原卡（历史留档）
 
 - `request_id`: `medbrief-w6-patch-replay-1114`
 - 路径：`/Users/scallion/Documents/projects/MedBrief`
