@@ -280,6 +280,31 @@ it('趋势段不得谎报：段标题里的项数 == counts.trends', () => {
   assert.equal(Number(m[1]), card.counts.trends, `标题写 ${m[1]} 项，实际渲染 ${card.counts.trends} 项`)
 })
 
+it('趋势图 X 轴必须左旧右新：每个趋势点的日期严格升序，且同日只保留一个点', () => {
+  const card = buildCard({ reports: makeTrendReports(), mask: true, today: TODAY })
+  assert.ok(card.trendRows.length > 0, '应有可绘制的趋势项（夹具里同项 ≥2 次）')
+  for (const t of card.trendRows) {
+    const ds = t.points.map((p) => String(p.measuredAt || '').slice(0, 10))
+    const sorted = ds.slice().sort((a, b) => a.localeCompare(b))
+    assert.deepEqual(ds, sorted, `${t.name} 的 X 轴不是「左旧右新」：${ds.join(' → ')}`)
+    assert.equal(new Set(ds).size, ds.length, `${t.name} 同一天出现多个点（应按日期去重）`)
+  }
+})
+
+it('趋势图不得收定性值：阴性 / 阳性 / 未见 这类文本一律不进图', () => {
+  const reports = makeTrendReports()
+  // 实测事故：白细胞趋势里混进过尿白细胞的「阴性」
+  reports[1].rows[0].value = '阴性'
+  reports[1].rows[0].num = null
+  const card = buildCard({ reports, mask: true, today: TODAY })
+  for (const t of card.trendRows) {
+    for (const p of t.points) {
+      assert.ok(Number.isFinite(Number(p.num)), `${t.name} 混入了非数值点：${p.value}`)
+      assert.ok(!/阴性|阳性|未见|negative|positive/i.test(String(p.value)), `${t.name} 混入了定性值：${p.value}`)
+    }
+  }
+})
+
 it('跨院参考区间不同：必须给警示，且**不得**画单一虚假绿带', () => {
   const reports = makeTrendReports()
   // 同项两次、参考区间不同（跨院）
