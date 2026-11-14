@@ -162,3 +162,15 @@
   ① **缺失值恒排最后**（升序降序都一样）；② 中文按 `localeCompare(x,'zh-Hans-CN')`；
   ③ 默认「日期 降」，日期缺失时排序键退回**入库时间**——**绝不把导入日期写进 `reportDate`**（那是临床事实）。
 - 单号排序按字符串（`V02…`/`20260727G…`/`P2026…` 三种前缀会分组），列头 tooltip 已写明「不等于时间序」。
+
+## 报告类型从内容推断（2026-11-14 用户要求「识别时按内容推断报告类型」）
+
+- 实现：`lib/reportClassify.mjs`（纯函数，口径**照抄** MedData `parseDoc.js:148 detectDocType`，
+  分支顺序和踩坑理由一并搬：流式先于基因/骨髓、基因先于 CT、裸 CT 排除 HCT/ACTB/CTCF、
+  **EF/射血分数不许用来判心脏**、内镜先于病理）。
+- 入库时 `reportType` 空才补，并写 `reportTypeInferred: true` + `inferEvidence`；**人工填过的一律不覆盖**。
+  已入库的历史记录用 `node tools/backfill-report-type.mjs [--apply]` 回填（幂等、dry-run 默认、进 patchLog）。
+- 原件兜底：`POST /api/intake/reports` 收到图但没有 `sourceBlobs` 时，服务端自己 `saveBlobIfAbsent` 存一份
+  （内容寻址，同字节只存一份），把「有图必有原件」变成**接口保证**，不再依赖前端记得调 `/api/intake/blob`。
+- 报告库新增「查看」抽屉：`GET /api/intake/reports/:id` 返回全文 + 逐行清洗视图 + 原件 + patchLog
+  （列表接口为省负载剥掉 text，全文型报告此前在界面上任何地方都读不到）。
