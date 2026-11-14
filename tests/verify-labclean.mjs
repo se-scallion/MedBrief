@@ -203,6 +203,15 @@ it('单位 OCR 归一：fI / f1 / fi → fL；wmol/L → umol/L（血小板平�
   assert.equal(a.refRange, ''); assert.equal(b.refRange, '')
 })
 
+it('单边参考区间不得被当「说明文字」清掉：<125 / ＜=15% / >450 必须原样保留', () => {
+  // 事故链：若把 `<125` 判成说明文字清空 → judgeFlag 拿不到区间 → 3182（25.5× 上限）静默漏标
+  for (const ref of ['<125', '<125pg/ml', '＜=15%', '>450', '>=4.0', '≤15']) {
+    const n = normalizeRow({ name: '某项目', value: '1', refRange: ref })
+    assert.equal(n.refRange, ref.trim(), `${ref} 被误清成「${n.refRange}」`)
+    assert.ok(!n.refRangeNote, `${ref} 不该被记成 refRangeNote`)
+  }
+})
+
 it('参考区间是注意事项文本 → 置空显示「—」，原值留痕（2026-11-14 用户口径）', () => {
   // 此前只剥掉 `*` 与顿号，留下 `Rh血型阴性`，与左列的「阳性」并排会被读成自相矛盾；
   // 用户口径：这是说明不是区间 → 参考列显示「—」，原文本留在 refRangeNote 供回查。

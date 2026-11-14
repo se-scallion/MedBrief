@@ -45,3 +45,26 @@ export const postJson = (path, data) =>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data ?? {}),
     })         // postJson 结尾
+
+/**
+ * 报告行修正的提交载荷（2026-11-14 用户报的坑，务必整行回写）。
+ *
+ * 事故：三列左移的存储行 `{name:"凝血酶原时间（P12.2个T）", value:"9.8-12.1", refRange:"sec"}`
+ * 由 labClean 在读侧还原成 `PT / 12.2 / sec / 参考 9.8-12.1`。若前端「修正数值」**只提交 value**：
+ *   → 存储变成 `{value:"12.2", refRange:"sec"}`，左移还原不再触发（判据是「value 像区间」），
+ *     真参考区间 9.8-12.1 在存储里本来就只存在于 value 里 → **永久丢失**（实测确认）。
+ * 所以：一律提交 name / value / unit / refRange 四元组，初值取**清洗后视图**（?normalized=1），
+ * 等于把读侧修复结果固化入库，`repaired` 清空、后续不再依赖还原逻辑。
+ *
+ * @param {Array<{name?,value?,unit?,refRange?}>} rows 清洗后视图里的行（顺序即报告内下标）
+ * @returns {Array<{index:number,name:string,value:string,unit:string,refRange:string}>}
+ */
+export function buildRowPatch(rows = []) {
+  return (rows || []).map((r, index) => ({
+    index,
+    name: String(r.name ?? '').trim(),
+    value: String(r.value ?? '').trim(),
+    unit: String(r.unit ?? '').trim(),
+    refRange: String(r.refRange ?? '').trim(),
+  }))
+}

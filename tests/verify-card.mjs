@@ -12,7 +12,7 @@
 
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { buildCard, DEFAULT_PATIENT } from '../lib/intakeCard.js'
+import { buildCard, DEFAULT_PATIENT, parseRefRange, judgeFlag } from '../lib/intakeCard.js'
 import { blocksToLines } from '../lib/visionLayout.mjs'
 import { parseLabRows, detectCbcCode, normalizeUnit, splitTwoColumnLine } from '../lib/reportIntake.mjs'
 
@@ -516,6 +516,78 @@ it('0 份报告 → empty:true（前端据此渲染引导页，不渲染空壳�
   assert.equal(card.empty, true)
   assert.equal(card.checklist.items.filter((i) => !i.ok).length, 5, '0 份报告时五项全缺')
   assert.equal(buildCard({ reports: makeReports(), today: TODAY }).empty, false, '有报告时不得标 empty')
+})
+
+// ---------- 6.7 单边参考区间 / 心功能危急值 / 行身份透传（2026-11-14 用户质疑 → 实测漏判） ----------
+it('单边参考区间必须能判高低：`<125` / `≤15%` / `>450` 不得 return null', () => {
+  assert.deepEqual(parseRefRange('<125'), { lo: null, hi: 125 })
+  assert.deepEqual(parseRefRange('<125pg/ml'), { lo: null, hi: 125 }, '尾部粘连单位要剥掉')
+  assert.deepEqual(parseRefRange('＜=15%'), { lo: null, hi: 15 }, '全角 + <= 要认')
+  assert.deepEqual(parseRefRange('≤15'), { lo: null, hi: 15 })
+  assert.deepEqual(parseRefRange('>450'), { lo: 450, hi: null })
+  assert.deepEqual(parseRefRange('≥4.0'), { lo: 4, hi: null })
+  assert.deepEqual(parseRefRange('3.5-9.5'), { lo: 3.5, hi: 9.5 })
+  assert.equal(parseRefRange('阴性'), null)
+  // 端到端：这正是漏判 25 倍的路径
+  assert.equal(judgeFlag({ num: 3182, refRange: '<125' }), 'high')
+  assert.equal(judgeFlag({ num: 103.4, refRange: '<7' }), 'high')
+  assert.equal(judgeFlag({ num: 100, refRange: '<125' }), 'normal')
+  assert.equal(judgeFlag({ num: 100, refRange: '>450' }), 'low')
+})
+
+it('NT-proBNP 超 1800 必须进第 1 页并标 [危急]（蒽环类化疗心脏毒性核心项，2026-11-14 用户拍板）', () => {
+  const reports = [{
+    reportDate: '2026-08-02',
+    rows: [{ name: 'N端-B型钠尿肽前体（NT-proBNP）', value: '3182.00', unit: 'pg/ml', refRange: '<125' }],
+  }]
+  const card = buildCard({ reports, today: TODAY })
+  const row = card.p0rows.find((r) => r.code === 'NT_PROBNP')
+  assert.ok(row, 'NT-proBNP 必须在 P0 展开区（不得再被下沉进 P1）')
+  assert.equal(row.flag, 'high')
+  assert.ok(row.critical, '3182 ≥ 1800 必须命中危急阈值')
+  assert.ok(/前体NT-proBNP[\s\S]{0,200}\[危急\]/.test(card.html), '第 1 页该行必须带 [危急] 徽章')
+  // 低值不得误报
+  const low = buildCard({
+    reports: [{ reportDate: '2026-08-02', rows: [{ name: 'N端-B型钠尿肽前体（NT-proBNP）', value: '80', unit: 'pg/ml', refRange: '<125' }] }],
+    today: TODAY,
+  })
+  assert.ok(!low.p0rows.some((r) => r.code === 'NT_PROBNP'), '正常的 NT-proBNP 不该进核心异常项')
+})
+
+it('行身份透传：每一行都带 rowKey/reportId/rowIndex/fileBlobId，且能精确回到原报告那一行', () => {
+  const reports = [{
+    id: 'rep_a', reportDate: '2026-07-14', reportType: '凝血四项', fileBlobId: 'f_a',
+    rows: [
+      { name: '凝血酶原时间（PT）', value: '14.3', unit: 'sec', refRange: '9.8-12.1' },
+      { name: 'D-二聚体', value: '10.18', unit: 'mg/L', refRange: '0-0.55' },
+    ],
+  }]
+  const card = buildCard({ reports, today: TODAY })
+  const rows = card.latestRows
+  assert.equal(rows.length, 2)
+  for (const r of rows) {
+    assert.equal(r.rowKey, `rep_a:${r.rowIndex}`, `rowKey 必须是 reportId:rowIndex，实际 ${r.rowKey}`)
+    assert.equal(r.reportId, 'rep_a')
+    assert.equal(r.fileBlobId, 'f_a')
+    assert.equal(r.reportType, '凝血四项')
+    assert.equal(r.reportDate, '2026-07-14')
+    // 能精确回到原行（不是靠 name/value 猜）
+    assert.equal(reports[0].rows[r.rowIndex].name, r.name)
+  }
+  assert.deepEqual(rows.map((r) => r.rowIndex).sort(), [0, 1])
+})
+
+it('同名同值同日两行不得互相覆盖（旧实现按 name|value|date 做键的坑）', () => {
+  const reports = [{
+    id: 'rep_b', reportDate: '2026-07-14', fileBlobId: 'f_b',
+    rows: [
+      { name: '白细胞', value: '5.0', unit: '10^9/L', refRange: '3.5-9.5' },
+      { name: '白细胞', value: '5.0', unit: '10^9/L', refRange: '3.5-9.5' },
+    ],
+  }]
+  const card = buildCard({ reports, today: TODAY })
+  const keys = card.latestRows.map((r) => r.rowKey)
+  assert.equal(new Set(keys).size, keys.length, `rowKey 必须唯一，实际 ${JSON.stringify(keys)}`)
 })
 
 // ---------- 7. 红线与体量 ----------
