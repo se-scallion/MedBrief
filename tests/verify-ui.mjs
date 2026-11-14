@@ -81,6 +81,58 @@ try {
   fail(`出诊监控数值断言异常：${e.message}`)
 }
 
+// 3.5 资料卡工作台（v3.5 交互化）：无长 iframe、三大弹窗、快捷键拦截
+try {
+  await page.getByText('资料卡', { exact: true }).first().click()
+  await page.waitForTimeout(1800)
+  const iframes = await page.locator('iframe').count()
+  if (iframes === 0) pass('工作台主视图不含长 iframe（打印件改为按需弹窗）')
+  else fail(`工作台主视图仍有 ${iframes} 个 iframe（应改为打印弹窗内按需渲染）`)
+
+  const tabs = await page.locator('.ant-tabs-tab').allInnerTexts()
+  if (tabs.length >= 3) pass(`工作台三视图齐全：${tabs.map((t) => t.replace(/（.*?）/, '')).join(' / ')}`)
+  else fail(`工作台视图数不足：${tabs.join(',')}`)
+
+  // 点核心异常项第一行 → 原件溯源弹窗
+  await page.locator('.ant-table-tbody tr').first().click()
+  await page.waitForTimeout(1200)
+  const srcTitle = await page.locator('.ant-modal-title').last().innerText()
+  if (/原件溯源/.test(srcTitle)) pass(`点指标行打开溯源弹窗：${srcTitle}`)
+  else fail(`点指标行没有打开溯源弹窗（实际「${srcTitle}」）`)
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(400)
+
+  // 档案弹窗
+  await page.getByRole('button', { name: '编辑档案与三问' }).first().click()
+  await page.waitForTimeout(700)
+  const profTitle = await page.locator('.ant-modal-title').last().innerText()
+  if (/编辑档案/.test(profTitle)) pass('「编辑档案与三问」以弹窗形式打开')
+  else fail(`档案弹窗未打开（实际「${profTitle}」）`)
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(400)
+
+  // 打印预览弹窗：弹窗内有 iframe + 立即打印按钮
+  await page.getByRole('button', { name: /打印预览/ }).first().click()
+  await page.waitForTimeout(1000)
+  const printModal = page.locator('.ant-modal').last()
+  const hasPrintIframe = await printModal.locator('iframe').count()
+  const hasPrintBtn = await printModal.getByRole('button', { name: /立即打印/ }).count()
+  if (hasPrintIframe === 1 && hasPrintBtn === 1) pass('打印预览弹窗：3 页 A4 iframe + 立即打印按钮')
+  else fail(`打印预览弹窗缺件（iframe ${hasPrintIframe} / 打印按钮 ${hasPrintBtn}）`)
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(400)
+
+  // 快捷键：弹窗关闭时 Ctrl+P 不得直接打印工作台，应打开打印预览
+  await page.keyboard.press('Control+p')
+  await page.waitForTimeout(600)
+  const afterHotkey = await page.locator('.ant-modal-title').last().innerText().catch(() => '')
+  if (/打印预览/.test(afterHotkey)) pass('Ctrl+P 被拦截并转为打开打印预览（不打印工作台）')
+  else fail(`Ctrl+P 未经拦截（弹窗标题「${afterHotkey}」）`)
+  await page.keyboard.press('Escape')
+} catch (e) {
+  fail(`资料卡工作台冒烟异常：${e.message}`)
+}
+
 // 4. 无 console / page error
 const realErrors = consoleErrors.filter((t) => !/favicon|Failed to load resource: the server responded with a status of 404/i.test(t))
 if (realErrors.length === 0) pass('无 console / page error')

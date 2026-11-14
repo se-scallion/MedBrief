@@ -96,7 +96,13 @@ node tools/import-report.mjs <pdf|png|txt> [--apply]      # 默认 dry-run，只
 | `web/` | React + antd 的 114 挂号页（构建 → `web/dist`，server 托管 `/guahao`） |
 | `index.html` | 完整 Web 工作台（单文件，含 CSS + JS）；合并后仅作 `/legacy` 回滚位 |
 | `web/src/pages/IntakePage.jsx` | 资料导入页（默认 tab）：批量/粘贴上传、两张拼接、识别校对、入库 |
-| `web/src/pages/CardPage.jsx` | 资料卡页（独立菜单项）：档案表单 + 卡面预览 + 打印；白血病核心资料体检条（仅屏幕）+ 0 份报告冷启动引导 |
+| `web/src/pages/CardPage.jsx` | 资料卡页 = **交互式问诊工作台**（v3.5）：顶部操作栏 + 体检条 + 三 Tab（指标总览/趋势/病程原件轴）+ 三大弹窗 |
+| `web/src/pages/card/OverviewTab.jsx` | Tab1：基线四格 / 核心异常项 / 全部指标（搜索+胶囊筛选+分组折叠+两栏紧凑行） |
+| `web/src/pages/card/TrendsTab.jsx` | Tab2：`trendAll` 自由勾选、网格并列（不做双轴/归一化）、点圆点溯源 |
+| `web/src/pages/card/TimelineTab.jsx` | Tab3：全部报告按日期倒序，摘要「类型 · 单号 · 时分」 |
+| `web/src/pages/card/SourceModal.jsx` | 弹窗1 原件溯源（92vw）：左原件预览（图片缩放/旋转；PDF 切页缩放）+ 右历史/同报告指标/修正入口 |
+| `web/src/pages/intake/CardPreview.jsx` | 弹窗2 A4 打印预览（90vw 深灰底 + 3 页 iframe + `contentWindow.print()`；Cmd/Ctrl+P 转发） |
+| `web/src/pages/intake/PatientForm.jsx` | 弹窗3 档案与三问编辑（`focusField` 支持点未录入项直接定位） |
 | `lib/leukemiaChecklist.mjs` | 白血病核心资料体检（纯函数）：MICM 四项 + 近 30 天血常规，判不出即报缺；只看 `reportType`/正文/指标码，**不信 `kind`** |
 | `mcp/intake-server.mjs` | 资料导入 MCP server（stdio、零依赖）：8 个工具全部转发本机后端，**不复制算法**；`intake_save_report` 在工具层拒绝 idCard/phone/address |
 
