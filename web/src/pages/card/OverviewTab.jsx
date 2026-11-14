@@ -41,17 +41,20 @@ function BaselineCell({ title, children, onEdit, hint }) {
 /**
  * 两栏紧凑指标行（替代 antd Table）：屏幕上一行 ~22px，115 项排成两栏后高度减半，
  * 与打印版第 2 页的「分组 + 双栏」口径一致，避免「网页版比纸还长」。
+ * 窄屏（≤575px）由 CardPage.jsx 注入的 .mb-compact-grid/.mb-compact-row 改成单栏并隐藏「参考」，
+ * 避免固定 96px 列把 375px 屏幕撑出横向滚动。
  */
 function CompactRows({ items = [], onOpen }) {
   const half = Math.ceil(items.length / 2)
   const cols = [items.slice(0, half), items.slice(half)]
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 14px', marginTop: 2 }}>
+    <div className="mb-compact-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 14px', marginTop: 2 }}>
       {cols.map((part, ci) => (
         <div key={ci}>
           {part.map((r) => (
             <div
               key={r.rowKey || r.name}
+              className="mb-compact-row"
               role="button"
               tabIndex={0}
               onClick={() => onOpen(r)}
@@ -140,9 +143,10 @@ export default function OverviewTab({ card, onOpenSource, onEditProfile }) {
       ),
     },
     { title: '数值', width: 190, render: (_, r) => `${r.value ?? ''}${r.unit ? ' ' + r.unit : ''}` },
-    { title: '参考', width: 120, dataIndex: 'refRange', render: (v) => v || '—' },
+    // 窄屏隐藏次要列，只留「项目 / 数值 / 判定」；antd 原生 responsive 会自动过滤 col/th/td
+    { title: '参考', width: 120, dataIndex: 'refRange', responsive: ['md'], render: (v) => v || '—' },
     { title: '判定', width: 84, dataIndex: 'flag', render: (v) => FLAG_TAG[v] || <Text type="secondary">—</Text> },
-    { title: '日期 · 医院', width: 170, render: (_, r) => `${String(r.measuredAt || '').slice(5)}${r.hospital ? ' · ' + r.hospital : ''}` },
+    { title: '日期 · 医院', width: 170, responsive: ['md'], render: (_, r) => `${String(r.measuredAt || '').slice(5)}${r.hospital ? ' · ' + r.hospital : ''}` },
   ]
 
   const openRow = (r) => onOpenSource({
@@ -156,7 +160,7 @@ export default function OverviewTab({ card, onOpenSource, onEditProfile }) {
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
       {/* ---------- ① 疾病标签与安全基线 ---------- */}
       <Card size="small" title="① 疾病标签与安全基线" style={{ borderLeft: '3px solid #111' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 8 }}>
+        <div className="mb-baseline-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 8 }}>
           <BaselineCell title="分子与高危基因">
             {(sb.geneTags || []).length
               ? sb.geneTags.map((g, i) => (

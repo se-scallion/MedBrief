@@ -99,7 +99,7 @@ export default function TrendsTab({ card, onOpenSource }) {
       </Card>
 
       {!shown.length ? <Empty description="一个都没选" /> : (
-        <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit,minmax(${cols === 1 ? 560 : 380}px,1fr))`, gap: 12 }}>
+        <div className="mb-trends-grid" style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit,minmax(${cols === 1 ? 560 : 380}px,1fr))`, gap: 12 }}>
           {shown.map((t) => (
             <Card
               key={t.key}

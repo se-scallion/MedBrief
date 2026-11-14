@@ -59,10 +59,12 @@ export default function TimelineTab({ card, onOpenSource }) {
         </Space>
       ),
     },
-    { title: '医院', dataIndex: 'hospital', width: 150, ellipsis: true, render: (v) => v || <Text type="secondary">未记录</Text> },
+    { title: '医院', dataIndex: 'hospital', width: 150, ellipsis: true, responsive: ['md'], render: (v) => v || <Text type="secondary">未记录</Text> },
     {
+      // 窄屏隐藏「原件」标签列：整行本来就可点开原件，不丢功能（antd responsive 自动过滤 col/th/td）
       title: '原件',
       width: 96,
+      responsive: ['md'],
       render: (_, r) => (r.hasBlob ? <Tag color="blue">原件 1 份</Tag> : <Tag>无原件</Tag>),
     },
   ]
@@ -84,6 +86,7 @@ export default function TimelineTab({ card, onOpenSource }) {
                 <Text type="secondary" style={{ fontSize: 12, fontWeight: 400, marginInlineStart: 8 }}>{list.length} 份</Text>
               </div>
               <Table
+                className="mb-timeline-table"
                 size="small"
                 rowKey="id"
                 dataSource={list}

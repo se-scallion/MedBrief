@@ -22,6 +22,31 @@ import SourceModal from './card/SourceModal.jsx'
 
 const { Text, Title } = Typography
 
+// 移动端（≤575px）适配样式：只在资料卡页挂载期间生效（useEffect 注入 head、卸载即移除）。
+// 为什么放这里：App.jsx 的顶栏「事件日志」按钮在 375px 下会溢出到 435px，而 App.jsx 不在本次
+// 可写白名单里；其余溢出源（双栏指标行 / 趋势网格 / 宽表 / 溯源弹窗两栏）在各自组件里
+// 用 className 标注，统一由这一段窄屏 CSS 收敛。桌面端完全不受影响（媒体查询仅 ≤575px）。
+const CARD_MOBILE_CSS = `
+@media (max-width: 575px) {
+  .ant-layout-header { flex-wrap: wrap; height: auto; padding-block: 8px; row-gap: 4px; }
+  .ant-card-head { flex-wrap: wrap; height: auto; }
+  .ant-card-head .ant-card-extra { max-width: 100%; margin-inline-start: 0; overflow: hidden; }
+  .ant-card-head .ant-card-extra .ant-space { flex-wrap: wrap; }
+  .ant-segmented { max-width: 100%; overflow-x: auto; }
+  .ant-table table { table-layout: fixed; }
+  .ant-table th, .ant-table td { word-break: break-word; }
+  .mb-timeline-table col:nth-child(1) { width: 108px !important; }
+  .mb-timeline-table col:nth-child(2) { width: 84px !important; }
+  .mb-timeline-table .ant-table-cell { padding-inline: 6px !important; }
+  .mb-baseline-grid { grid-template-columns: 1fr !important; }
+  .mb-compact-grid { grid-template-columns: 1fr !important; }
+  .mb-compact-row { grid-template-columns: 1fr auto 46px !important; }
+  .mb-compact-row > span:nth-child(3) { display: none !important; }
+  .mb-trends-grid { grid-template-columns: repeat(auto-fit, minmax(0, 1fr)) !important; }
+  .mb-source-left, .mb-source-right { min-width: 0 !important; flex-basis: 100% !important; }
+}
+`
+
 export default function CardPage() {
   const { message } = AntApp.useApp()
   const { pushLog } = useLog()
@@ -123,6 +148,15 @@ export default function CardPage() {
   useEffect(() => { loadPatient() }, [loadPatient])
   // 进来就自动生成一次：这一页存在的意义就是「看工作台」，不该还要再点一次「生成」
   useEffect(() => { makeCard(false) }, [])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ≤575px 才把窄屏样式挂到 head：用 useEffect 保证离开资料卡页就移除，不污染其它页面。
+  useEffect(() => {
+    const style = document.createElement('style')
+    style.id = 'mb-card-mobile'
+    style.textContent = CARD_MOBILE_CSS
+    document.head.appendChild(style)
+    return () => { style.remove() }
+  }, [])
 
   // 打印弹窗没开时按 Cmd/Ctrl+P：**不打印工作台**，改为打开打印预览
   useEffect(() => {

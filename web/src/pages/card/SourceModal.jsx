@@ -163,8 +163,8 @@ export default function SourceModal({ open, target, card, onClose, onSaved }) {
       destroyOnClose={false}
     >
       <div style={{ display: 'flex', gap: 12, alignItems: 'stretch', flexWrap: 'wrap' }}>
-        {/* ---------- 左：原件预览器（~62%） ---------- */}
-        <div style={{ flex: '1 1 58%', minWidth: 320, background: '#f5f6f8', borderRadius: 8, padding: 8, display: 'flex', flexDirection: 'column' }}>
+        {/* ---------- 左：原件预览器（~62%；窄屏由 CardPage 的 .mb-source-left 改 flex-basis:100% 堆叠） ---------- */}
+        <div className="mb-source-left" style={{ flex: '1 1 58%', minWidth: 0, background: '#f5f6f8', borderRadius: 8, padding: 8, display: 'flex', flexDirection: 'column' }}>
           <Space size={4} wrap style={{ marginBottom: 8 }}>
             <Button size="small" onClick={zoomOut} disabled={blobKind !== 'image'}>− 缩小</Button>
             <Button size="small" onClick={zoomIn} disabled={blobKind !== 'image'}>＋ 放大</Button>
@@ -193,8 +193,8 @@ export default function SourceModal({ open, target, card, onClose, onSaved }) {
           </div>
         </div>
 
-        {/* ---------- 右：报告头 + 该指标全历史 + 同报告其他指标（~38%） ---------- */}
-        <div style={{ flex: '1 1 34%', minWidth: 300, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {/* ---------- 右：报告头 + 该指标全历史 + 同报告其他指标（~38%；窄屏堆叠） ---------- */}
+        <div className="mb-source-right" style={{ flex: '1 1 34%', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <Descriptions size="small" column={1} bordered
             items={[
               { key: 'd', label: '报告日期', children: report?.date || target?.date || '—' },

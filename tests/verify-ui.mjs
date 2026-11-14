@@ -133,7 +133,50 @@ try {
   fail(`资料卡工作台冒烟异常：${e.message}`)
 }
 
-// 4. 无 console / page error
+// 5. 移动端 375×812：三个标签页 + 打印预览弹窗都不得有横向滚动（2026-11-14 W3）
+// 判据取 documentElement.scrollWidth（用户口径），不是 body.scrollWidth；
+// 每个视图都截图到 /tmp/w3-<tab>.png，方便人工复核「内容可读」而不只是数字过关。
+try {
+  const mobile = await browser.newPage({ viewport: { width: 375, height: 812 }, deviceScaleFactor: 1 })
+  const mErrors = []
+  mobile.on('pageerror', (e) => mErrors.push(String(e)))
+  const pages = [
+    { key: 'overview', label: '临床指标总览' },
+    { key: 'trends', label: '动态趋势看板' },
+    { key: 'timeline', label: '全病程原件轴' },
+  ]
+  const checkNoOverflow = async (tag) => {
+    const sw = await mobile.evaluate(() => document.documentElement.scrollWidth)
+    if (sw <= 375) pass(`375×812「${tag}」无横向滚动（scrollWidth=${sw}）`)
+    else fail(`375×812「${tag}」横向溢出（scrollWidth=${sw} > 375）`)
+    return sw
+  }
+  try {
+    await mobile.goto(BASE + '/?tab=card', { waitUntil: 'domcontentloaded', timeout: 20000 })
+    await mobile.locator('.ant-tabs-tab').first().waitFor({ timeout: 15000 })
+    await mobile.waitForTimeout(1500)
+    for (const t of pages) {
+      await mobile.locator('.ant-tabs-tab').filter({ hasText: t.label }).first().click({ timeout: 10000 })
+      await mobile.waitForTimeout(700)
+      await checkNoOverflow(t.label)
+      await mobile.screenshot({ path: `/tmp/w3-${t.key}.png`, fullPage: false })
+      console.log(`       截图 /tmp/w3-${t.key}.png`)
+    }
+    // 打印预览弹窗：在最后一个标签页上打开，断言同样不溢出
+    await mobile.getByRole('button', { name: /打印预览/ }).first().click()
+    await mobile.waitForTimeout(1100)
+    await checkNoOverflow('打印预览弹窗')
+    if (mErrors.length) fail(`375 冒烟期间前端报错：${mErrors.slice(0, 2).join(' | ')}`)
+    await mobile.close()
+  } catch (e) {
+    fail(`375×812 冒烟异常：${e.message}`)
+    await mobile.close().catch(() => {})
+  }
+} catch (e) {
+  fail(`375×812 冒烟无法启动：${e.message}`)
+}
+
+// 6. 无 console / page error
 const realErrors = consoleErrors.filter((t) => !/favicon|Failed to load resource: the server responded with a status of 404/i.test(t))
 if (realErrors.length === 0) pass('无 console / page error')
 else fail(`存在前端报错：${realErrors.slice(0, 3).join(' | ')}`)
