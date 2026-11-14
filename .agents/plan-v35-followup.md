@@ -9,6 +9,12 @@
 
 ## 0. 铁律（派单前必读，写工尤其）
 
+> **0.0 只读工的执行边界（2026-11-14 裁决）**：只读 = **不改项目文件、不做 git 写、不启/重启服务**。
+> 允许写 **`/tmp/<request_id>/` 下的一次性取证产物**（PDF/截图）。
+> 「不许读 `data/reports.json`」的本义是**不许把患者内容写进报告**，不是禁止工具读取它 ——
+> 页高/页数这类门禁数字必须在**真实库**上跑才有意义（快照 54 份 ≠ 真实 55 份）。
+
+
 1. **一个文件只有一个 owner。** 见 §1 所有权矩阵；跨出白名单即视为违约，我直接回退。
 2. **禁 `git add -A`**；只 `git add` 白名单内的文件。提交前 `git status --short` 逐行核对，
    白名单外的 `M`/`??` 一个都不许进本次提交。
@@ -158,7 +164,7 @@ node tests/verify-rowpatch.mjs    # 4
 node tests/verify-workbench.mjs   # 10
 node tests/verify-pdf.mjs         # 6
 node tests/verify-ui.mjs          # 全部通过（需先 build:web + 服务在 5174）
-node tests/verify-e2e.mjs         # 6
+node tests/verify-e2e.mjs         # 8（2026-11-14 代诊-报告 在 740acb1 加了 2 条 live 断言）
 node tools/card-pdf.mjs           # 第 1 页 ≤1054px、总页数 ≤3、重叠/裁切 0 处
 ```
 
