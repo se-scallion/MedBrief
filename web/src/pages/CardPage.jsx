@@ -23,12 +23,18 @@ import SourceModal from './card/SourceModal.jsx'
 const { Text, Title } = Typography
 
 // 移动端（≤575px）适配样式：只在资料卡页挂载期间生效（useEffect 注入 head、卸载即移除）。
-// 为什么放这里：App.jsx 的顶栏「事件日志」按钮在 375px 下会溢出到 435px，而 App.jsx 不在本次
-// 可写白名单里；其余溢出源（双栏指标行 / 趋势网格 / 宽表 / 溯源弹窗两栏）在各自组件里
-// 用 className 标注，统一由这一段窄屏 CSS 收敛。桌面端完全不受影响（媒体查询仅 ≤575px）。
+// 为什么放这里：App.jsx 的顶栏在 375px 下会溢出到 435px，而 App.jsx 不在可写白名单里；
+// 其余溢出源（双栏指标行 / 趋势网格 / 宽表 / 溯源弹窗两栏）在各自组件里用 className 标注，
+// 统一由这一段窄屏 CSS 收敛。桌面端完全不受影响（媒体查询仅 ≤575px）。
+// 顶栏：禁止再用 flex-wrap:wrap —— W3 那样虽把宽度压到 375，却让 header 高 468px 吃掉 58% 屏幕。
+// 改为隐藏院区 Tag / 副标题 + nowrap；2026-11-14 实测 padding-block:8px 得 81px 仍超 80，6px 得 77px。
 const CARD_MOBILE_CSS = `
 @media (max-width: 575px) {
-  .ant-layout-header { flex-wrap: wrap; height: auto; padding-block: 8px; row-gap: 4px; }
+  /* 顶栏瘦身：Tag / 副标题是左侧 ant-space 的第 2、3 个 item（不是 header 的直接子元素，App.jsx:110-114）。
+     padding-inline 必须 !important：App.jsx:107 的 Header 有内联 style paddingInline:20，层叠最高。 */
+  .ant-layout-header { flex-wrap: nowrap; height: auto; padding-inline: 12px !important; padding-block: 6px; }
+  .ant-layout-header > .ant-space:first-child > .ant-space-item:nth-child(2),
+  .ant-layout-header > .ant-space:first-child > .ant-space-item:nth-child(3) { display: none; }
   .ant-card-head { flex-wrap: wrap; height: auto; }
   .ant-card-head .ant-card-extra { max-width: 100%; margin-inline-start: 0; overflow: hidden; }
   .ant-card-head .ant-card-extra .ant-space { flex-wrap: wrap; }

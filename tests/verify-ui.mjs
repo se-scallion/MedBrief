@@ -155,6 +155,77 @@ try {
     await mobile.goto(BASE + '/?tab=card', { waitUntil: 'domcontentloaded', timeout: 20000 })
     await mobile.locator('.ant-tabs-tab').first().waitFor({ timeout: 15000 })
     await mobile.waitForTimeout(1500)
+
+    // 5.0 W3b 补丁硬断言（2026-11-14）：顶栏瘦身，防「横向溢出换成纵向吞噬」。
+    // 判据：header 高度 ≤80 与 scrollWidth ≤375 必须同时成立，且不得靠 flex-wrap:wrap 换行达标。
+    try {
+      await mobile.screenshot({ path: '/tmp/w3b-header-375.png', fullPage: false })
+      await mobile.screenshot({ path: '/tmp/w3b-mobile.png', fullPage: false })
+      console.log('       截图 /tmp/w3b-header-375.png、/tmp/w3b-mobile.png（首屏：正常高度 header + Tab 栏 + 内容）')
+      const slim = await mobile.evaluate(() => {
+        const h = document.querySelector('.ant-layout-header')
+        if (!h) return { missing: true }
+        const left = h.querySelector(':scope > .ant-space:first-child')
+        const c = getComputedStyle(h)
+        return {
+          headerH: Math.round(h.getBoundingClientRect().height),
+          de: document.documentElement.scrollWidth,
+          flexWrap: c.flexWrap,
+          tagDisplay: left?.children[1] ? getComputedStyle(left.children[1]).display : 'missing',
+          subtitleDisplay: left?.children[2] ? getComputedStyle(left.children[2]).display : 'missing',
+        }
+      })
+      if (!slim.missing && slim.headerH <= 80 && slim.de <= 375) pass(`375×812 顶栏瘦身：header 高 ${slim.headerH}px ≤80 且 scrollWidth=${slim.de} ≤375（两者同时成立）`)
+      else fail(`375×812 顶栏瘦身未达标：${JSON.stringify(slim)}`)
+      if (!slim.missing && slim.flexWrap === 'nowrap') pass('375×812 顶栏保持 flex-wrap:nowrap（未用换行换宽度）')
+      else fail(`375×812 顶栏仍是 wrap：${JSON.stringify(slim)}`)
+      if (!slim.missing && slim.tagDisplay === 'none' && slim.subtitleDisplay === 'none') pass('375×812 院区 Tag / 副标题已隐藏')
+      else fail(`375×812 院区 Tag / 副标题未隐藏：${JSON.stringify(slim)}`)
+
+      // 反例自证伪：临时把 header 覆盖回 5d907aa 的 wrap + 显示长文本，判据必须判红；随后移除注入，确认上下文恢复。
+      await mobile.evaluate(() => {
+        const s = document.createElement('style')
+        s.id = 'w3b-assert-falsify'
+        s.textContent = `@media (max-width: 575px) {
+          .ant-layout-header { flex-wrap: wrap !important; padding-block: 8px !important; }
+          .ant-layout-header > .ant-space:first-child > .ant-space-item:nth-child(2),
+          .ant-layout-header > .ant-space:first-child > .ant-space-item:nth-child(3) { display: block !important; }
+        }`
+        document.head.appendChild(s)
+      })
+      await mobile.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
+      const falsified = await mobile.evaluate(() => {
+        const h = document.querySelector('.ant-layout-header')
+        return { headerH: Math.round(h.getBoundingClientRect().height), flexWrap: getComputedStyle(h).flexWrap }
+      })
+      if (falsified.headerH > 80) pass(`反例自证伪：还原 5d907aa 的 wrap 后 header 高 ${falsified.headerH}px >80，高度断言会判红（非空过）`)
+      else fail(`反例自证伪失败：还原 wrap 后 header 仍 ${falsified.headerH}px，高度断言可能空过`)
+      await mobile.evaluate(() => { document.getElementById('w3b-assert-falsify')?.remove() })
+      await mobile.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
+      const restored = await mobile.evaluate(() => Math.round(document.querySelector('.ant-layout-header').getBoundingClientRect().height))
+      if (restored <= 80) pass(`反例注入移除后恢复 header 高 ${restored}px ≤80（不污染后续断言）`)
+      else fail(`反例注入移除后 header 仍 ${restored}px，后续断言上下文被污染`)
+
+      // 414×896 也 ≤80（plan 里 W3c 的加严项，正式卡未要求，一并满足）
+      const wide = await browser.newPage({ viewport: { width: 414, height: 896 }, deviceScaleFactor: 1 })
+      try {
+        await wide.goto(BASE + '/?tab=card', { waitUntil: 'domcontentloaded', timeout: 20000 })
+        await wide.locator('.ant-tabs-tab').first().waitFor({ timeout: 15000 })
+        await wide.waitForTimeout(1200)
+        const w = await wide.evaluate(() => {
+          const h = document.querySelector('.ant-layout-header')
+          return { headerH: Math.round(h.getBoundingClientRect().height), de: document.documentElement.scrollWidth }
+        })
+        if (w.headerH <= 80 && w.de <= 414) pass(`414×896 顶栏高 ${w.headerH}px ≤80 且 scrollWidth=${w.de} ≤414`)
+        else fail(`414×896 顶栏未达标：${JSON.stringify(w)}`)
+      } catch (e) {
+        fail(`414×896 顶栏断言异常：${e.message}`)
+      }
+      await wide.close()
+    } catch (e) {
+      fail(`375×812 顶栏瘦身断言异常：${e.message}`)
+    }
+
     for (const t of pages) {
       await mobile.locator('.ant-tabs-tab').filter({ hasText: t.label }).first().click({ timeout: 10000 })
       await mobile.waitForTimeout(700)
@@ -184,6 +255,12 @@ try {
         && sticky.top >= 0 && sticky.top <= 2 && sticky.bottom > 0 && sticky.bottom <= 812
       if (visible) pass(`375×812 滚到中部（scrollY=${sticky.scrollY}）Tab 栏吸顶可见（top=${sticky.top}, bottom=${sticky.bottom}, position=${sticky.position}）`)
       else fail(`375×812 滚到中部 Tab 栏未吸顶可见：${JSON.stringify(sticky)}`)
+      const midHeader = await mobile.evaluate(() => {
+        const h = document.querySelector('.ant-layout-header')
+        return { headerH: Math.round(h.getBoundingClientRect().height), headerTop: Math.round(h.getBoundingClientRect().top) }
+      })
+      if (midHeader.headerH <= 80) pass(`375×812 滚到中部时 header 仍 ${midHeader.headerH}px ≤80（top=${midHeader.headerTop}，已滚出视口、不遮挡 Tab）`)
+      else fail(`375×812 滚到中部时 header 又变高：${JSON.stringify(midHeader)}`)
       if (sticky.de <= 375) pass(`375×812 吸顶后仍无横向滚动（scrollWidth=${sticky.de}）`)
       else fail(`375×812 吸顶后横向溢出（scrollWidth=${sticky.de} > 375）`)
       await mobile.screenshot({ path: '/tmp/w3b-sticky.png', fullPage: false })
