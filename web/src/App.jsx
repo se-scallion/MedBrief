@@ -25,6 +25,11 @@ const { Text } = Typography
 const LogContext = createContext({ logs: [], pushLog: () => {}, clearLogs: () => {} })
 export const useLog = () => useContext(LogContext)
 
+// 导航上下文（2026-11-14）：页面之间要能「跳转」而不整页刷新 —— 例：资料卡页的
+// 「去补传报告」按钮要跳到「资料录入」。不引 react-router，只暴露 App 里那个 go()。
+const NavContext = createContext({ go: () => {}, active: 'intake' })
+export const useNav = () => useContext(NavContext)
+
 const TONE_COLOR = { info: 'default', ok: 'green', warn: 'orange', err: 'red' }
 
 export default function App() {
@@ -90,6 +95,7 @@ export default function App() {
   const current = PAGES.find((p) => p.key === active) || PAGES[0]
 
   return (
+    <NavContext.Provider value={{ go, active }}>
     <LogContext.Provider value={logValue}>
       <Layout style={{ minHeight: '100vh', background: '#f5f6f8' }}>
         <Header
@@ -177,5 +183,6 @@ export default function App() {
         </Drawer>
       </Layout>
     </LogContext.Provider>
+    </NavContext.Provider>
   )
 }

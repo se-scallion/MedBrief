@@ -478,6 +478,29 @@ it('完整性自洽：counts.rows（入库行）== 卡面渲染行 + 白名单�
   assert.equal(card.latestRows.length, 1, '被剔除的两行不得进入「全部指标」')
 })
 
+// ---------- 6.6 白血病核心资料：1 行声明 + 冷启动（2026-11-14 用户口径） ----------
+it('第 1 页必须用 1 行小字如实声明「未检出的白血病核心项」，且不得写临床解读', () => {
+  const reports = [{ reportDate: '2026-07-15', kind: 'pathology', reportType: '染色体核型', text: '染色体核型分析报告单 46,XX', rows: [] }]
+  const card = buildCard({ reports, today: TODAY })
+  assert.ok(card.checklist, 'buildCard 必须带回 checklist')
+  assert.equal(card.checklist.items.length, 5, '体检项应为 5 项（MICM 4 + 近期血常规）')
+  assert.ok(/\.cl/.test(card.html), '第 1 页必须有声明行样式')
+  assert.ok(/白血病核心项：已见/.test(card.html), `卡面必须有「白血病核心项：已见…」声明，实际没找到`)
+  assert.ok(/染色体核型/.test(card.html), '已检出的项应出现在声明里')
+  assert.ok(/待补|均已检出/.test(card.html), '声明必须说清「待补 / 均已检出」')
+  // 红线：声明只陈述有无，不得写诊断或医嘱
+  const line = card.html.match(/<div class="cl">([\s\S]*?)<\/div>/)
+  assert.ok(line, '找不到声明行')
+  assert.ok(!/建议|应做|必须做|提示(?:白血|复发)|预后/.test(line[1]), `声明行不得写解读，实际「${line[1]}」`)
+})
+
+it('0 份报告 → empty:true（前端据此渲染引导页，不渲染空壳卡）', () => {
+  const card = buildCard({ reports: [], today: TODAY })
+  assert.equal(card.empty, true)
+  assert.equal(card.checklist.items.filter((i) => !i.ok).length, 5, '0 份报告时五项全缺')
+  assert.equal(buildCard({ reports: makeReports(), today: TODAY }).empty, false, '有报告时不得标 empty')
+})
+
 // ---------- 7. 红线与体量 ----------
 it('红线：卡面不得出现诊断结论 / 用药建议词库', () => {
   const card = buildCard({ reports: makeReports(), mask: true, today: TODAY })

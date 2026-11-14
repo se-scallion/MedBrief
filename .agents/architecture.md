@@ -36,6 +36,33 @@
   → web/src/pages/IntakePage.jsx（导入页，默认 tab）
 ```
 
+### 报告导入固定流程（2026-11-12 定稿，样本：流式免疫分型报告单）
+
+```
+node tools/import-report.mjs <pdf|png|txt> [--apply]      # 默认 dry-run，只打印核对表
+  1 取数    tools/pdf-extract.py（PDF 文本层，按 y 聚类重建行）/ /api/intake/ocr（图片）
+  2 适配器  tools/report-adapters/*.mjs 由 pickAdapter 按版式特征认领（lab-panel 兜底）
+  3 结构化  适配器 parse() → {meta, rows, warnings}（只照抄原文，不推断）
+  4 查重    sha256 / dHash / 内容指纹（命中退出码 2，绝不静默覆盖）
+  5 人核对  核对表逐行带 rawSnippet 原文片段
+  6 入库+出卡 data/reports.json + data/intake/card.html / card.json
+```
+
+- **新增报告形式 = 新增一个适配器文件**（`tools/report-adapters/<form>.mjs`）+ 注册 + 一条只读断言；
+  主流程、CLI、后端都不动。SOP 与踩过的坑：`docs/报告导入流程.md`。
+- **字段口径**：存储仍是 `data/reports.json`（JSON 文件，不是数据库），但报告级/行级字段名与 code
+  一律对齐 MedData 的 `records[] / data_points[] / diseaseMetrics[]`（`report_type`、`original_name`、
+  `stream/analyte/qualifier`）。权威表 `docs/字段字典.md`；跨项目摘要见 `INTERFACE.md` 通道 1.5。
+- **2026-11-12 新增字段**：报告级 `reportType/labName/barcode/sampledAt/receivedAt/clinicalDiagnosis/sourceFile`；
+  行级 `originalName/stream/analyte/qualifier/rawSnippet`；code `FCM_CD34_PCT`（新标准码）+
+  `custom:fcm-{gran,lymph,mono,nrbc}-pct`（自定义），并复用 `FCM_MRD_PCT`。
+- **批量与并发（2026-11-12 同日加）**：`--dir <目录>` 一次跑整个文件夹，`--concurrency 1..8`（默认 4），
+  `--review all|suspect|none`（默认单文件 all / 多文件 suspect）。实测 8 份图：串行 5788ms → 并发 4 的 2008ms；
+  8008 单请求吞吐 594ms/份 → 并发 4 时 183ms/份（12 路 143ms/份，但单份延迟涨到 1.7s，故默认 4）。
+  超高图切块在 `/api/intake/ocr` 里改为块间 `Promise.all`（h/w 3.06 两块：1.83s → 1.1s）。
+  PDF 有文本层时 OCR 耗时为 0，所以「优先要 PDF 原件，其次截图」。
+- **门禁**：`npm run test:import`（15 断言，零网络、dry-run 不写库；含批量、可疑行、防循环依赖）。
+
 **实测能力（真实单据）**：单栏血常规 20/23（有值项 100% 正确、0 错值）；双栏血常规 26/26；
 合成单 11/11。缺项是 OCR 未吐出结果值，靠人工补录。
 **已知边界**：骨穿报告 / 出院小结 / 外院单据**未验证**（自由文本，解析路径不同）。
@@ -68,7 +95,9 @@
 | `tools/*.py` | **历史参考实现（Deprecated）**：2021–2022 年 PC 端 requests 脚本，114 PC 端已关停，仅作取证留档，不得用于当前链路 |
 | `web/` | React + antd 的 114 挂号页（构建 → `web/dist`，server 托管 `/guahao`） |
 | `index.html` | 完整 Web 工作台（单文件，含 CSS + JS）；合并后仅作 `/legacy` 回滚位 |
-| `web/src/pages/IntakePage.jsx` | 资料导入页（默认 tab）：批量/粘贴上传、两张拼接、识别校对、入库、资料卡打印 |
+| `web/src/pages/IntakePage.jsx` | 资料导入页（默认 tab）：批量/粘贴上传、两张拼接、识别校对、入库 |
+| `web/src/pages/CardPage.jsx` | 资料卡页（独立菜单项）：档案表单 + 卡面预览 + 打印；白血病核心资料体检条（仅屏幕）+ 0 份报告冷启动引导 |
+| `lib/leukemiaChecklist.mjs` | 白血病核心资料体检（纯函数）：MICM 四项 + 近 30 天血常规，判不出即报缺；只看 `reportType`/正文/指标码，**不信 `kind`** |
 | `mcp/intake-server.mjs` | 资料导入 MCP server（stdio、零依赖）：8 个工具全部转发本机后端，**不复制算法**；`intake_save_report` 在工具层拒绝 idCard/phone/address |
 
 ---
@@ -378,3 +407,17 @@ ego lite 的 Chromium（真实指纹 + 独立 profile）可通过。故 `lib/ego
 
 前端依赖**借自 `../MedData/node_modules`**（根 `node_modules` 是软链），版本锁定在 `package.json` 的
 `medbriefFrontendDeps`，详见 `docs/前端依赖.md`。换机器不装齐这棵树 → `vite build` 直接失败。
+
+## 报告原件 Blob 存储（2026-11-13）
+
+- `lib/blobStore.mjs`：SQLite（node:sqlite）`data/medbrief.db`，表 `blobs` + `blob_tombstones`，范式照 MedData `data-server.mjs:66`。零新增依赖。
+- `server.mjs` 新增路由：`POST /api/intake/blob`、`GET /api/intake/blob/<id>`、`GET /api/intake/blobs`；`POST /api/intake/reports` 记录 `sourceBlobs`，并在写库后回填 `blobs.report_id`。
+- `lib/reportIntake.mjs` 的 `findDuplicate()` 加护栏：dHash 近重复必须同单号或同报告日期才算（文本截图 dHash 会误判，实测 凝血 07-26 与 08-04 距离 0）。
+- 工具链：`tools/ocr-table-rows.mjs`（保留定性行的表格解析）、`tools/import-inbox.mjs`（带原件批量入库）、`tools/repair-import.mjs`（回填 rows 与 blob 关联，幂等）。
+
+## 导入工作流统一（2026-11-13）
+
+- 唯一入口：`tools/workflow-screenshots.mjs`（截图 + PDF，七阶段：发现→取数→身份→**判重四层**→行抽取→跨屏配对→分类入库）+ `tools/import-inbox.mjs`（带原件入库）+ `tools/repair-import.mjs`（幂等回填）。
+- 口径文档：`docs/导入工作流.md`（`docs/报告导入流程.md`、`docs/截图报告工作流.md` 已加指针，冲突以导入工作流为准）。
+- 判重四层：sha256 / archive 同字节 / 库里同单号+报告日期 / 批内同单号+报告类型+报告日期；**dHash 只用「同单号或同日期」的近重复提示**。
+- 门禁：`node tests/verify-import-workflow.mjs`（6 项断言）。

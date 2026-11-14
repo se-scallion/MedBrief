@@ -6,9 +6,9 @@
 // 所以：录入页只做「上传 → 校对 → 入库」，资料卡单独一个菜单项，一进来就是预览本身。
 // 本页自包含（自己读档案、自己生成卡片），不依赖录入页的 state。
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { App as AntApp, Button, Form, Space, Typography } from 'antd'
+import { Alert, App as AntApp, Button, Card, Empty, Form, Space, Typography } from 'antd'
 import { jget } from '../api.js'
-import { useLog } from '../App.jsx'
+import { useLog, useNav } from '../App.jsx'
 import PatientForm from './intake/PatientForm.jsx'
 import CardPreview from './intake/CardPreview.jsx'
 import { postJson } from './intake/shared.js'
@@ -18,6 +18,7 @@ const { Text } = Typography
 export default function CardPage() {
   const { message } = AntApp.useApp()
   const { pushLog } = useLog()
+  const { go } = useNav()
   const [form] = Form.useForm()
   const iframeRef = useRef(null)
 
@@ -120,6 +121,10 @@ export default function CardPage() {
     win.print()
   }
 
+  // 0 份报告 = 冷启动：不渲染空壳卡片，改给引导页（用户 2026-11-14 口径）
+  const coldStart = card ? (card.empty || card.counts?.reports === 0) : false
+  const checklistMissing = card?.checklist?.missingDetail || []
+
   useEffect(() => { loadPatient() }, [loadPatient])
   // 进来就自动生成一次：这一页存在的意义就是「看卡片」，不该还要再点一次「生成」
   useEffect(() => { makeCard(false) }, [])  // eslint-disable-line react-hooks/exhaustive-deps
@@ -140,13 +145,57 @@ export default function CardPage() {
         </Space>
       </div>
       <PatientForm form={form} patient={patient} saving={patientSaving} onSave={savePatient} />
-      <CardPreview
-        card={card}
-        loading={cardLoading}
-        mask={mask}
-        onMaskChange={(v) => { setMask(v); if (card) makeCard(v) }}
-        iframeRef={iframeRef}
-      />
+
+      {/* 白血病核心资料体检条（2026-11-14 用户口径）：
+          只在屏幕上提示，**不进打印/PDF**（打印走 iframe 内的 card.html，不包含这些 React 元素），
+          且**绝不 disable 打印按钮** —— 缺资料不是不能出片的理由。 */}
+      {checklistMissing.length > 0 && (
+        <Alert
+          className="checklist"
+          type="warning"
+          showIcon
+          message={`暂未检出 ${checklistMissing.length} 项白血病核心资料`}
+          description={
+            <Space direction="vertical" size={2}>
+              <Text style={{ fontSize: 12 }}>
+                {checklistMissing.map((m) => `${m.label}：${m.detail}`).join('；')}
+              </Text>
+              <Space size={8}>
+                <Button size="small" type="primary" ghost onClick={() => go('intake')}>去补传报告</Button>
+                <Text type="secondary" style={{ fontSize: 12 }}>不影响打印，卡片仍可照常导出</Text>
+              </Space>
+            </Space>
+          }
+        />
+      )}
+
+      {coldStart ? (
+        <Card size="small">
+          <Empty
+            description={
+              <Space direction="vertical" size={4}>
+                <Text strong>还没有导入任何报告</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  资料卡是用「报告库」里的真实化验单生成的；先导入报告，或先把病友信息填好。
+                </Text>
+              </Space>
+            }
+          >
+            <Space wrap>
+              <Button type="primary" onClick={() => go('intake')}>去导入报告</Button>
+              <Button onClick={() => go('reports')}>看报告库</Button>
+            </Space>
+          </Empty>
+        </Card>
+      ) : (
+        <CardPreview
+          card={card}
+          loading={cardLoading}
+          mask={mask}
+          onMaskChange={(v) => { setMask(v); if (card) makeCard(v) }}
+          iframeRef={iframeRef}
+        />
+      )}
     </Space>
   )
 }
