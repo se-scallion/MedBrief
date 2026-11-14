@@ -918,7 +918,11 @@ function getNextReleaseCountdown() {
       total: store.reports.length,
       normalized,
       reports: attachBlobIds(store.reports).map((r) => ({
-        ...r, rows: shape(r), images: undefined, text: undefined, hasImage: !!r.sha256,
+        ...r, rows: shape(r), images: undefined, text: undefined,
+        // hasImage 必须是**真判据**：此前写的是 `!!r.sha256`（有指纹就算有图），
+        // 而 rep_mwg22hwaloc 正是 sha256 有、字节不在 —— 这个假信号让「能不能回看原件」判不出来。
+        // 现在取 attachBlobIds 算出的 hasOriginal（blob 表里真有字节）。
+        hasImage: !!r.hasOriginal,
         // 原件类型（前端列表用来显示「PDF / 原件」标签）：取 role=original 的第一个 blob 的 mime
         fileBlobType: (() => {
           const b = (r.sourceBlobs || []).find((x) => x.role === 'original')

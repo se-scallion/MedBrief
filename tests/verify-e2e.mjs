@@ -207,6 +207,28 @@ await test('测试 6：取消订单与号源回滚', async () => {
   bookedOrderId = null
 })
 
+// ===== 报告库接口（2026-11-14 补）=====
+await test('报告库接口：hasImage 必须是真判据（有字节才算），不得用「有 sha256」冒充', async () => {
+  const { body } = await req('GET', '/api/intake/reports')
+  assert.equal(body.ok, true, '接口应返回 ok')
+  const reports = body.reports || []
+  assert.ok(reports.length > 0, '库里应有报告')
+  // 实测：rep_mwg22hwaloc 的 sha256 有、blobs 里没有字节，而 hasImage 曾写成 !!sha256 → 假信号。
+  // 现在 hasImage 必须与 hasOriginal（blob 表真有字节）一致，否则「能不能回看原件」判不出来。
+  const bad = reports.filter((r) => r.hasImage !== r.hasOriginal)
+  assert.equal(bad.length, 0, `hasImage 与 hasOriginal 不一致的报告：${bad.map((r) => r.id).join('、')}`)
+})
+
+await test('报告单份详情：全文型报告必须能取到 text（列表接口剥 text 是设计，详情必须给）', async () => {
+  const { body: list } = await req('GET', '/api/intake/reports')
+  const one = (list.reports || []).find((r) => (r.rows || []).length === 0)
+  assert.ok(one, '库里应有全文型报告（rows 为空）')
+  const { body } = await req('GET', `/api/intake/reports/${encodeURIComponent(one.id)}`)
+  assert.equal(body.ok, true, '详情接口应 ok')
+  assert.ok(typeof body.report.text === 'string' && body.report.text.length > 0, `全文型报告 ${one.id} 的 text 为空 —— 界面上就没有任何地方能读到内容`)
+  assert.ok(Array.isArray(body.rows) && Array.isArray(body.rawRows), '详情要同时给清洗视图与原始行')
+})
+
 // ===== 结果汇总 =====
 console.log('\n' + '='.repeat(50))
 console.log(`结果：${passCount} 通过 / ${failCount} 失败`)
