@@ -7,8 +7,12 @@
 //   若人工只提交 `value`，形态判据不再成立 → 还原不触发 → 原区间被覆盖，**永久丢失且不报错**。
 //
 // 本脚本用一次性 worktree + 独立端口把这条路径真跑一遍：
-//   用例 A（现状风险）：只提交 {index, value} → 断言参考区间丢了（读侧不再还原）
+//   用例 C（护栏回归）：只提交 {index, value} → 断言 HTTP 400、changed 为空、库 sha256 不变
+//   用例 A（历史后果，自适应）：若护栏缺位（旧代码）则断言参考区间真的丢了、且出现假修复标记
 //   用例 B（正确用法）：四元组 {index, name, value, unit, refRange} → 断言区间保住、patchLog 留痕
+//
+// 时序要点：沙箱用 `git worktree HEAD`，所以护栏（server 端 400）必须**已进 HEAD** 才会看到 C 段为 400；
+// 若 HEAD 还没带护栏，C 段会红并把 A 段跑成「丢区间」的证据 —— 这是预期的自适应，不是脚本坏了。
 //
 // 用法：node tools/patch-replay.mjs [--keep]
 //   --keep  跑完保留 worktree 与 5199 服务（排障用），默认清理
@@ -30,6 +34,9 @@ const WT = process.env.MB_REPLAY_WT || path.join(os.tmpdir(), 'mb-replay')
 const PORT = Number(process.env.MB_REPLAY_PORT || 5199)
 const BASE = `http://127.0.0.1:${PORT}`
 const KEEP = process.argv.includes('--keep')
+// 默认按 HEAD 回放；`MB_REPLAY_REF=cf9e069` 之类可回放历史行为（例如护栏上线前）
+const REF = process.env.MB_REPLAY_REF || 'HEAD'
+const IS_HEAD = REF === 'HEAD'
 const SRC_STORE = path.join(ROOT, 'data', 'reports.json')
 
 const ok = (m) => console.log(`PASS  ${m}`)
@@ -76,7 +83,7 @@ try {
     try { execFileSync('git', ['worktree', 'remove', '--force', WT], { cwd: ROOT, stdio: 'pipe' }) } catch {}
     fs.rmSync(WT, { recursive: true, force: true })
   }
-  execFileSync('git', ['worktree', 'add', '--detach', WT, 'HEAD'], { cwd: ROOT, stdio: 'pipe' })
+  execFileSync('git', ['worktree', 'add', '--detach', WT, REF], { cwd: ROOT, stdio: 'pipe' })
   wtReady = true
   // worktree 不带 node_modules（gitignore），server.mjs 依赖 playwright / better-sqlite3 / canvas
   fs.symlinkSync(path.join(ROOT, 'node_modules'), path.join(WT, 'node_modules'), 'dir')
@@ -85,7 +92,7 @@ try {
   const pristine = path.join(WT, 'data', 'reports.json.pristine')
   fs.copyFileSync(SRC_STORE, pristine)          // 只复制，源文件不动
   fs.copyFileSync(pristine, WT_STORE)
-  ok(`worktree = HEAD，库已复制（${(fs.statSync(pristine).size / 1024).toFixed(0)} KB），源库未改动`)
+  ok(`worktree = ${REF}，库已复制（${(fs.statSync(pristine).size / 1024).toFixed(0)} KB），源库未改动`)
 
   // ---------------- 2. 独立端口起服务 ----------------
   step(`起独立服务：PORT=${PORT}（不碰 5174）`)
@@ -134,38 +141,78 @@ try {
   const beforeRaw = before.rawRows?.[index]
   console.log(`  读侧还原后：value=${JSON.stringify(beforeView?.value)} unit=${JSON.stringify(beforeView?.unit)} refRange=${JSON.stringify(beforeView?.refRange)} repaired=${JSON.stringify(beforeView?.repaired)}`)
 
-  // ---------------- 4. 用例 A：只提交 value ----------------
-  step('用例 A：只提交 { index, value }（理论风险，应为「区间丢失」）')
-  const newValue = '10.5'
-  const aRes = await patch([{ index, value: newValue }])
-  if (!aRes.json?.ok) throw new Error(`patch 失败：${JSON.stringify(aRes.json).slice(0, 200)}`)
-  const afterA = await detail()
-  const viewA = afterA.rows?.[index]
-  const rawA = afterA.rawRows?.[index]
-  table('用例 A · 逐字段', [
-    ['value(读侧)', beforeView?.value, viewA?.value],
-    ['unit(读侧)', beforeView?.unit, viewA?.unit],
-    ['refRange(读侧)', beforeView?.refRange, viewA?.refRange],
-    ['repaired', JSON.stringify(beforeView?.repaired), JSON.stringify(viewA?.repaired)],
-    ['refRange(存储)', beforeRaw?.refRange, rawA?.refRange],
+  // ---------------- 4. 用例 C：护栏必须先拦住「只提交 value」 ----------------
+  step('用例 C：只提交 { index, value } → 期望被护栏 400 拦下，库不变')
+  const wtStore = path.join(WT, 'data', 'reports.json')
+  const hashBeforeC = sha256(wtStore)
+  const cRes = await patch([{ index, value: '10.5' }])
+  const cBody = cRes.json || {}
+  const hashAfterC = sha256(wtStore)
+  table('用例 C · 响应与库', [
+    ['HTTP', '—', cRes.status],
+    ['ok', '—', cBody.ok],
+    ['field', '—', cBody.field],
+    ['changed', '—', JSON.stringify(cBody.changed ?? [])],
+    ['库 sha256(前 8)', hashBeforeC.slice(0, 8), hashAfterC.slice(0, 8)],
   ])
-  const rangeLost = !isRange(String(viewA?.refRange || '')) && !isRange(String(rawA?.refRange || ''))
-  const repairGone = !(viewA?.repaired || []).includes('column-shift')
-  // 只看**结构化字段**：rawSnippet 是原文证据，里面本来就还留着区间串（人工回查用），不参与本判定
-  const structuredA = [rawA?.value, rawA?.unit, rawA?.refRange].map((v) => String(v ?? '')).join('|')
-  const origRange = String(beforeView?.refRange || '')
-  const rangeGoneFromFields = !structuredA.includes(origRange)
-  const snippetKeepsIt = String(rawA?.rawSnippet || '').includes(origRange)
-  repairGone ? ok('A1 读侧不再还原（repaired 里没有 column-shift）') : bad(`A1 仍在还原：${JSON.stringify(viewA?.repaired)}`)
-  rangeLost ? ok(`A2 参考区间读不出来（refRange=${JSON.stringify(viewA?.refRange)}，不是区间形态）`) : bad(`A2 区间仍在：${viewA?.refRange}`)
-  rangeGoneFromFields
-    ? ok(`A3 原区间 ${JSON.stringify(origRange)} 已从结构化字段（value/unit/refRange）消失`)
-    : bad(`A3 原区间仍在结构化字段：${structuredA}`)
-  console.log(
-    `      备注：rawSnippet ${snippetKeepsIt ? '仍含' : '不含'}原区间串 —— ${snippetKeepsIt ? '人工可回查，但不是程序可用的区间' : '原文也没了'}`,
-  )
+  if (cRes.status === 400) ok('C1 HTTP 400 —— 半写被服务端拒绝')
+  else if (!IS_HEAD && cRes.status === 200) ok(`C1 历史版本 ${REF} 无护栏（200）—— 预期如此，见 A 段后果`)
+  else bad(`C1 期望 400，实际 ${cRes.status}（护栏没生效？注意沙箱按 ${REF} 回放，护栏须已进该 ref）`)
+  const c2Ok = /同时提交/.test(String(cBody.error || ''))
+  if (c2Ok) ok(`C2 错误信息说清了要求：${cBody.error}`)
+  else if (!IS_HEAD) ok(`C2 历史版本 ${REF} 没有错误信息（预期）`)
+  else bad(`C2 错误信息不含「同时提交」：${JSON.stringify(cBody.error)}`)
+  if (cBody.field === `rows[${index}]`) ok(`C3 指出具体行：${cBody.field}`)
+  else if (!IS_HEAD) ok(`C3 历史版本 ${REF} 无 field 字段（预期）`)
+  else bad(`C3 field 不对：${cBody.field}`)
+  const c4Ok = cBody.changed === undefined || (Array.isArray(cBody.changed) && cBody.changed.length === 0)
+  if (c4Ok) ok('C4 changed 为空 —— 一个字段都没写')
+  else if (!IS_HEAD) ok(`C4 历史版本 ${REF} 会写入（changed=${JSON.stringify(cBody.changed)}）—— 预期如此`)
+  else bad(`C4 changed 非空：${JSON.stringify(cBody.changed)}`)
+  if (hashBeforeC === hashAfterC) ok('C5 库文件 sha256 未变 —— 拒绝时没有落盘')
+  else if (!IS_HEAD) ok('C5 历史版本会落盘（预期）—— 见 A 段的丢失证据')
+  else bad('C5 库被写动了！')
 
-  // ---------------- 5. 用例 B：四元组整行回写 ----------------
+  // ---------------- 5. 用例 A：护栏缺位时的历史后果（按 C 的结果自动判定） ----------------
+  step('用例 A：只提交 value 在「没有护栏」时的后果（自适应）')
+  const newValue = '10.5'
+  if (cRes.status === 400) {
+    console.log('  （护栏已生效：同一请求在 C 段被 400 拦下，历史丢区间无法复现，A1–A3 跳过）')
+    ok('A0 护栏在位 —— 该路径已被封死，无需再演示丢失')
+  } else {
+    const aRes = await patch([{ index, value: newValue }])
+    if (!aRes.json?.ok) throw new Error(`patch 失败：${JSON.stringify(aRes.json).slice(0, 200)}`)
+    const afterA = await detail()
+    const viewA = afterA.rows?.[index]
+    const rawA = afterA.rawRows?.[index]
+    table('用例 A · 逐字段', [
+      ['value(读侧)', beforeView?.value, viewA?.value],
+      ['unit(读侧)', beforeView?.unit, viewA?.unit],
+      ['refRange(读侧)', beforeView?.refRange, viewA?.refRange],
+      ['repaired', JSON.stringify(beforeView?.repaired), JSON.stringify(viewA?.repaired)],
+      ['refRange(存储)', beforeRaw?.refRange, rawA?.refRange],
+    ])
+    const rangeLost = !isRange(String(viewA?.refRange || '')) && !isRange(String(rawA?.refRange || ''))
+    const repairGone = !(viewA?.repaired || []).includes('column-shift')
+    // 只看**结构化字段**：rawSnippet 是原文证据，里面本来就还留着区间串（人工回查用），不参与本判定
+    const structuredA = [rawA?.value, rawA?.unit, rawA?.refRange].map((v) => String(v ?? '')).join('|')
+    const origRange = String(beforeView?.refRange || '')
+    const rangeGoneFromFields = !structuredA.includes(origRange)
+    const snippetKeepsIt = String(rawA?.rawSnippet || '').includes(origRange)
+    repairGone ? ok('A1 读侧不再还原（repaired 里没有 column-shift）') : bad(`A1 仍在还原：${JSON.stringify(viewA?.repaired)}`)
+    rangeLost ? ok(`A2 参考区间读不出来（refRange=${JSON.stringify(viewA?.refRange)}，不是区间形态）`) : bad(`A2 区间仍在：${viewA?.refRange}`)
+    rangeGoneFromFields
+      ? ok(`A3 原区间 ${JSON.stringify(origRange)} 已从结构化字段（value/unit/refRange）消失`)
+      : bad(`A3 原区间仍在结构化字段：${structuredA}`)
+    console.log(
+      `      备注：rawSnippet ${snippetKeepsIt ? '仍含' : '不含'}原区间串 —— ${snippetKeepsIt ? '人工可回查，但不是程序可用的区间' : '原文也没了'}`,
+    )
+    const fakeRepair = (viewA?.repaired || []).includes('unit-range-swap')
+    // 历史版本实测会出现这个假标记（看返回值会以为「已处理」）；记录它，而不是判它失败
+    console.log(`      备注：repaired=${JSON.stringify(viewA?.repaired)} —— ${fakeRepair ? '出现假修复标记 unit-range-swap（当年正是这条最迷惑）' : '未见假修复标记'}`)
+  }
+
+  // ---------------- 6. 用例 B：四元组整行回写 ----------------
   step('用例 B：四元组 { index, name, value, unit, refRange }（正确用法）')
   resetStore()                                    // 回到原始存储行，两个用例互不影响
   const fixedNames = []
@@ -195,7 +242,7 @@ try {
   const allLogged = want.every((f) => fields.includes(f))
   allLogged ? ok(`B5 三处改动都进日志：${want.join(' / ')}`) : bad(`B5 日志缺字段：${JSON.stringify(fields)}`)
 
-  // ---------------- 6. 收尾 ----------------
+  // ---------------- 7. 收尾 ----------------
   step('收尾')
   const srcHashAfter = sha256(SRC_STORE)
   srcHashBefore === srcHashAfter ? ok('真实库 sha256 未变（源文件一字未改）') : bad('真实库被改动了！')
@@ -212,6 +259,8 @@ try {
   } else if (KEEP) {
     console.log(`\n--keep：保留 ${WT} 与 ${BASE}（pid ${server?.pid ?? '-'}），用完记得 kill + git worktree remove --force ${WT}`)
   }
-  console.log(failures ? `\n${failures} 项失败` : '\nA / B 两段全部 PASS')
+  if (failures) console.log(`\n${failures} 项失败`)
+  else if (IS_HEAD) console.log('\nC / A / B 三段全部 PASS —— 护栏有效：单字段 400 拒绝，四元组 200 且区间保留')
+  else console.log(`\nC / A / B 三段全部 PASS（回放 ${REF}：该版本无护栏，A 段复现了「区间丢失 + 假修复标记」）`)
   process.exit(failures ? 1 : 0)
 }
