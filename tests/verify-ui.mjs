@@ -165,22 +165,34 @@ try {
       const slim = await mobile.evaluate(() => {
         const h = document.querySelector('.ant-layout-header')
         if (!h) return { missing: true }
-        const left = h.querySelector(':scope > .ant-space:first-child')
+        const left = h.querySelector('.mb-header-left')
         const c = getComputedStyle(h)
+        // W10 插入汉堡按钮后下标整体后移，不能再用固定 children[1]/[2]（曾误把 MedBrief 当 Tag 判绿）。
+        // 按文本找元素 + 量 display/宽，才不会被 DOM 顺序骗过。
+        const byText = (kw) => [...left.children].find((x) => (x.textContent || '').includes(kw))
+        const disp = (el) => el ? getComputedStyle(el).display : 'missing'
+        const brand = byText('MedBrief'), tag = byText('北京朝阳医院'), sub = byText('挂号与问诊资料整理工作台')
         return {
           headerH: Math.round(h.getBoundingClientRect().height),
           de: document.documentElement.scrollWidth,
           flexWrap: c.flexWrap,
-          tagDisplay: left?.children[1] ? getComputedStyle(left.children[1]).display : 'missing',
-          subtitleDisplay: left?.children[2] ? getComputedStyle(left.children[2]).display : 'missing',
+          brandDisplay: disp(brand), brandW: brand ? Math.round(brand.getBoundingClientRect().width) : 0,
+          tagDisplay: disp(tag), subtitleDisplay: disp(sub),
         }
       })
       if (!slim.missing && slim.headerH <= 80 && slim.de <= 375) pass(`375×812 顶栏瘦身：header 高 ${slim.headerH}px ≤80 且 scrollWidth=${slim.de} ≤375（两者同时成立）`)
       else fail(`375×812 顶栏瘦身未达标：${JSON.stringify(slim)}`)
       if (!slim.missing && slim.flexWrap === 'nowrap') pass('375×812 顶栏保持 flex-wrap:nowrap（未用换行换宽度）')
       else fail(`375×812 顶栏仍是 wrap：${JSON.stringify(slim)}`)
-      if (!slim.missing && slim.tagDisplay === 'none' && slim.subtitleDisplay === 'none') pass('375×812 院区 Tag / 副标题已隐藏')
+      if (!slim.missing && slim.tagDisplay === 'none' && slim.subtitleDisplay === 'none') pass('375×812 院区 Tag / 副标题已隐藏（按文本定位，不受汉堡按钮下标偏移影响）')
       else fail(`375×812 院区 Tag / 副标题未隐藏：${JSON.stringify(slim)}`)
+      // W10 更正 1：首屏内容起点 ≤96px（防「顶栏压到 79 却把内容往下挤」）。
+      // 用 content.top + scrollY 取文档坐标，滚动到中部也照样能判。
+      const contentTop = await mobile.evaluate(() => Math.round(document.querySelector('.ant-layout-content').getBoundingClientRect().top + window.scrollY))
+      if (contentTop <= 96) pass(`375×812 首屏内容起点 y=${contentTop}px ≤96（顶栏未把内容往下挤）`)
+      else fail(`375×812 首屏内容起点 y=${contentTop}px >96（首屏被吃掉）`)
+      if (!slim.missing && slim.brandDisplay !== 'none' && slim.brandW > 0) pass(`375×812「MedBrief」标题仍可见（宽 ${slim.brandW}px，未被汉堡按钮下标偏移误隐藏）`)
+      else fail(`375×812「MedBrief」标题被误隐藏：${JSON.stringify(slim)}`)
 
       // 反例自证伪：临时把 header 覆盖回 5d907aa 的 wrap + 显示长文本，判据必须判红；随后移除注入，确认上下文恢复。
       await mobile.evaluate(() => {
@@ -188,8 +200,8 @@ try {
         s.id = 'w3b-assert-falsify'
         s.textContent = `@media (max-width: 575px) {
           .ant-layout-header { flex-wrap: wrap !important; padding-block: 8px !important; }
-          .ant-layout-header > .ant-space:first-child > .ant-space-item:nth-child(2),
-          .ant-layout-header > .ant-space:first-child > .ant-space-item:nth-child(3) { display: block !important; }
+          .mb-header-left > .ant-space-item:nth-child(2),
+          .mb-header-left > .ant-space-item:nth-child(3) { display: block !important; }
         }`
         document.head.appendChild(s)
       })
@@ -290,6 +302,168 @@ try {
   }
 } catch (e) {
   fail(`375×812 冒烟无法启动：${e.message}`)
+}
+
+// 7. W10（2026-11-14）：手机端隐藏 Sider + 顶部菜单入口（用户批准方案②）。
+// 判据全部量真实 DOM / 真点击 / 真 URL，不用「元素存在」代替「可见可点」；反例自证伪必须判红。
+try {
+  const w10 = await browser.newPage({ viewport: { width: 375, height: 812 }, deviceScaleFactor: 1 })
+  const w10Errors = []
+  w10.on('pageerror', (e) => w10Errors.push(String(e)))
+  const PAGES_7 = [
+    ['intake', '资料录入'], ['reports', '报告库'], ['card', '资料卡'], ['brief', '病历交换包'],
+    ['monitor', '出诊监控'], ['booking', '挂号与预约'], ['session', '114 会话'],
+  ]
+  try {
+    await w10.goto(BASE + '/?tab=card', { waitUntil: 'domcontentloaded', timeout: 20000 })
+    await w10.locator('.ant-layout-header').waitFor({ timeout: 15000 })
+    await w10.waitForTimeout(1800)
+
+    // 7.1 Sider 不可见 + 菜单入口可见可点
+    const closed = await w10.evaluate(() => {
+      const s = document.querySelector('.ant-layout-sider')
+      const btn = document.querySelector('.mb-nav-trigger')
+      const h = document.querySelector('.ant-layout-header')
+      return {
+        siderDisplay: getComputedStyle(s).display,
+        siderW: Math.round(s.getBoundingClientRect().width),
+        siderOffsetNull: s.offsetParent === null,
+        btnDisplay: btn ? getComputedStyle(btn).display : 'missing',
+        btnVisible: btn ? btn.getBoundingClientRect().width > 0 : false,
+        headerH: Math.round(h.getBoundingClientRect().height),
+        contentW: Math.round(document.querySelector('.ant-layout-content').getBoundingClientRect().width),
+        de: document.documentElement.scrollWidth,
+      }
+    })
+    const siderHidden = closed.siderDisplay === 'none' || closed.siderW === 0 || closed.siderOffsetNull
+    if (siderHidden) pass(`375 Sider 已隐藏（display=${closed.siderDisplay}, 宽=${closed.siderW}, 正文=${closed.contentW}px）`)
+    else fail(`375 Sider 未隐藏：${JSON.stringify(closed)}`)
+    if (closed.btnDisplay !== 'none' && closed.btnVisible) pass(`375 顶部菜单入口可见（display=${closed.btnDisplay}）`)
+    else fail(`375 顶部菜单入口不可见：${JSON.stringify(closed)}`)
+    await w10.screenshot({ path: '/tmp/w10-nav-closed-375.png', fullPage: false })
+    console.log('       截图 /tmp/w10-nav-closed-375.png')
+
+    // 7.2 点菜单入口 → 菜单项可见 → 点「资料卡」→ 真切页（先停在别的页，再切回来）
+    await w10.goto(BASE + '/?tab=intake', { waitUntil: 'domcontentloaded' })
+    await w10.waitForTimeout(1400)
+    await w10.locator('.mb-nav-trigger').click({ timeout: 8000 })
+    await w10.waitForTimeout(500)
+    const opened = await w10.evaluate(() => {
+      const drawer = document.querySelector('.ant-drawer')
+      const titles = [...document.querySelectorAll('.ant-drawer .ant-menu-item-group-title')].map((x) => x.textContent.trim())
+      const items = [...document.querySelectorAll('.ant-drawer .ant-menu-item')].map((x) => x.textContent.trim())
+      return { drawerVisible: !!drawer && getComputedStyle(drawer).display !== 'none', groupCount: titles.length, groups: titles, itemCount: items.length, items }
+    })
+    if (opened.drawerVisible && opened.groupCount === 2 && opened.itemCount === 7 && opened.groups.join('/') === '资料/出诊') pass(`375 菜单展开：两组（${opened.groups.join('/')}）+ 7 项齐全`)
+    else fail(`375 菜单展开缺件：${JSON.stringify(opened)}`)
+    await w10.screenshot({ path: '/tmp/w10-nav-open-375.png', fullPage: false })
+    console.log('       截图 /tmp/w10-nav-open-375.png')
+    await w10.locator('.ant-drawer .ant-menu-item').filter({ hasText: '资料卡' }).first().click({ timeout: 8000 })
+    await w10.waitForTimeout(1500)
+    const switched = await w10.evaluate(() => ({
+      url: window.location.href,
+      tabs: [...document.querySelectorAll('.ant-tabs-tab')].map((x) => x.textContent.trim()),
+      drawerOpen: !!document.querySelector('.ant-drawer-open'),
+      de: document.documentElement.scrollWidth,
+    }))
+    const reallySwitched = /[?&]tab=card/.test(switched.url) && switched.tabs.some((t) => /临床指标总览/.test(t)) && !switched.drawerOpen
+    if (reallySwitched) pass(`375 点菜单「资料卡」真切页（URL tab=card、内容出现三视图、菜单自动关闭）`)
+    else fail(`375 点菜单未真切页：${JSON.stringify(switched)}`)
+
+    // 7.3 375 硬约束：header ≤80 且 de ≤375（W3b/W3c 断言不许放宽）
+    const hard = await w10.evaluate(() => ({ headerH: Math.round(document.querySelector('.ant-layout-header').getBoundingClientRect().height), de: document.documentElement.scrollWidth }))
+    if (hard.headerH <= 80 && hard.de <= 375) pass(`375 硬约束：header ${hard.headerH}px ≤80 且 scrollWidth=${hard.de} ≤375（两者同时）`)
+    else fail(`375 硬约束未达标：${JSON.stringify(hard)}`)
+
+    // 7.4 更正 2：7 页逐页记录改前/改后 scrollWidth，要求「改后 ≤ 改前」（不许因导航改造变差）。
+    // 改前基线是本卡动手前实测（仅资料卡 375，其余 415/435，属各页自身宽表，不算在 App.jsx 头上）。
+    // 资料卡仍必须 ≤375（现有断言不动）。
+    const BEFORE_W10 = { intake: 415, reports: 415, card: 375, brief: 435, monitor: 415, booking: 415, session: 415 }
+    const seven = []
+    for (const [key, label] of PAGES_7) {
+      await w10.goto(`${BASE}/?tab=${key}`, { waitUntil: 'domcontentloaded', timeout: 20000 })
+      await w10.waitForTimeout(1300)
+      const g = await w10.evaluate(() => {
+        const h = document.querySelector('.ant-layout-header')
+        return {
+          de: document.documentElement.scrollWidth, headerScrollW: h.scrollWidth,
+          headerH: Math.round(h.getBoundingClientRect().height),
+          siderDisplay: getComputedStyle(document.querySelector('.ant-layout-sider')).display,
+        }
+      })
+      seven.push({ label, key, before: BEFORE_W10[key], ...g })
+    }
+    const worse = seven.filter((x) => x.de > x.before || x.headerH > 80 || x.siderDisplay !== 'none')
+    const cardWorse = seven.find((x) => x.key === 'card' && x.de > 375)
+    console.log(`       7 页改前/改后：${seven.map((x) => `${x.label} ${x.before}→${x.de}（header.scrollW=${x.headerScrollW}）`).join(' / ')}`)
+    if (worse.length === 0 && !cardWorse) pass(`375 七页改后均 ≤ 改前（资料卡 ${seven.find(x=>x.key==='card').de} ≤375），顶栏全局收敛，无页面变差`)
+    else fail(`375 七页有变差/未达标：${JSON.stringify(worse.concat(cardWorse ? [seven.find(x=>x.key==='card')] : []))}`)
+    if (seven.every((x) => x.headerScrollW <= 375)) pass(`375 六页顶栏额外收益：header.scrollWidth 全部 ≤375（${seven.map(x=>x.label+'='+x.headerScrollW).join('/')}）`)
+    else fail(`375 顶栏仍有页面自身超宽：${JSON.stringify(seven.filter(x=>x.headerScrollW>375))}`)
+
+    // 7.5 反例自证伪：临时撤销 Sider 隐藏 → 判据必须判红；移除后恢复
+    await w10.evaluate(() => {
+      const s = document.createElement('style')
+      s.id = 'w10-assert-falsify'
+      s.textContent = '@media (max-width: 575px) { .ant-layout-sider { display: block !important; width: 56px !important; } }'
+      document.head.appendChild(s)
+    })
+    await w10.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
+    const falsified = await w10.evaluate(() => {
+      const s = document.querySelector('.ant-layout-sider')
+      return { display: getComputedStyle(s).display, w: Math.round(s.getBoundingClientRect().width), offsetNull: s.offsetParent === null }
+    })
+    const wouldFail = !(falsified.display === 'none' || falsified.w === 0 || falsified.offsetNull)
+    if (wouldFail) pass(`W10 反例自证伪：撤销隐藏后 Sider ${falsified.display}/${falsified.w}px 可见，「Sider 不可见」断言会判红（非空过）`)
+    else fail(`W10 反例自证伪失败：撤销隐藏后 Sider 仍判隐藏 ${JSON.stringify(falsified)}`)
+    await w10.evaluate(() => { document.getElementById('w10-assert-falsify')?.remove() })
+    await w10.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
+    const restored = await w10.evaluate(() => getComputedStyle(document.querySelector('.ant-layout-sider')).display)
+    if (restored === 'none') pass('W10 反例注入移除后 Sider 恢复 none（不污染后续断言）')
+    else fail(`W10 反例注入移除后 Sider 仍 ${restored}`)
+
+    if (w10Errors.length) fail(`W10 375 期间前端报错：${w10Errors.slice(0, 2).join(' | ')}`)
+    await w10.close()
+  } catch (e) {
+    fail(`W10 375 断言异常：${e.message}`)
+    await w10.close().catch(() => {})
+  }
+
+  // 7.6 992 / 1440：Sider 常驻、菜单结构不变、de 不变、手机菜单入口隐藏
+  for (const vw of [992, 1440]) {
+    const d = await browser.newPage({ viewport: { width: vw, height: 950 }, deviceScaleFactor: 1 })
+    try {
+      await d.goto(BASE + '/?tab=card', { waitUntil: 'domcontentloaded', timeout: 20000 })
+      await d.locator('.ant-layout-sider').first().waitFor({ timeout: 15000 })
+      await d.waitForTimeout(1800)
+      const g = await d.evaluate(() => {
+        const s = document.querySelector('.ant-layout-sider')
+        const groups = [...s.querySelectorAll('.ant-menu-item-group-title')].map((x) => x.textContent.trim())
+        const items = [...s.querySelectorAll('.ant-menu-item')].map((x) => x.textContent.trim())
+        return {
+          de: document.documentElement.scrollWidth,
+          siderDisplay: getComputedStyle(s).display, siderW: Math.round(s.getBoundingClientRect().width),
+          headerH: Math.round(document.querySelector('.ant-layout-header').getBoundingClientRect().height),
+          groups, itemCount: items.length,
+          navBtnDisplay: getComputedStyle(document.querySelector('.mb-nav-trigger')).display,
+          mediaMatches: window.matchMedia('(max-width: 575px)').matches,
+        }
+      })
+      const ok = g.de === vw && g.siderDisplay === 'block' && g.siderW === 168 && g.headerH === 64
+        && g.groups.join('/') === '资料/出诊' && g.itemCount === 7 && g.navBtnDisplay === 'none' && !g.mediaMatches
+      if (ok) pass(`${vw} 桌面零影响：de=${g.de}、Sider ${g.siderW}px 可见、header ${g.headerH}px、菜单两组 7 项、手机入口 hidden`)
+      else fail(`${vw} 桌面被改动：${JSON.stringify(g)}`)
+      if (vw === 1440) {
+        await d.screenshot({ path: '/tmp/w10-nav-1440.png', fullPage: false })
+        console.log('       截图 /tmp/w10-nav-1440.png')
+      }
+    } catch (e) {
+      fail(`${vw} 桌面断言异常：${e.message}`)
+    }
+    await d.close()
+  }
+} catch (e) {
+  fail(`W10 冒烟无法启动：${e.message}`)
 }
 
 // 6. 无 console / page error

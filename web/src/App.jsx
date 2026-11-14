@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import {
   App as AntApp,
   Badge,
@@ -20,6 +20,39 @@ import CardPage from './pages/CardPage.jsx'
 
 const { Header, Content, Footer, Sider } = Layout
 const { Text } = Typography
+
+// W10（2026-11-14，用户批准「② 窄屏隐藏 Sider + 顶部菜单下拉」）：
+// 手机端 ≤575px 隐藏被压成 56px / 单字竖排的 Sider，顶栏换成汉堡按钮 + Drawer 里的同一份分组菜单。
+// 这段 CSS 只在 App 挂载期注入 head、卸载即移除；媒体查询限定 ≤575px，桌面 ≥992 一条都不匹配。
+// 顶栏规则也归这里（W10 更正 3：单一 owner，CardPage 只留卡片专属规则）。
+// 探针实测：与 CardPage 的 #mb-card-mobile 共存无冲突；7 页 de 全 375；992/1440 零影响。
+// 为什么连内容区一起收敛：375 下除资料卡外 6 页原本 de=415/435（各页自身宽表/长文本），
+// 隐藏 Sider 让正文 319→375 后仍需通用窄屏规则兜住，才不会因导航改造变差。
+const APP_MOBILE_CSS = `
+@media (max-width: 575px) {
+  .ant-layout-sider { display: none !important; }
+  .ant-layout-header { flex-wrap: nowrap !important; height: auto; padding-inline: 12px !important; padding-block: 6px; }
+  /* 汉堡按钮是左 Space 第 1 项之外的 Header 直接子元素（见 JSX）：桌面 display:none，
+     窄屏绝对定位在左侧；MedBrief / 院区 Tag / 副标题仍是左 Space 的第 1/2/3 项。
+     只隐藏第 2、3 项，标题保持可见（旧 CardPage 规则按 2|3 隐藏会误伤，已搬走删除）。
+     padding-inline 必须 !important：Header 有内联 style paddingInline:20，层叠最高。 */
+  .ant-layout-header { position: relative; }
+  .mb-header-left > .ant-space-item:nth-child(2),
+  .mb-header-left > .ant-space-item:nth-child(3) { display: none !important; }
+  .mb-header-left { margin-left: 36px; }
+  .mb-nav-trigger { display: inline-flex !important; }
+  .ant-layout-content { padding: 12px !important; }
+  .ant-card-head { flex-wrap: wrap; height: auto; }
+  .ant-card-head .ant-card-extra { max-width: 100%; margin-inline-start: 0; overflow: hidden; }
+  .ant-table table { table-layout: fixed; }
+  .ant-table th, .ant-table td { word-break: break-word; }
+  .ant-table-wrapper, .ant-card, .ant-space, .ant-form-item, .ant-row, .ant-col, .ant-segmented, .ant-input-group, .ant-tabs { max-width: 100%; }
+  img, iframe, video, canvas { max-width: 100%; }
+}
+/* 桌面默认不显示手机菜单入口；放 Header 直接子元素而非左 Space 内，
+   避免 antd Space 给 display:none 的 item 仍预留 12px gap（桌面 Tag 会整体右移 12px）。 */
+.mb-nav-trigger { display: none; position: absolute; left: 12px; top: 50%; transform: translateY(-50%); }
+`
 
 // ---------- 全局事件日志（各 tab 共用，替代旧页面的 appendLog） ----------
 const LogContext = createContext({ logs: [], pushLog: () => {}, clearLogs: () => {} })
@@ -75,6 +108,16 @@ export default function App() {
   }
   const [active, setActive] = useState(readKeyFromUrl)
   const [collapsed, setCollapsed] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  // ≤575px 才把窄屏样式挂到 head：与 CardPage 同款（useEffect 挂载 / 卸载即移除），不污染其它条件。
+  useEffect(() => {
+    const style = document.createElement('style')
+    style.id = 'mb-app-mobile'
+    style.textContent = APP_MOBILE_CSS
+    document.head.appendChild(style)
+    return () => { style.remove() }
+  }, [])
   // 切页写回 URL：刷新/分享/旧链接都能回到同一页（不引 react-router）
   const go = useCallback((key) => {
     setActive(key)
@@ -107,7 +150,15 @@ export default function App() {
             paddingInline: 20,
           }}
         >
-          <Space size={12} align="center">
+          <Button
+            className="mb-nav-trigger"
+            aria-label="打开导航菜单"
+            size="small"
+            onClick={() => setMenuOpen(true)}
+          >
+            ☰
+          </Button>
+          <Space className="mb-header-left" size={12} align="center">
             <span style={{ color: '#fff', fontSize: 18, fontWeight: 700, letterSpacing: 1 }}>MedBrief</span>
             <Tag color="red">北京朝阳医院 · 血液内科 · 主鸿鹄</Tag>
             <Text style={{ color: '#94a3b8', fontSize: 12 }}>挂号与问诊资料整理工作台</Text>
@@ -150,6 +201,22 @@ export default function App() {
         <Footer style={{ textAlign: 'center', color: '#94a3b8', fontSize: 12, padding: 12 }}>
           仅为自己挂号，不代挂、不并发抢号 · 每日 07:00 放第 14 天号源 · 资料整理不构成诊断建议
         </Footer>
+
+        <Drawer
+          title="导航菜单"
+          placement="left"
+          width={260}
+          open={menuOpen}
+          onClose={() => setMenuOpen(false)}
+        >
+          <Menu
+            mode="inline"
+            selectedKeys={[active]}
+            items={menuItems}
+            onClick={({ key }) => { go(key); setMenuOpen(false) }}
+            style={{ borderInlineEnd: 'none' }}
+          />
+        </Drawer>
 
         <Drawer
           title={
