@@ -1,19 +1,26 @@
-// 资料卡（2026-11-13 从「资料录入」页独立出来）
+// 资料卡页 = 交互式问诊工作台（2026-11-14 用户口径，v3.5）
 //
-// 用户原话：「资料卡为什么要放到导入页面中？放在资料库也比放在导入页面中好啊。
-//           资料卡可以用新页面或者用弹窗表示。你放在那个页面下方，又丑又长。」
+// 主画面不再平铺「长表单 + 3 页 A4 iframe」（改造前页面高 1705px，一屏只见档案表单），
+// 改为三件事：
+//   ① 顶部工具栏：病友抬头 + [编辑档案与三问] + [打印预览 / 存 PDF]（主按钮）
+//   ② 白血病核心资料体检条（仅屏幕，不进打印；绝不阻塞打印）
+//   ③ 三个标签页：临床指标总览 / 动态趋势看板 / 全病程原件轴
+// 点击任意指标行 / 趋势圆点 / 病程条目 → 【原件溯源弹窗】；打印走【A4 打印预览弹窗】。
 //
-// 所以：录入页只做「上传 → 校对 → 入库」，资料卡单独一个菜单项，一进来就是预览本身。
-// 本页自包含（自己读档案、自己生成卡片），不依赖录入页的 state。
-import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Alert, App as AntApp, Button, Card, Empty, Form, Space, Typography } from 'antd'
+// 打印件本身零改动：仍由 buildCard().html 那份自包含静态 3 页渲染，本页只负责「什么时候打开它」。
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Alert, App as AntApp, Button, Card, Empty, Form, Space, Spin, Tabs, Tag, Typography } from 'antd'
 import { jget } from '../api.js'
 import { useLog, useNav } from '../App.jsx'
+import { postJson } from './intake/shared.js'
 import PatientForm from './intake/PatientForm.jsx'
 import CardPreview from './intake/CardPreview.jsx'
-import { postJson } from './intake/shared.js'
+import OverviewTab from './card/OverviewTab.jsx'
+import TrendsTab from './card/TrendsTab.jsx'
+import TimelineTab from './card/TimelineTab.jsx'
+import SourceModal from './card/SourceModal.jsx'
 
-const { Text } = Typography
+const { Text, Title } = Typography
 
 export default function CardPage() {
   const { message } = AntApp.useApp()
@@ -26,7 +33,13 @@ export default function CardPage() {
   const [patientSaving, setPatientSaving] = useState(false)
   const [card, setCard] = useState(null)
   const [cardLoading, setCardLoading] = useState(false)
-  const [mask, setMask] = useState(false) // 默认不脱敏（给医生看）
+  const [mask, setMask] = useState(false)     // 默认不脱敏（给医生看）
+
+  const [tab, setTab] = useState('overview')
+  const [printOpen, setPrintOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [focusField, setFocusField] = useState('')
+  const [source, setSource] = useState({ open: false, target: null })
 
   const loadPatient = useCallback(async () => {
     try {
@@ -51,7 +64,6 @@ export default function CardPage() {
           comorbidities: j.patient.comorbidities || '',
           allergies: j.patient.allergies || '',
           medications: j.patient.medications || '',
-          // 三项开关：已有内容才打开「有」，否则默认「无」（卡面据此决定显示与否）
           comorbiditiesHas: j.patient.comorbidities ? 'has' : 'none',
           allergiesHas: j.patient.allergies ? 'has' : 'none',
           medicationsHas: j.patient.medications ? 'has' : 'none',
@@ -99,6 +111,8 @@ export default function CardPage() {
       setPatient(body.patient)
       pushLog('病友档案已保存（身份证 / 手机号 / 住址一律不存）', 'ok')
       message.success('已保存')
+      setProfileOpen(false)
+      await makeCard(mask)   // 保存后重刷工作台数据
     } catch (e) {
       message.error(e.message)
     } finally {
@@ -106,60 +120,70 @@ export default function CardPage() {
     }
   }
 
-  const openCardInNewWindow = () => {
-    if (!card?.html) return message.warning('资料卡还没生成')
-    const w = window.open('', '_blank')
-    if (!w) return message.warning('浏览器拦截了新窗口，请允许弹窗后重试')
-    w.document.write(card.html)
-    w.document.close()
-  }
-
-  const printCard = () => {
-    const win = iframeRef.current?.contentWindow
-    if (!win) return message.warning('资料卡还没生成')
-    win.focus()
-    win.print()
-  }
-
-  // 0 份报告 = 冷启动：不渲染空壳卡片，改给引导页（用户 2026-11-14 口径）
-  const coldStart = card ? (card.empty || card.counts?.reports === 0) : false
-  const checklistMissing = card?.checklist?.missingDetail || []
-
   useEffect(() => { loadPatient() }, [loadPatient])
-  // 进来就自动生成一次：这一页存在的意义就是「看卡片」，不该还要再点一次「生成」
-  useEffect(() => { makeCard(false) }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+  // 进来就自动生成一次：这一页存在的意义就是「看工作台」，不该还要再点一次「生成」
+  useEffect(() => { makeCard(false) }, [])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 打印弹窗没开时按 Cmd/Ctrl+P：**不打印工作台**，改为打开打印预览
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!(e.metaKey || e.ctrlKey) || (e.key !== 'p' && e.key !== 'P')) return
+      if (printOpen) return   // 弹窗自己的监听会把快捷键转给 iframe
+      e.preventDefault()
+      setPrintOpen(true)
+      message.info('请在弹出的打印预览里点「立即打印 / 存为 PDF」')
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [printOpen, message])
+
+  const openSource = useCallback((target) => setSource({ open: true, target }), [])
+  const openProfile = useCallback((field) => { setFocusField(field || ''); setProfileOpen(true) }, [])
+
+  const coldStart = card ? (card.empty || card.counts?.reports === 0) : false
+  const missing = card?.checklist?.missingDetail || []
+  const p = card?.patient || patient || {}
+  const counts = card?.counts || {}
+
+  const headline = useMemo(() => (
+    <Space direction="vertical" size={0}>
+      <Space size={8} wrap align="baseline">
+        <Title level={4} style={{ margin: 0 }}>{p.name || '（姓名未填）'}</Title>
+        <Text type="secondary">{p.sex || ''}{p.age ? ` · ${p.age} 岁` : ''}</Text>
+        <Tag color="blue">{p.diagnosis || '未录入诊断'}</Tag>
+        {counts.staleDays > 90 ? <Tag color="orange">最新化验距今 {counts.staleDays} 天</Tag> : null}
+      </Space>
+      <Text type="secondary" style={{ fontSize: 12 }}>
+        共 {counts.reports ?? 0} 份报告 / {counts.latest ?? 0} 项指标 / 异常 {(counts.p0 ?? 0) + (counts.p1 ?? 0)} 项 ·
+        点任意指标可看原件 · 打印件为零改动的静态 3 页 A4
+      </Text>
+    </Space>
+  ), [p, counts])
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-        <Space direction="vertical" size={0}>
-          <Text strong style={{ fontSize: 15 }}>资料卡</Text>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            给门诊医生看的一页 A4（第 1 页速览 / 第 2 页全部指标 / 第 3 页趋势）；数据来自「报告库」，只陈述数值与出处
-          </Text>
-        </Space>
-        <Space>
-          <Button size="small" onClick={() => makeCard(mask)} loading={cardLoading}>重新生成</Button>
-          <Button size="small" onClick={printCard} disabled={!card?.html}>打印 / 存 PDF</Button>
-          <Button size="small" onClick={openCardInNewWindow} disabled={!card?.html}>新窗口打开</Button>
-        </Space>
-      </div>
-      <PatientForm form={form} patient={patient} saving={patientSaving} onSave={savePatient} />
+      {/* ---------- 顶部操作栏 ---------- */}
+      <Card size="small" style={{ borderLeft: '3px solid #111' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          {headline}
+          <Space wrap>
+            <Button onClick={() => openProfile('')}>编辑档案与三问</Button>
+            <Button size="small" onClick={() => makeCard(mask)} loading={cardLoading}>刷新数据</Button>
+            <Button type="primary" onClick={() => setPrintOpen(true)} disabled={!card?.html}>打印预览 / 存 PDF</Button>
+          </Space>
+        </div>
+      </Card>
 
-      {/* 白血病核心资料体检条（2026-11-14 用户口径）：
-          只在屏幕上提示，**不进打印/PDF**（打印走 iframe 内的 card.html，不包含这些 React 元素），
-          且**绝不 disable 打印按钮** —— 缺资料不是不能出片的理由。 */}
-      {checklistMissing.length > 0 && (
+      {/* ---------- 白血病核心资料体检条（仅屏幕） ---------- */}
+      {missing.length > 0 && (
         <Alert
           className="checklist"
           type="warning"
           showIcon
-          message={`暂未检出 ${checklistMissing.length} 项白血病核心资料`}
+          message={`暂未检出 ${missing.length} 项白血病核心资料`}
           description={
             <Space direction="vertical" size={2}>
-              <Text style={{ fontSize: 12 }}>
-                {checklistMissing.map((m) => `${m.label}：${m.detail}`).join('；')}
-              </Text>
+              <Text style={{ fontSize: 12 }}>{missing.map((m) => `${m.label}：${m.detail}`).join('；')}</Text>
               <Space size={8}>
                 <Button size="small" type="primary" ghost onClick={() => go('intake')}>去补传报告</Button>
                 <Text type="secondary" style={{ fontSize: 12 }}>不影响打印，卡片仍可照常导出</Text>
@@ -169,6 +193,7 @@ export default function CardPage() {
         />
       )}
 
+      {/* ---------- 主体 ---------- */}
       {coldStart ? (
         <Card size="small">
           <Empty
@@ -176,7 +201,7 @@ export default function CardPage() {
               <Space direction="vertical" size={4}>
                 <Text strong>还没有导入任何报告</Text>
                 <Text type="secondary" style={{ fontSize: 12 }}>
-                  资料卡是用「报告库」里的真实化验单生成的；先导入报告，或先把病友信息填好。
+                  工作台和资料卡都是用「报告库」里的真实化验单生成的；先导入报告，或先把病友信息填好。
                 </Text>
               </Space>
             }
@@ -184,18 +209,51 @@ export default function CardPage() {
             <Space wrap>
               <Button type="primary" onClick={() => go('intake')}>去导入报告</Button>
               <Button onClick={() => go('reports')}>看报告库</Button>
+              <Button onClick={() => openProfile('')}>先建档</Button>
             </Space>
           </Empty>
         </Card>
+      ) : cardLoading && !card ? (
+        <Card size="small"><Spin tip="生成中…" /></Card>
       ) : (
-        <CardPreview
-          card={card}
-          loading={cardLoading}
-          mask={mask}
-          onMaskChange={(v) => { setMask(v); if (card) makeCard(v) }}
-          iframeRef={iframeRef}
+        <Tabs
+          activeKey={tab}
+          onChange={setTab}
+          items={[
+            { key: 'overview', label: '临床指标总览', children: <OverviewTab card={card} onOpenSource={openSource} onEditProfile={openProfile} /> },
+            { key: 'trends', label: `动态趋势看板${card?.trendAll?.length ? `（${card.trendAll.length}）` : ''}`, children: <TrendsTab card={card} onOpenSource={openSource} /> },
+            { key: 'timeline', label: `全病程原件轴${card?.timeline?.length ? `（${card.timeline.length}）` : ''}`, children: <TimelineTab card={card} onOpenSource={openSource} /> },
+          ]}
         />
       )}
+
+      {/* ---------- 三个弹窗 ---------- */}
+      <PatientForm
+        open={profileOpen}
+        onClose={() => setProfileOpen(false)}
+        form={form}
+        patient={patient}
+        saving={patientSaving}
+        onSave={savePatient}
+        focusField={focusField}
+      />
+      <CardPreview
+        open={printOpen}
+        onClose={() => setPrintOpen(false)}
+        card={card}
+        loading={cardLoading}
+        mask={mask}
+        onMaskChange={(v) => { setMask(v); if (card) makeCard(v) }}
+        iframeRef={iframeRef}
+        onNotify={(type, msg) => (type === 'warning' ? message.warning(msg) : message.info(msg))}
+      />
+      <SourceModal
+        open={source.open}
+        target={source.target}
+        card={card}
+        onClose={() => setSource((s) => ({ ...s, open: false }))}
+        onSaved={() => makeCard(mask)}
+      />
     </Space>
   )
 }

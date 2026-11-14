@@ -1,46 +1,96 @@
-// CardPreview —— 只管「资料卡展示与打印」（2026-11-14 从 ProfilePanel 拆出）
-// 职责边界：只接收已生成好的 card；生成、存档、脱敏开关的副作用都由调用方处理。
-import React from 'react'
-import { Card, Empty, Space, Spin, Switch, Tag, Typography } from 'antd'
+// CardPreview —— A4 打印预览弹窗（2026-11-14 用户口径：由「页面内长 iframe」改成「按需弹窗」）
+//
+// 为什么是弹窗：主页面一旦平铺 3 页 A4 + 长表单，页面动辄 1700px+，交互工作台会被挤到下面。
+// 打印件本身**一行没改**：仍是 buildCard().html 那份自包含纯静态 3 页（无脚本、无交互）。
+//
+// 打印纪律（用户 2026-11-14 明确）：
+//   · 主按钮必须精准调用 `iframe.contentWindow.print()`，**绝不能打印外层弹窗遮罩**；
+//   · 不支持靠 `@media print` 给 iframe 设 position:fixed 的「CSS 魔改」——
+//     AntD Modal 挂在 document.body 下、不在 #root 里，Chromium 里那样只会印出截断的第 1 页；
+//   · 快捷键 Cmd/Ctrl+P 由 JS 拦截后转发给 iframe；弹窗没开时按快捷键 → 不打印工作台，
+//     而是自动打开本弹窗并提示「请在此打印」；
+//   · 兜底始终保留「新窗口打开」（不依赖任何 CSS 技巧）。
+import React, { useCallback, useEffect, useRef } from 'react'
+import { Button, Modal, Space, Spin, Switch, Tag, Typography } from 'antd'
 
 const { Text } = Typography
 
-export default function CardPreview({ card, loading, mask, onMaskChange, iframeRef }) {
+export default function CardPreview({ open, onClose, card, loading, mask, onMaskChange, iframeRef, onNotify }) {
+  const innerRef = useRef(null)
+  const frame = iframeRef || innerRef
+
+  const print = useCallback(() => {
+    const win = frame.current?.contentWindow
+    if (!win) { onNotify && onNotify('warning', '资料卡还没生成'); return }
+    win.focus()
+    win.print()
+  }, [frame, onNotify])
+
+  // 弹窗打开时把 Cmd/Ctrl+P 转给 iframe
+  useEffect(() => {
+    if (!open) return undefined
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'p' || e.key === 'P')) {
+        e.preventDefault()
+        print()
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [open, print])
+
+  const openWindow = () => {
+    if (!card?.html) return onNotify && onNotify('warning', '资料卡还没生成')
+    const w = window.open('', '_blank')
+    if (!w) return onNotify && onNotify('warning', '浏览器拦截了新窗口，请允许弹窗后重试')
+    w.document.write(card.html)
+    w.document.close()
+  }
+
   return (
-    <Card size="small" title="② 资料卡预览"
-      extra={
-        <Space>
-          <Text style={{ fontSize: 12 }}>脱敏</Text>
-          <Switch size="small" checked={mask} onChange={onMaskChange} />
+    <Modal
+      open={open}
+      onCancel={onClose}
+      width="90vw"
+      style={{ maxWidth: 960, top: 16 }}
+      title={
+        <Space wrap>
+          <span>打印预览（3 页 A4）</span>
+          <Tag color={card?.masked ? 'green' : 'orange'}>{card?.masked ? '已脱敏' : '未脱敏'}</Tag>
+          <Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>
+            报告 {card?.counts?.reports ?? 0} 份 · 指标 {card?.counts?.latest ?? 0} 项
+          </Text>
         </Space>
       }
+      styles={{ body: { background: '#525659', padding: 12, borderRadius: 6 } }}
+      footer={[
+        <Space key="l" size={8} style={{ float: 'left' }}>
+          <Text style={{ color: '#fff', fontSize: 12 }}>脱敏</Text>
+          <Switch size="small" checked={mask} onChange={onMaskChange} />
+        </Space>,
+        <Button key="win" onClick={openWindow}>新窗口打开纯净打印页</Button>,
+        <Button key="close" onClick={onClose}>关闭</Button>,
+        <Button key="print" type="primary" onClick={print} disabled={!card?.html}>立即打印 / 存为 PDF</Button>,
+      ]}
     >
-
       {loading ? (
-        <Space>
-          <Spin size="small" />
-          <Text type="secondary">生成中…</Text>
-        </Space>
+        <div style={{ height: '72vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Spin tip="生成中…" />
+        </div>
       ) : card?.html ? (
-        <Space direction="vertical" size={8} style={{ width: '100%' }}>
-          <Space wrap align="center">
-            <Tag color={card.masked ? 'green' : 'orange'}>{card.masked ? '已脱敏（姓名打码）' : '未脱敏'}</Tag>
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              报告 {card.counts?.reports ?? 0} 份 · 指标 {card.counts?.latest ?? card.counts?.rows ?? 0} 项 ·
-              异常 {(card.counts?.p0 ?? 0) + (card.counts?.p1 ?? 0)} 项
-              {card.counts?.staleDays > 90 ? ` · ⚠️ 最新化验距今 ${card.counts.staleDays} 天` : ''}
-            </Text>
-          </Space>
+        <div style={{ background: '#fff', borderRadius: 4, overflow: 'hidden' }}>
           <iframe
-            ref={iframeRef}
-            title="问诊资料卡预览"
+            ref={frame}
+            title="问诊资料卡打印预览"
             srcDoc={card.html}
-            style={{ width: '100%', height: 'min(78vh, 1180px)', border: '1px solid #f0f0f0', borderRadius: 8, background: '#fff' }}
+            style={{ width: '100%', height: 'calc(100vh - 240px)', minHeight: 420, border: 'none', display: 'block' }}
           />
-        </Space>
+        </div>
       ) : (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有生成资料卡" />
+        <div style={{ height: 240, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
+          还没有生成资料卡
+        </div>
       )}
-    </Card>
+    </Modal>
   )
 }

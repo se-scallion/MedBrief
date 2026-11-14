@@ -1,17 +1,39 @@
 // PatientForm —— 只管「病友档案录入」（2026-11-14 从 ProfilePanel 拆出，去掉 hideActions 反向开关）
 // 职责边界：只渲染表单与保存动作；不碰卡片生成/打印（那是 CardPreview 的事）。
-import React from 'react'
-import { Button, Card, Col, Form, Input, Radio, Row, Select, Space, Typography } from 'antd'
+import React, { useEffect } from 'react'
+import { Button, Col, Form, Input, Modal, Radio, Row, Select, Space, Typography } from 'antd'
 
 const { Text, Paragraph } = Typography
 
-export default function PatientForm({ form, patient, saving, onSave }) {
+/**
+ * 档案与三问编辑弹窗（2026-11-14 用户口径：表单不再常驻页面，改为按需弹窗）。
+ * `focusField` 支持「点第 1 页某个未录入项 → 直接打开并聚焦该字段」（如 lastChemo / comorbidities）。
+ */
+export default function PatientForm({ open = true, onClose, form, patient, saving, onSave, focusField }) {
   // 三项开关的状态用 useWatch 读：只有「有」才渲染文本框（antd 的 Form.Item 条件渲染必须靠监听）
   const comorbiditiesHas = Form.useWatch('comorbiditiesHas', form)
+
+  // 打开时聚焦指定字段（antd 给每个控件的 id 就是 Form.Item 的 name）
+  useEffect(() => {
+    if (!open || !focusField) return
+    const el = document.getElementById(focusField)
+    if (el) {
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      el.focus()
+    }
+  }, [open, focusField])
   const allergiesHas = Form.useWatch('allergiesHas', form)
   const medicationsHas = Form.useWatch('medicationsHas', form)
   return (
-    <Card size="small" title="① 病友信息（资料卡抬头）">
+    <Modal
+      open={open}
+      onCancel={onClose}
+      title="编辑档案与三问"
+      width={760}
+      style={{ top: 24 }}
+      footer={null}
+      destroyOnClose={false}
+    >
       <Form form={form} layout="vertical" size="small">
         <Row gutter={12}>
           <Col xs={24} md={6}>
@@ -136,6 +158,6 @@ export default function PatientForm({ form, patient, saving, onSave }) {
           身份证、手机号、住址一律不收集（后端会直接丢弃这三类字段）。资料卡不含诊断结论与治疗建议。
         </Paragraph>
       </Form>
-    </Card>
+    </Modal>
   )
 }
