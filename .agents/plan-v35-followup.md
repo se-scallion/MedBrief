@@ -97,11 +97,34 @@
 - **遗留 UX（W3b / W10）**：① Tab 栏在 375 下位于 y≈1008px → W3b 吸顶；
   ② 左侧 Sider 压成 56px 且竖排文字 → W10，属 `App.jsx` 全局壳，需先定手机端导航形态。
   ③ **W3 的顶栏修法有副作用**：`flex-wrap: wrap` 让 header 在 375 下高度 **468px**（414 下 276px），
-  一屏 812px 被吃掉 58%（截图 `/tmp/h375.png`：副标题竖排成单字）→ 已并入 W3b 改为
-  「窄屏隐藏院区 Tag + 副标题 + `nowrap`」，并新增硬断言 **header 高度 ≤ 80px**。
+  一屏 812px 被吃掉 58%（截图 `/tmp/h375.png`：副标题竖排成单字）→ 拆成 **W3c** 单独派单处理，
+  硬断言 **header 高度 ≤ 80px 且 scrollWidth ≤ 375 同时成立**（详见下方 W3c）。
 
 **教训（写死）**：修「横向溢出」不能靠让容器换行 —— 会把问题变成「纵向吞噬」。**数字达标 ≠ 体验达标，
 改完必须看一眼成品截图**（这只写工自己都量到了 468px 却没把它当问题）。
+
+### W3b ·【已完成 2026-11-14，`5d907aa`】375 下 Tab 栏吸顶
+
+- 改动：`CardPage.jsx` 的 `CARD_MOBILE_CSS` 加 `.ant-tabs-nav{position:sticky!important;top:0!important;z-index:2;background:#fff}`；
+  `verify-ui.mjs` 加「滚到中部 Tab 栏仍可见可点」断言（量视口 y 坐标 + `position` + **真点击切换**，不只查 computed）。
+- **`!important` 不是随手加的**：探针证明 antd CSS-in-JS 的 `.ant-tabs-nav{position:relative}` 层叠更高，
+  不加时 computed 仍 `relative`、`navTop=-1692`。这条已写进代码注释。
+- 我复跑验收：`verify-ui` 全绿；自测 375 中部 `position=sticky / top=0 / bottom=46 / de=375`；
+  `/tmp/mgr-w3b-sticky.png` 目视 Tab 白底吸顶；`git show --stat` 恰好 2 文件、白名单外零夹带。
+- **一次口径漏发（我的错）**：22:20 正式卡只含吸顶，22:21 我才量出 header 468px 并把升级口径写进本文档，
+  但**没把升级版任务卡发出去**，导致写工按正式卡收口后回头质疑「plan 比派单新」。→ 派单口径变更必须同步发卡，不能只写 plan。
+
+### W3c ·【已派 2026-11-14 22:36】顶栏瘦身（替换 `flex-wrap: wrap`）
+
+- `request_id`: `medbrief-w3c-header-slim-1114`（`when:"queue"`，`reply_to:"me"`）
+- 可写白名单（**只有两个**）：`web/src/pages/CardPage.jsx`（延续 `CARD_MOBILE_CSS` 的 ≤575px 段）、`tests/verify-ui.mjs`
+- 目标：375×812 下 `header` 高度 **≤ 80px** 且 `scrollWidth ≤ 375`（两个数同时成立，禁拿一个换一个）；414×896 高度也 ≤80
+- 基线（我实测）：`headerH=468 / flexWrap=wrap / de=375 / navTopInit=1008`
+- 允许：≤575px 隐藏院区 Tag + 副标题、`flex-wrap:nowrap`、收窄 padding；header 内容仍 >375 时按钮可图标化
+- 禁止：改 `web/src/App.jsx`、`lib/**`、`data/**`、`intake/*`、`verify-workbench.mjs`、别人脏文件；**禁止再用 `flex-wrap: wrap`**
+- 断言：header 高度 ≤80 + 同状态 `scrollWidth ≤375` + 吸顶仍 `top=0`（不得被换掉）+ **反例自证伪**（对 `5d907aa` 跑必须红，当前 468）
+- 完成标准：`verify-ui` 全绿 / 1440 桌面与 `/tmp/w3-desktop.png` 一致 / `card-pdf` 3 页 680px 零重叠 /
+  `/tmp/w3c-header-375.png` 目视（深色条 ≤80px、Tag 与副标题消失、标题不竖排、首屏见内容）/ 提交只含两文件 / 不重启服务
 
 ### W3-原卡（历史留档）
 
@@ -223,12 +246,12 @@
 cd /Users/scallion/Documents/projects/MedBrief
 node tests/verify-unit.mjs        # 23
 node tests/verify-intake.mjs      # 23
-node tests/verify-card.mjs        # 58
+node tests/verify-card.mjs        # 59
 node tests/verify-labclean.mjs    # 23
 node tests/verify-checklist.mjs   # 8
 node tests/verify-codealias.mjs   # 5
-node tests/verify-rowpatch.mjs    # 4
-node tests/verify-workbench.mjs   # 10
+node tests/verify-rowpatch.mjs    # 6
+node tests/verify-workbench.mjs   # 12
 node tests/verify-pdf.mjs         # 6
 node tests/verify-ui.mjs          # 全部通过（需先 build:web + 服务在 5174）
 node tests/verify-e2e.mjs         # 8（2026-11-14 代诊-报告 在 740acb1 加了 2 条 live 断言）
@@ -241,7 +264,8 @@ node tools/card-pdf.mjs           # 第 1 页 ≤1054px、总页数 ≤3、重�
 
 ```
 W1（读工，随时，零风险）
-W2（写工）→ W3（写工）→ W5（写工）      ← 写工串行，按此顺序发 queue
+W2（写工）→ W3（写工）→ W3b（写工）→ W3c（写工）→ W5（写工）   ← 写工串行，按此顺序发 queue
+W10（待用户拍板）                        ← 在 App.jsx 全局壳，未拍不动
 W4（写工）← 等代诊-报告 提交完 server.mjs 后我再发
 ```
 
