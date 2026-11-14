@@ -85,7 +85,12 @@ it('区分「没做」与「过期」：MRD 做过但超 90 天 → 待补写「
   const flow = c.items.find((x) => x.key === 'flow-mrd')
   assert.ok(!flow.ok, 'MRD 过期时该项应为缺')
   assert.ok(c.missing.includes('MRD 复查'), `待补项应写「MRD 复查」而不是「未检出流式」，实际 ${JSON.stringify(c.missing)}`)
-  assert.ok(new RegExp(`${RECENT_MRD_DAYS}|122`).test(flow.detail), `detail 应说明过期天数，实际「${flow.detail}」`)
+  // 2026-11-14 只读体检建议：原来写 `RegExp(`${RECENT_MRD_DAYS}|122`)` 属「或」兜底 —— 两种都能过，
+  // 等于两个都可能错。改成**精确断言算出来的天数**（TODAY 与 MRD 日期都是测试自己定的，天数唯一确定）。
+  const days = Math.round((TODAY - new Date('2026-07-15T00:00:00')) / 86400000)
+  assert.equal(days, 122, '测试自身的天数算错了')
+  assert.ok(flow.detail.includes(`${days} 天前`), `detail 必须写准确的天数「${days} 天前」，实际「${flow.detail}」`)
+  assert.ok(flow.detail.includes(`超 ${RECENT_MRD_DAYS} 天`), `detail 必须说明阈值 ${RECENT_MRD_DAYS} 天，实际「${flow.detail}」`)
 })
 
 it('近期血常规：30 天外的血常规不算「近期」，且缺项要指名（ANC 缺 → 提示 ANC）', () => {

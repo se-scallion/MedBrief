@@ -251,7 +251,7 @@ it('脏名仍要标出来（别名只覆盖已知形态）：未登记的多数�
 })
 
 // ---------------- 5. 串码防护（同名异轴项） ----------------
-it('串码防护：MCH ≠ Hb、血气 Hct ≠ 血常规 HCT、尿白细胞 ≠ 血白细胞、尿糖 ≠ 血糖', () => {
+it('串码防护：MCH≠Hb、血气 Hct≠血常规 HCT、尿白细胞≠血白细胞、尿糖≠血糖、尿钙≠血钙、脑脊液糖≠血糖', () => {
   const code = (n) => classifyAnalyte(n).code
   assert.equal(code('红细胞平均血红蛋白含量'), 'MCH')
   assert.notEqual(code('红细胞平均血红蛋白含量'), 'Hb')
@@ -265,6 +265,18 @@ it('串码防护：MCH ≠ Hb、血气 Hct ≠ 血常规 HCT、尿白细胞 ≠ 
   assert.equal(code('葡萄糖（GLU）'), 'GLU')
   assert.notEqual(code('葡萄糖（glu）'), code('葡萄糖（GLU）'))
   assert.equal(code('酮体（KET）'), 'U_KET')
+  // 2026-11-14 只读体检建议 #10：再补高风险同名异轴（钙 / 糖 / 红细胞）
+  //   —— 若归到同一个 code，趋势会把不同样本类型连成一条假曲线。
+  //
+  // ⚠️ 这里**故意用无条件断言**：初版写成 `if (caUrine) assert.notEqual(...)`，
+  //    而 `尿钙` / `脑脊液葡萄糖` 目前根本没登记在 catalog（返回 null）→ 条件永远不成立 = 空转断言。
+  //    无条件 `notEqual(null, 'CA')` 才是真守卫：将来谁把「尿钙」映射成血钙的 CA，这条立刻红。
+  assert.equal(code('钙'), 'CA', '前提：血钙要能解析出 CA')
+  assert.notEqual(code('尿钙'), 'CA', '尿钙不得与血钙同码（未登记时应落到 OTHER/空码，而不是 CA）')
+  assert.notEqual(code('脑脊液葡萄糖'), 'GLU', '脑脊液葡萄糖不得与血糖同码')
+  assert.notEqual(code('潜血（ERY）'), 'RBC', '尿潜血不得与血常规红细胞同码')
+  assert.notEqual(code('潜血（ERY）'), 'Hb', '尿潜血不得与血红蛋白同码')
+  assert.equal(code('红细胞'), 'RBC', '前提：血常规红细胞要能解析出 RBC')
 })
 
 it('名称归一：同一项的不同写法归到同一 code', () => {
