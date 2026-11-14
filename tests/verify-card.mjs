@@ -155,7 +155,7 @@ it('完备性：第 2 页「全部指标」渲染行数 == counts.latest，且�
 // ---------- 2. 第 1 页聚焦性（v3 核心：只看最新状态，不摊历史） ----------
 it('第 1 页只放「最新状态」的异常项：3 份历史 × 3 项异常 → 第 1 页只有 3 行（不是 9 行）', () => {
   const card = buildCard({ reports: makeReports(), mask: true, today: TODAY })
-  const seg = block(card.html, '② 核心异常项', '③ 家属三问')
+  const seg = block(card.html, '② 核心异常项', '③ 本次主诉与核心诉求')
   const rows = trCount(seg) - 1
   // 2026-11-14 口径：红细胞(RBC)/红细胞压积(HCT) 已下沉 P1，第 1 页只剩血红蛋白
   assert.equal(card.counts.p0, 1, `P0 应为 1 项（仅血红蛋白；RBC/HCT 已下沉 P1），实际 ${card.counts.p0}`)
@@ -173,7 +173,7 @@ it('P1 折叠：非核心异常不进第 1 页表格，只留一行摘要（不�
   reports[0].rows.push({ name: '酮体（KET）', value: '10（++）', num: 10, unit: '', refRange: '', measuredAt: '2026-09-20', status: 'abnormal', flag: 'high' })
   const card = buildCard({ reports, mask: true, today: TODAY })
   assert.ok(card.counts.p1 >= 1, `应有 P1 异常，实际 ${card.counts.p1}`)
-  const seg = block(card.html, '② 核心异常项', '③ 家属三问')
+  const seg = block(card.html, '② 核心异常项', '③ 本次主诉与核心诉求')
   assert.ok(!/酮体/.test(seg.replace(/另有[^\n]*非核心异常[^\n]*/g, '')), 'P1 项不得出现在第 1 页表格里')
   assert.ok(/另有 \d+ 项非核心异常/.test(seg), '第 1 页必须有 P1 折叠摘要行')
 })
@@ -185,7 +185,7 @@ it('危急值：命中阈值 → 保留底纹 + 「危急」标记，但**不再
   reports[0].rows.push({ name: '白细胞', value: '0.6', num: 0.6, unit: '10^9/L', refRange: '3.5-9.5', measuredAt: '2026-09-20', status: 'low', flag: 'low' })
   const card = buildCard({ reports, mask: true, today: TODAY })
   assert.equal(card.counts.critical, 1, `危急项应为 1，实际 ${card.counts.critical}`)
-  const seg = block(card.html, '② 核心异常项', '③ 家属三问')
+  const seg = block(card.html, '② 核心异常项', '③ 本次主诉与核心诉求')
   assert.ok(/class="crit"/.test(seg), '危急行必须有底纹样式类 crit')
   assert.ok(/危急/.test(seg), '危急行必须有「危急」标记')
   // 同一日期下允许任意先后，但**不得**因为危急而被提到严格时间轴之外：
@@ -229,7 +229,7 @@ it('时效：最近一次化验超 90 天 → 卡面醒目提醒（含日期与�
   const old = makeReports() // 2026-09-20 为最新
   const stale = buildCard({ reports: old, mask: true, today: new Date('2027-02-01T00:00:00') })
   assert.ok(stale.counts.staleDays > 90, `staleDays 应 > 90，实际 ${stale.counts.staleDays}`)
-  const seg = block(stale.html, '② 核心异常项', '③ 家属三问')
+  const seg = block(stale.html, '② 核心异常项', '③ 本次主诉与核心诉求')
   assert.ok(/⚠️ 最近一次有指标的化验/.test(seg), '第 1 页必须有时效警示')
   assert.ok(seg.includes(stale.counts.lastLabDate), '时效警示必须写出具体日期')
   const fresh = buildCard({ reports: makeReports(), mask: true, today: TODAY })
@@ -782,7 +782,7 @@ it('趋势 SVG：参考区间画上下两条虚线（不靠绿带），点形状
 
 it('日期去重：同一年内显示 MM-DD（不重复年份）', () => {
   const card = buildCard({ reports: makeReports(), mask: true, today: TODAY })
-  const seg = block(card.html, '② 核心异常项', '③ 家属三问')
+  const seg = block(card.html, '② 核心异常项', '③ 本次主诉与核心诉求')
   assert.ok(/\b\d{2}-\d{2}\b/.test(seg), '日期应简写为 MM-DD')
 })
 
