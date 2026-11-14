@@ -39,6 +39,8 @@ import { chromium } from 'playwright'
 import { createGuahaoManager } from './lib/guahaoCore.js'
 import { buildMedDataBundle, parseMedDataBundle } from './lib/meddataBundle.js'
 import { blocksToLines } from './lib/visionLayout.mjs'
+import { normalizeRow } from './lib/labClean.mjs'
+import { classifyAnalyte } from './lib/reportIntake.mjs'
 import {
   sha256Bytes, findDuplicate, stitchVertically,
   parseLabRows, buildReportFingerprint, groupForDoctorCard, summarizeForCard, dedupeStitchRows, mergeChunkRows,
@@ -900,12 +902,77 @@ function getNextReleaseCountdown() {
   //     数据只来自用户导入；不读 MedData 任何库（MedData 只当 OCR 引擎）。
   if (req.method === 'GET' && pathname === '/api/intake/reports') {
     const store = readReports()
+    // ?normalized=1：返回**清洗后视图**（列左移还原 / 单位↔区间 / 名称别名 / code 补全），
+    // 供报告库的编辑表单与控制台核对使用。默认仍是原始行 —— 不动存储，只换读出形态。
+    const normalized = parsedUrl.searchParams.get('normalized') === '1'
+    const shape = (r) => {
+      if (!normalized) return r.rows
+      return (r.rows || []).map((row) => {
+        const n = normalizeRow(row)
+        return { ...n, code: row.code || classifyAnalyte(n.name, { loose: !!n.nameDirty }).code || null }
+      })
+    }
     sendJson(res, 200, {
       ok: true,
       total: store.reports.length,
-      reports: attachBlobIds(store.reports).map((r) => ({ ...r, images: undefined, text: undefined, hasImage: !!r.sha256 })),
+      normalized,
+      reports: attachBlobIds(store.reports).map((r) => ({
+        ...r, rows: shape(r), images: undefined, text: undefined, hasImage: !!r.sha256,
+      })),
     })
     return
+  }
+
+  // 10r. 已入库报告的人工纠错（2026-11-14，用户批准的最小闭环）
+  //     护栏①：每次改动把旧值记进 patchLog[{at, field, from, to}]，可审计
+  //     护栏②：name/value/refRange 改动后读侧重算 num/flag/code（不落库派生值，避免双份真相）；
+  //             人工改过的行标 verified:true，卡面据此清掉 `?` 脏标记
+  //     护栏③：**不提供删除**；白名单之外的字段一律忽略（不报错也不写）
+  if (req.method === 'POST' && /^\/api\/intake\/reports\/[^/]+\/patch$/.test(pathname)) {
+    const id = decodeURIComponent(pathname.slice('/api/intake/reports/'.length, -'/patch'.length))
+    const body = await readJsonBody(req).catch(() => ({}))
+    const store = readReports()
+    const rep = store.reports.find((r) => r.id === id)
+    if (!rep) return sendJson(res, 404, { ok: false, error: `报告不存在：${id}` })
+    const log = Array.isArray(rep.patchLog) ? rep.patchLog : []
+    const at = new Date().toISOString()
+    const changed = []
+    const push = (field, from, to) => { if (String(from ?? '') !== String(to ?? '')) { log.push({ at, field, from: from ?? '', to: to ?? '' }); changed.push(field) } }
+
+    // 报告级白名单：只有这两个
+    for (const f of ['hospital', 'reportDate']) {
+      if (body[f] !== undefined) { push(f, rep[f], String(body[f]).trim()); rep[f] = String(body[f]).trim() }
+    }
+    // 行级白名单：name / value / unit / refRange，按行在数组里的 index 定位（不引 rowId，保持数据形状不变）
+    if (Array.isArray(body.rows)) {
+      for (const patch of body.rows) {
+        const i = Number(patch?.index)
+        if (!Number.isInteger(i) || i < 0 || !Array.isArray(rep.rows) || i >= rep.rows.length) continue
+        const row = rep.rows[i]
+        let rowTouched = false
+        for (const f of ['name', 'value', 'unit', 'refRange']) {
+          if (patch[f] === undefined) continue
+          const next = String(patch[f]).trim()
+          if (String(row[f] ?? '') === next) continue   // 值没变就不记（否则「打开就保存」会污染 patchLog）
+          push(`rows[${i}].${f}`, row[f], next)
+          row[f] = next
+          rowTouched = true
+        }
+        // 只有真的改过这一行，才算「人工核对过」→ 清掉脏名标记，卡面不再打 `?`
+        if (rowTouched) {
+          row.verified = true
+          row.nameDirty = false
+          changed.push(`rows[${i}].verified`)
+        }
+      }
+    }
+    if (changed.length) {
+      rep.patchedAt = at
+      rep.patchedFields = [...new Set([...(rep.patchedFields || []), ...changed])]
+      rep.patchLog = log
+      writeReports(store)
+    }
+    return sendJson(res, 200, { ok: true, id, changed, patchedAt: rep.patchedAt || null, patchLogCount: log.length, report: rep })
   }
 
   // 10a. 病友档案（资料卡的抬头）：只收非身份字段，身份类一律不收

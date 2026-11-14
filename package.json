@@ -15,13 +15,14 @@
     "build:meddata": "cd meddata && npx vite build --config vite.config.js",
     "dev:web": "npx vite --config web/vite.config.js",
     "test:ui": "node tests/verify-ui.mjs",
-    "test:intake": "node tests/verify-intake.mjs && node tests/verify-card.mjs && node tests/verify-chunker.mjs && node tests/verify-deskew.mjs && node tests/verify-pdf.mjs && node tests/verify-import-report.mjs",
+    "test:intake": "node tests/verify-intake.mjs && node tests/verify-card.mjs && node tests/verify-chunker.mjs && node tests/verify-deskew.mjs && node tests/verify-labclean.mjs && node tests/verify-codealias.mjs && node tests/verify-pdf.mjs && node tests/verify-import-report.mjs",
     "test:card": "node tests/verify-card.mjs",
     "test:chunker": "node tests/verify-chunker.mjs",
     "test:deskew": "node tests/verify-deskew.mjs",
     "test:import": "node tests/verify-import-report.mjs",
     "import:report": "node tools/import-report.mjs",
-    "test:pdf": "node tests/verify-pdf.mjs"
+    "test:pdf": "node tests/verify-pdf.mjs",
+    "test:codealias": "node tests/verify-codealias.mjs"
   },
   "keywords": [
     "guahao",

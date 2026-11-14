@@ -10,6 +10,8 @@
 //  2. 保存一律走 MedBrief 自有 POST /api/intake/reports（含 sha256/dhash/内容指纹三道查重）；
 //  3. 原件不重复保存：由 docFileStore shim 按 sha256 复用 blob，再以 sourceBlobs 关联入库。
 import { useSyncExternalStore } from 'react'
+// 两仓指标码归一（9 组同名不同码）：本文件是唯一需要「写进 MedData 形状」的地方，所以只在这里转
+import { toMedDataCode, toMedBriefCode } from '../../../lib/codeAlias.mjs'
 import { takeBlobRefs } from './docFileStore.js'
 
 const EVT_SAVED = 'medbrief:report-saved'
@@ -51,7 +53,7 @@ function pointFromRow(r = {}) {
     value: r.value ?? '',
     unit: r.unit || '',
     ref_range: r.refRange || '',
-    standard_code: r.code || r.standardCode || '',
+    standard_code: toMedDataCode(r.code || r.standardCode || ''),
     status: r.status || 'unknown',
     flag: r.flag || '',
   }
@@ -68,7 +70,7 @@ function rowFromPoint(p = {}, date = '') {
     name: p.name || p.item_name || p.item || '',
     value, num: Number.isFinite(num) ? num : null,
     unit: p.unit || '', refRange, flag, status,
-    code: p.standard_code || '',
+    code: toMedBriefCode(p.standard_code || ''),
     reportDate: date, measuredAt: p.measuredAt || p.reportDate || date,
   }
 }
