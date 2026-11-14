@@ -234,8 +234,12 @@ export default function ReportsPanel() {
       render: (_, r) => {
         const n = rowCountOf(r)
         if (n > 0) return `${n} 项`
-        // 窄屏不放长 Tag：它比列宽还宽，会溢到「操作」列把按钮压在下面（375 实测截图抓到的）
-        return isXs ? <Text type="secondary" style={{ fontSize: 12 }}>—</Text> : <Tag color="default">全文型（无指标行）</Tag>
+        // 窄屏不放长 Tag：它比列宽还宽，会溢到「操作」列把按钮压在下面（375 实测截图抓到的）。
+        // 但也不能显示成「—」—— 那会让「全文型（影像/病理/基因，本来就没有指标行）」和
+        // 「解析出 0 项」在手机上看不出区别，家属/医生无从判断该不该点进去看原文。
+        return isXs
+          ? <Text type="secondary" style={{ fontSize: 12 }} title="全文型：影像/病理/基因这类报告本来就没有指标行，点「查看」看原文">全文</Text>
+          : <Tag color="default">全文型（无指标行）</Tag>
       },
     },
     {
