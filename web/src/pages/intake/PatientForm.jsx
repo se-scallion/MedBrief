@@ -1,11 +1,15 @@
 // PatientForm —— 只管「病友档案录入」（2026-11-14 从 ProfilePanel 拆出，去掉 hideActions 反向开关）
 // 职责边界：只渲染表单与保存动作；不碰卡片生成/打印（那是 CardPreview 的事）。
 import React from 'react'
-import { Button, Card, Col, Form, Input, Row, Select, Space, Typography } from 'antd'
+import { Button, Card, Col, Form, Input, Radio, Row, Select, Space, Typography } from 'antd'
 
 const { Text, Paragraph } = Typography
 
 export default function PatientForm({ form, patient, saving, onSave }) {
+  // 三项开关的状态用 useWatch 读：只有「有」才渲染文本框（antd 的 Form.Item 条件渲染必须靠监听）
+  const comorbiditiesHas = Form.useWatch('comorbiditiesHas', form)
+  const allergiesHas = Form.useWatch('allergiesHas', form)
+  const medicationsHas = Form.useWatch('medicationsHas', form)
   return (
     <Card size="small" title="① 病友信息（资料卡抬头）">
       <Form form={form} layout="vertical" size="small">
@@ -81,20 +85,41 @@ export default function PatientForm({ form, patient, saving, onSave }) {
               <Input placeholder="如：7-17 流式 异常细胞 85.76%" />
             </Form.Item>
           </Col>
+          {/* 2026-11-14 用户口径：基础病 / 过敏史 / 在用药**三项统一** —— 默认「无」，
+              选「有」才展开文本框；选「无」或没填，卡面**完全不显示该项**（不写「无」也不写「未录入」）。
+              血型与传染病不受此规则影响：它们必须显式展示（空值写「未录入 / 待核」）。 */}
           <Col xs={24} md={8}>
-            <Form.Item name="comorbidities" label="基础病（可选，进安全基线）">
-              <Input placeholder="如：高血压、2 型糖尿病" />
+            <Form.Item name="comorbiditiesHas" label="其他基础病" initialValue="none">
+              <Radio.Group size="small" optionType="button" buttonStyle="solid"
+                options={[{ label: '无', value: 'none' }, { label: '有', value: 'has' }]} />
             </Form.Item>
+            {comorbiditiesHas === 'has' && (
+              <Form.Item name="comorbidities" label="↳ 基础病详情">
+                <Input placeholder="如：高血压、2 型糖尿病" />
+              </Form.Item>
+            )}
           </Col>
           <Col xs={24} md={8}>
-            <Form.Item name="allergies" label="过敏史（可选）">
-              <Input placeholder="如：青霉素过敏" />
+            <Form.Item name="allergiesHas" label="过敏史" initialValue="none">
+              <Radio.Group size="small" optionType="button" buttonStyle="solid"
+                options={[{ label: '无', value: 'none' }, { label: '有', value: 'has' }]} />
             </Form.Item>
+            {allergiesHas === 'has' && (
+              <Form.Item name="allergies" label="↳ 过敏详情">
+                <Input placeholder="如：青霉素过敏" />
+              </Form.Item>
+            )}
           </Col>
           <Col xs={24} md={8}>
-            <Form.Item name="medications" label="在用药（可选）">
-              <Input placeholder="如：泼尼松 20mg qd" />
+            <Form.Item name="medicationsHas" label="在用药" initialValue="none">
+              <Radio.Group size="small" optionType="button" buttonStyle="solid"
+                options={[{ label: '无', value: 'none' }, { label: '有', value: 'has' }]} />
             </Form.Item>
+            {medicationsHas === 'has' && (
+              <Form.Item name="medications" label="↳ 用药详情">
+                <Input placeholder="如：泼尼松 20mg qd" />
+              </Form.Item>
+            )}
           </Col>
         </Row>
         <Space wrap style={{ marginBottom: 8 }}>

@@ -50,6 +50,10 @@ export default function CardPage() {
           comorbidities: j.patient.comorbidities || '',
           allergies: j.patient.allergies || '',
           medications: j.patient.medications || '',
+          // 三项开关：已有内容才打开「有」，否则默认「无」（卡面据此决定显示与否）
+          comorbiditiesHas: j.patient.comorbidities ? 'has' : 'none',
+          allergiesHas: j.patient.allergies ? 'has' : 'none',
+          medicationsHas: j.patient.medications ? 'has' : 'none',
         })
       }
     } catch (e) {
@@ -79,7 +83,10 @@ export default function CardPage() {
         name: v.name || '', sex: v.sex || '', age: v.age || '',
         diagnosis: v.diagnosis || '', subtype: v.subtype || '', stage: v.stage || '',
         hospital: v.hospital || '', attending: v.attending || '',
-        comorbidities: v.comorbidities || '', allergies: v.allergies || '', medications: v.medications || '',
+        // 选「无」= 明确清空（卡面完全不显示该项）；选「有」才落库文本
+        comorbidities: v.comorbiditiesHas === 'has' ? (v.comorbidities || '') : '',
+        allergies: v.allergiesHas === 'has' ? (v.allergies || '') : '',
+        medications: v.medicationsHas === 'has' ? (v.medications || '') : '',
         questions: { focus: v.focus || '', confirm: v.confirm || '', nextVisit: v.nextVisit || '' },
         clinicalContext: {
           lastChemo: v.lastChemo || '',

@@ -12,7 +12,7 @@
 
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { buildCard } from '../lib/intakeCard.js'
+import { buildCard, DEFAULT_PATIENT } from '../lib/intakeCard.js'
 import { blocksToLines } from '../lib/visionLayout.mjs'
 import { parseLabRows, detectCbcCode, normalizeUnit, splitTwoColumnLine } from '../lib/reportIntake.mjs'
 
@@ -409,6 +409,28 @@ it('安全基线：单项阳性不得被「均阴性」吞掉', () => {
   const lab = SAFETY_LAB(buildCard({ reports, today: TODAY }))
   assert.ok(!/均阴性/.test(lab), '有一项阳性时不得压缩')
   assert.ok(/乙肝 HBsAg 阳性/.test(lab), `阳性项必须单独可见，实际「${lab}」`)
+})
+
+it('伴随病史三项（基础病/过敏/在用药）：没填或选「无」→ 卡面完全不显示；填了才显示', () => {
+  const reports = [{ reportDate: '2026-07-15', rows: [{ name: 'ABO血型鉴定', value: 'B型' }] }]
+  const empty = SAFETY_LAB(buildCard({ reports, today: TODAY }))
+  for (const w of ['基础病', '过敏', '在用药']) {
+    assert.ok(!empty.includes(w), `未填写时第 1 页不得出现「${w}」，实际「${empty}」`)
+  }
+  // 注意：传染病空值仍必须写「未录入」（红线），这里只要求伴随病史三项不出现
+  // 只填一项：只出现那一项，另外两项仍不出现
+  const one = SAFETY_LAB(buildCard({
+    reports, today: TODAY,
+    patient: { ...DEFAULT_PATIENT, comorbidities: '高血压' },
+  }))
+  assert.ok(/基础病\s*高血压/.test(one), `填了基础病必须显示，实际「${one}」`)
+  assert.ok(!one.includes('过敏') && !one.includes('在用药'), `未填项仍不得出现，实际「${one}」`)
+  // 三项都填
+  const all = SAFETY_LAB(buildCard({
+    reports, today: TODAY,
+    patient: { ...DEFAULT_PATIENT, comorbidities: '高血压', allergies: '青霉素过敏', medications: '泼尼松 20mg qd' },
+  }))
+  assert.ok(/基础病/.test(all) && /过敏/.test(all) && /在用药/.test(all), `三项填了都要显示，实际「${all}」`)
 })
 
 it('试剂质控行（内部对照/阳性对照）不得当病人指标出现在任何位置', () => {
