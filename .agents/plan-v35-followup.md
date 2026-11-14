@@ -114,9 +114,24 @@
 - **一次口径漏发（我的错）**：22:20 正式卡只含吸顶，22:21 我才量出 header 468px 并把升级口径写进本文档，
   但**没把升级版任务卡发出去**，导致写工按正式卡收口后回头质疑「plan 比派单新」。→ 派单口径变更必须同步发卡，不能只写 plan。
 
-### W3c ·【已派 2026-11-14 22:36】顶栏瘦身（替换 `flex-wrap: wrap`）
+### W3c ·【已完成 2026-11-14，`eb3d9a1`】顶栏瘦身（替换 `flex-wrap: wrap`）
 
-- `request_id`: `medbrief-w3c-header-slim-1114`（`when:"queue"`，`reply_to:"me"`）
+- 落地：W3 那条 `flex-wrap: wrap` 换成「隐藏院区 Tag + 副标题 + `nowrap` + `padding-inline:12px !important` + `padding-block:6px`」，
+  吸顶规则原样保留。单号 `medbrief-w3c-header-slim-1114` 实际并入 W3b 卡执行（写工先交吸顶 `5d907aa`、再交瘦身 `eb3d9a1`，
+  两个提交即最终形态，**不改写历史**）。
+- 我复跑验收：375 → `headerH=77 / de=375 / nowrap / Tag·副标题 none / 内容起点 y=77`；414 → 同 77px；
+  1440 → `headerH=64 / de=1440 / Tag·副标题 block`；滚中部 `navTop=0 / sticky / headerH=77`；
+  `verify-ui` 全绿（含反例自证伪 336px 判红）；`/tmp/mgr-w3c-375.png` 目视首屏直接见病友抬头。
+- **写工自己挖到的 1px 陷阱（写死）**：`padding-block:8px` → header **81px**，差 1px 不达标；8/6/4/0 → `81/77/73/65`，取 6px。
+  **断言写「≤80」就必须实测到 1px，否则 81px 会被当「差不多」放过。**
+- **选择器纠偏**：Tag/副标题**不是** header 的直接子元素，而是左侧 `ant-space` 的第 2、3 个 `.ant-space-item`（`App.jsx:110-114`）；
+  `padding-inline` 必须 `!important`（`App.jsx:107` 内联 `paddingInline:20` 层叠最高），其余声明无需 `!important`（逐个探针验证）。
+- 桌面差异取证法：同会话稳定等待（2500ms）连拍三张全与基线字节级一致；1800ms 那张有 737 像素 × 每通道 1/255 的抗锯齿波动
+  → **截图比对先排除动态/抗锯齿噪声，不能只报「不一致」也不能只报「一致」**。
+
+原卡（口径留档）：
+
+- `request_id`: `medbrief-w3c-header-slim-1114`（`when:"queue"`，`reply_to:"me"`；实际由 W3b 卡继续执行）
 - 可写白名单（**只有两个**）：`web/src/pages/CardPage.jsx`（延续 `CARD_MOBILE_CSS` 的 ≤575px 段）、`tests/verify-ui.mjs`
 - 目标：375×812 下 `header` 高度 **≤ 80px** 且 `scrollWidth ≤ 375`（两个数同时成立，禁拿一个换一个）；414×896 高度也 ≤80
 - 基线（我实测）：`headerH=468 / flexWrap=wrap / de=375 / navTopInit=1008`
@@ -163,9 +178,9 @@
 - 完成标准：新断言覆盖「只提交 value → 400」与「四元组 → 200」两条；全套门禁绿。
 - 为什么阻塞：`server.mjs` 现在混着代诊-报告未提交的改动，替别人暂存会重演 11-14 的「改动被扫进别人提交」事故。
 
-### W5 ·【写】给家属看的《资料卡使用说明》（派：外包仔·混元四，可与 W3 并列排）
+### W5 ·【写·已派 2026-11-14 22:47】给家属看的《资料卡使用说明》（外包仔·混元四）
 
-- `request_id`: `medbrief-w5-guide-1114`
+- `request_id`: `medbrief-w5-guide-1114-r2`（先前同名排队投递作废；22:47 正式开卡）
 - 可写白名单：**新建** `docs/资料卡使用说明.md`（不许改任何已有文件）
 - 内容要求（面向家属，不是开发者）：
   1. 资料卡是什么、打印出来给谁看（一页 A4 = 第 1 页速览）；
