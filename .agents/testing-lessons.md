@@ -213,3 +213,18 @@
   反过来「先切块后 deskew」会把每行撕成斜口，比不切更糟。
 - **泛化**：凡是「多个预处理/判定步骤串联」，都要问一句「上一步有没有悄悄改掉下一步依赖的量」。
   这次的变量是宽度，下次可能是 DPI、坐标系原点、单位。
+
+## 2026-11-14 · 先量「不注入会怎样」：微信对象不是通行证
+
+- 现象：为「让页面以为自己在微信里」去注入 `WeixinJSBridge`。实测（ego lite，未登录只读 114 首页）：
+  **不注入时 `typeof window.WeixinJSBridge === 'undefined'`，首页照样渲染「共 309 家医院」，查号链路正常。**
+  → 114 的硬门槛始终是 UA 含 `MicroMessenger` + 真指纹，**不是** bridge。
+- **判据**：任何「补一个环境对象让它以为自己在 X 里」的方案，动手前先跑一次**不补的对照**；
+  没有对照就分不清「页面需要它」和「页面碰巧容忍它」。
+- 注入生效的判据不是「对象存在」，而是**页面真的开始用它**：注入后页面立刻
+  `invoke("setFontSizeCallback",{fontSize:0})` 并注册 `menu:setfont` —— 这才叫「页面认了」。
+- 工程纪律：CDP `Page.addScriptToEvaluateOnNewDocument` 必须在 `page.goto` **之前**注册；
+  且与 UA 覆盖同理，**只对本次连接打开的文档生效**，每个动作都要重新置位。
+- **自审抓到的坑**：页面自带的 `jweixin` 是异步 `<script>`，在 `DOMContentLoaded` 之后才赋值 ——
+  只挂 `DOMContentLoaded` 会漏包 `wx.miniProgram`（"包上了"是错觉）。**hook 第三方异步对象要挂三个时机**
+  （`DOMContentLoaded` / `load` / `setTimeout 0`），并用 `miniProgram.__wrapped === true` 实测确认。

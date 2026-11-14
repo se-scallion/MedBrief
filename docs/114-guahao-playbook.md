@@ -25,6 +25,19 @@ await page.cdp("Network.setUserAgentOverride", { userAgent: WX, platform: "iPhon
 https://www.114yygh.com/newhlwyl/mobile/appointmentRegisterHome?pathchannel=jt
 ```
 
+### 可选：注入微信对象（只有分析医保链路时才需要）
+
+挂号流程**不需要**注入——缺 `WeixinJSBridge` 也能正常查号。要截「页面想拉起什么」时用：
+
+```js
+const r = await egoProbeWxBridge({ spaceName: "medbrief-wxbridge-probe", url: "<目标页>" })
+// r.result.calls → 页面自己调了哪些 bridge 方法；医保参数在 params.arg（appId / path / extraData）
+```
+
+底层是 CDP `Page.addScriptToEvaluateOnNewDocument`（已由 `egoRun(..., { wxBridge: true })` 封装），
+必须在 `page.goto` **之前**注册，且只对本次连接打开的文档生效 —— 与 UA 覆盖同一条纪律。
+实测（2026-11-14）：注入后页面立刻调 `setFontSizeCallback` 并注册 `menu:setfont`；不注入时首页照常渲染 309 家医院。
+
 **验收**：页面出现「共 309 家医院」。若显示「数据加载失败」→ 检查 UA 是否生效（ego-browser 的 UA 覆盖不跨进程）。
 
 ## Step 1 · 登录

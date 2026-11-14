@@ -10,6 +10,18 @@
   → 业务层返回 `{"code":"8888","message":"点评用户授权失败，请退出北京114预约挂号页面重新进入"}`。
   两条件齐备时：14 个请求全 `code 0000`，首页「共 309 家医院」正常渲染。`wechat` 渠道会跳授权页，不可直连。
 
+## 微信对象 WeixinJSBridge 与 114 的关系（2026-11-14 实测，ego lite 只读首页）
+
+- **挂号不需要它**：不注入时 `typeof window.WeixinJSBridge === 'undefined'`，首页仍渲染「共 309 家医院」，
+  科室/查号链路正常 → 114 的硬门槛始终是 UA 含 `MicroMessenger` + 真实指纹环境，**不是**微信 bridge。
+- **注入会被页面感知**：桥存在时页面立刻 `invoke("setFontSizeCallback", {fontSize:0})` 并 `on("menu:setfont")`（无害）。
+- **全站唯一业务级 bridge 调用是医保**：`invoke("invokeMiniProgramAPI", {name:"openMedicalInsuranceService",
+  arg:{appId,path,envVersion,extraData}})`；另一条降级路径走页面自带 jweixin 1.6.0 的 `wx.miniProgram.navigateTo`
+  （`/jingtong/jt_package/ep_public/pages/yb_pay/index?...`）。注入只能截出参数，真正拉起医保小程序必须由微信客户端完成。
+- `wx.config` 的 appId/timestamp/nonceStr/signature 由站点服务端按 `location.href` 下发，**伪造无效**，别在这上面花时间。
+- 驱动层入口：`egoRun(script, { wxBridge: true })` 与 `egoProbeWxBridge()`；注入必须在 `page.goto` 之前，
+  且与 UA 覆盖同一纪律——**只对本次连接的新文档生效**，每个动作都要重新置位。
+
 ## 不要用 curl / requests 直连接口
 
 瑞数的 `HKNCYzbu` 令牌由页面 JS 动态生成，且与 TLS/UA 环境绑定。实测拿浏览器真 cookie（含 HttpOnly）回放，

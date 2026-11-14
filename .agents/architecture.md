@@ -131,6 +131,14 @@ ego lite 的 Chromium（真实指纹 + 独立 profile）可通过。故 `lib/ego
 1. UA 必须含 `MicroMessenger`；缺它→瑞数 WAF 返回 462
 2. 渠道用 `pathchannel=jt`（京通，value 16）；用 `dp`（点评）→ 业务层返回 `code 8888`
 
+**微信对象（`WeixinJSBridge`）不是第三条必要条件（2026-11-14 实测）**：
+不注入时 `typeof window.WeixinJSBridge === 'undefined'`，首页照常渲染「共 309 家医院」，查号链路正常。
+驱动层因此把注入做成**显式开关**：`egoRun(script, { wxBridge: true })` 在 `prep()` 里用 CDP
+`Page.addScriptToEvaluateOnNewDocument` 注册 `WX_BRIDGE_SRC`（早于 `page.goto`），默认关闭；
+自检入口 `egoProbeWxBridge({ url })` 回「页面是否看见 bridge / 就绪事件命中几次 / 页面自己调了什么」。
+用途只有一个：截微信侧调用参数（医保 `invokeMiniProgramAPI → openMedicalInsuranceService`）。
+注意 CDP 注入与 UA 覆盖同一条纪律——**只对本次连接打开的文档生效**，每个动作要重新置位。
+
 **渠道表（关键几条）**：
 
 | value | 标签 | key | 可用 |
