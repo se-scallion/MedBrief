@@ -8,7 +8,7 @@ const { Dragger } = Upload
 import { ST, KIND_OPTIONS, FLAG_TEXT, uid, fmtSize, rawJson, postJson } from './shared.js'
 
 const { Text, Paragraph } = Typography
-export default function ReviewPanel({ items, renderItemBody, batch, onBatchStop, onImportAll }) {
+export default function ReviewPanel({ items, renderItemBody, batch, onBatchStop, onImportAll, openKeys, onOpenChange }) {
   const importable = items.filter((it) => !it.saved && Array.isArray(it.rows) && it.rows.length > 0).length
   // 3 + 4：识别校对与入库
   return (
@@ -29,6 +29,11 @@ export default function ReviewPanel({ items, renderItemBody, batch, onBatchStop,
       ) : (
         <Collapse
           accordion={false}
+          // 识别完成后自动展开该张（2026-11-15 用户排查出来的真因：
+          // 折叠面板默认收起，系统判出的「报告类型/日期/医院」全在折叠区里，
+          // 用户看到「识别成功」但界面上一片空白，只能得出「类型还是没识别」的结论。）
+          activeKey={openKeys}
+          onChange={(keys) => onOpenChange?.(keys)}
           items={items.map((item) => {
             const st = ST[item.status] || ST.pending
             return {

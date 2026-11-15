@@ -53,7 +53,7 @@ import { readPdf, guessReportDate } from './lib/pdfIntake.mjs'
 import { classifyReport } from './lib/reportClassify.mjs'
 import { buildSignatureIndex, suggestBySignature, nameLooksUnusable } from './lib/analyteSignature.mjs'
 import { guessMeta } from './lib/reportMeta.mjs'
-import { classifyByTitle, classifyByRows, buildTypeRowIndex } from './lib/reportTypeDetect.mjs'
+import { detectReportType, buildTypeRowIndex } from './lib/reportTypeDetect.mjs'
 import { summarizeState, formatSummaryText } from './lib/metricsSummary.js'
 import { buildVisitBrief } from './lib/visitBrief.js'
 import { fetchLiveDoctorSchedule } from './lib/bjcyhScraper.js'
@@ -1227,20 +1227,32 @@ function getNextReleaseCountdown() {
   //   ① 标题（只看抬头，标题优先，正文不参与）→ ② 项目集反推（Jaccard，用本库历史）→ ③ 旧的正文关键词兜底。
   // 之所以要链：实测「染色体核型报告」的正文结论里写着「…易位形成 BCR::ABL 融合基因」，
   // 旧实现只扫正文关键词，直接把核型报告判成了融合基因。
+  // 本库已知医院名（用于把「抬头上的检验实验室」让位给「就诊医院」：
+  // 实测那份核型 PDF 里「就诊医院(Hospital)：」的值被排版甩到几十行之后，同行取不到，
+  // 而同一批报告在库里都记的是「新疆军区总医院」——用已知医院名单校正，口径才一致）。
+  let _knownHospitalsCache = null
+  function knownHospitals() {
+    if (_knownHospitalsCache) return _knownHospitalsCache
+    try {
+      const hs = (readReports().reports || []).map((r) => r.hospital).filter(Boolean)
+      _knownHospitalsCache = Array.from(new Set(hs))
+    } catch { _knownHospitalsCache = [] }
+    return _knownHospitalsCache
+  }
+  // 一处组装 meta：四处识别入口（粘贴解析 / PDF 文字层 / PDF 扫描件 / 图片）都调这个，
+  // 避免像上次那样「只给图片链路加了 meta，PDF 链路漏了」。
+  function metaFor(text = '', rows = []) {
+    return guessMeta(text, rows, { classifyReport: () => detectType(text, rows), knownHospitals: knownHospitals() })
+  }
+
   let _typeRowIndexCache = null
+  // 判定链本体已搬进 lib/reportTypeDetect.mjs（detectReportType）：server 与测试跑**同一份**实现。
+  // 这里只负责提供「本库历史索引」与「旧的正文关键词分类器」两个依赖。
   function detectType(text = '', rows = []) {
-    const byTitle = classifyByTitle(text)
-    if (byTitle) return { reportType: byTitle.reportType, kind: byTitle.kind, evidence: byTitle.evidence }
     try {
       if (!_typeRowIndexCache) _typeRowIndexCache = buildTypeRowIndex(readReports().reports || [])
-      const byRows = classifyByRows(rows, _typeRowIndexCache)
-      if (byRows) return { reportType: byRows.reportType, kind: byRows.kind, evidence: byRows.evidence }
     } catch {}
-    try {
-      const cls = classifyReport({ text, rows })
-      if (cls?.reportType && cls.reportType !== 'LAB_PANEL') return { reportType: cls.reportType, kind: cls.kind, evidence: 'body-keyword' }
-    } catch {}
-    return null
+    return detectReportType(text, rows, { rowIndex: _typeRowIndexCache, bodyClassify: classifyReport })
   }
 
   // 10b. 问诊资料卡：把已导入的报告渲染成 A4 一页（mask=0 关闭姓名脱敏，默认脱敏）
@@ -1326,7 +1338,7 @@ function getNextReleaseCountdown() {
         console.warn('[intake/parse] 项目名候选反查失败（不影响解析结果）：', e.message)
       }
       const groups = groupForDoctorCard(rows)
-      sendJson(res, 200, { ok: true, rows, groups, meta: guessMeta(body.text || '', rows, { classifyReport: () => detectType(body.text || '', rows) }), summary: summarizeForCard(groups) })
+      sendJson(res, 200, { ok: true, rows, groups, meta: metaFor(body.text || '', rows), summary: summarizeForCard(groups) })
     } catch (e) {
       sendJson(res, 500, { ok: false, error: e.message })
     }
@@ -1439,7 +1451,7 @@ function getNextReleaseCountdown() {
             rows,
             rawRowCount: rows.length,
             // 2026-11-15：表单项自动填充（按 MedData 标签优先口径，见 lib/reportMeta.mjs）
-            meta: guessMeta(allText, rows, { classifyReport: () => detectType(allText, rows) }),
+            meta: metaFor(allText, rows),
             reportDate: guessReportDate(allText),
             layout: 'pdf-text',
             chunked: false,
@@ -1472,7 +1484,7 @@ function getNextReleaseCountdown() {
           text: rasterTexts.filter(Boolean).join('\n'),
           rows: rowsAll,
           rawRowCount: rawTotal,
-          meta: guessMeta(rasterTexts.join('\n'), rowsAll, { classifyReport: () => detectType(rasterTexts.join('\n'), rowsAll) }),
+          meta: metaFor(rasterTexts.join('\n'), rowsAll),
           reportDate: guessReportDate(rasterTexts.join('\n')),
           layout: 'reconstructed',
           chunked: anyChunked,
@@ -1485,7 +1497,7 @@ function getNextReleaseCountdown() {
 
       // ---------- 图片 ----------
       const out = await runImagePipeline(image)
-      sendJson(res, 200, { ok: !!out.text, kind: 'image', engine: '8008/ocr-vision', meta: guessMeta(out.text, out.rows, { classifyReport: () => detectType(out.text, out.rows) }), ...out })
+      sendJson(res, 200, { ok: !!out.text, kind: 'image', engine: '8008/ocr-vision', meta: metaFor(out.text, out.rows), ...out })
     } catch (e) {
       sendJson(res, 200, { ok: false, unavailable: true, reason: e.message, fallback: 'paste-text' })
     }
@@ -1513,7 +1525,12 @@ function getNextReleaseCountdown() {
         measuredAt: r.measuredAt || r.reportDate || reportDate,
       }))
       const imageBuf = image ? Buffer.from(image.replace(/^data:image\/[a-z+]+;base64,/i, ''), 'base64') : null
-      const sha256 = imageBuf ? sha256Bytes(imageBuf) : ''
+      // PDF 导入也要留原件（2026-11-15 端到端实测发现：PDF 入库后 source='text-only'、没有 blob，
+      // 于是「点结论看原件」在 PDF 类报告上是空的。原件在手里却不落库 = 以后没法回看/没法重识别）。
+      const pdfB64 = String(body.pdf || '')
+      const pdfBuf = pdfB64 ? Buffer.from(pdfB64.replace(/^data:application\/pdf;base64,/i, ''), 'base64') : null
+      const originalBuf = imageBuf || pdfBuf
+      const sha256 = originalBuf ? sha256Bytes(originalBuf) : ''
       const dhash = String(body.dhash || '')
       const fingerprint = buildReportFingerprint(rows, meta)
       // force=true：用户已在弹窗里确认「仍要导入」——跳过去重判定，但仍计算并保存指纹，
@@ -1539,13 +1556,17 @@ function getNextReleaseCountdown() {
         kind: meta.kind || '',
         reportType: meta.reportType || '',
       })
+      // 入库时再用**标题优先的判定链**复核一次（2026-11-15 用户实测：一份染色体核型 PDF
+      // 前端传上来 kind 是空/默认值，存进库就变成「化验单」，用户在报告库里看到的类型是错的）。
+      // 口径：人填的（meta.kind / meta.reportType 非空）一律以人为准；没填才用识别结果。
+      const detected = detectType(String(body.text || ''), rows)
       // 原件兜底：页面导入路径从不传 sourceBlobs，于是「图在内存里、字节没落库」，以后既不能回看也不能重识别
       // （实测 55 份里 1 份如此，字节已不可恢复）。这里由服务端自己存一份，把「有图必有原件」变成接口保证。
       let sourceBlobs = Array.isArray(body.sourceBlobs) ? body.sourceBlobs : (Array.isArray(meta.sourceBlobs) ? meta.sourceBlobs : [])
       let serverSavedOriginal = false
-      if (imageBuf && !sourceBlobs.some((b) => b && b.blobId)) {
+      if (originalBuf && !sourceBlobs.some((b) => b && b.blobId)) {
         try {
-          const saved = saveBlobIfAbsent(imageBuf, { kind: 'original', type: 'image/png', originPath: String(meta.sourceFile || '') })
+          const saved = saveBlobIfAbsent(originalBuf, { kind: 'original', type: imageBuf ? 'image/png' : 'application/pdf', originPath: String(meta.sourceFile || '') })
           if (saved && saved.id) {
             sourceBlobs = [{ blobId: saved.id, role: 'original', sha256, reused: !!saved.reused }]
             serverSavedOriginal = true
@@ -1558,10 +1579,10 @@ function getNextReleaseCountdown() {
         // 来源标记：没有原图的记录（纯文本录入/测试）必须可识别 ——
         // 2026-11-12 出过一条无 sha256/dhash/imageRef、只有一行手打文本的记录（rep_mwddww4ooys），
         // 混在真实报告里让人误以为是导入的化验单。无原图 = 无法核对、无法查重，只能当草稿。
-        source: imageBuf ? 'image' : 'text-only',
+        source: imageBuf ? 'image' : (pdfBuf ? 'pdf' : 'text-only'),
         sha256, dhash, fingerprint,
-        kind: cls.kind || meta.kind || 'lab',
-        reportType: cls.reportType || meta.reportType || '',
+        kind: meta.kind || detected?.kind || cls.kind || 'lab',
+        reportType: meta.reportType || detected?.reportType || cls.reportType || '',
         // 推断值必须可分辨（红线：认不出的不瞎填，但推断出来的要标出来）
         ...(cls.inferred ? { reportTypeInferred: true, kindInferred: cls.kind !== (meta.kind || ''), inferEvidence: cls.evidence } : {}),
         reportDate: meta.reportDate || '',
@@ -1573,7 +1594,7 @@ function getNextReleaseCountdown() {
         clinicalDiagnosis: meta.clinicalDiagnosis || '',
         patientName: meta.patientName || '',
         sourceFile: meta.sourceFile || '',
-        imageRef: imageBuf ? `sha256:${sha256}` : '',
+        imageRef: originalBuf ? `sha256:${sha256}` : '',
         // 原件引用：blobs 表 id 列表（[{blobId, role}]）。role: original=原图/原件，stitched=跨屏拼接图
         sourceBlobs,
         text: String(body.text || ''),
@@ -1581,6 +1602,9 @@ function getNextReleaseCountdown() {
       }
       store.reports.push(rec)
       writeReports(store)
+      // 新报告会改变「本库历史」：类型项目集索引与已知医院名单都要失效，否则下一张报告还按旧库判。
+      _typeRowIndexCache = null
+      _knownHospitalsCache = null
       // 回填「原件 → 报告」关联，便于按报告取回原件重新识别
       for (const b of rec.sourceBlobs) {
         if (b && b.blobId) { try { linkBlobToReport(b.blobId, rec.id) } catch { /* 关联失败不影响入库 */ } }

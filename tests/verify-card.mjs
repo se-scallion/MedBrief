@@ -614,14 +614,53 @@ it('红线：卡面不得出现诊断结论 / 用药建议词库', () => {
   assert.deepEqual(hit, [], `卡面出现红线词：${hit.join('、')}`)
 })
 
+// 体量测试必须**自足**：不能读本机 data/intake/patient.json。
+// 2026-11-15 实测踩到：这套用例一直隐式读真实患者档案，用户一填「本次来意/关键结论」，
+// 同一条断言就在本机红、在干净检出上绿 —— 测试跟着用户数据漂，等于没测。
+// 这里用一份「字段全填」的固定最坏样本，量出来的字节才是可比的。
+const RICH_PATIENT = {
+  ...DEFAULT_PATIENT,
+  name: '×某某',
+  sex: '女',
+  age: '30',
+  diagnosis: '急性B淋巴细胞白血病（Common-B-ALL）',
+  subtype: 'Ph+(BCR::ABL1 P190) · 高危',
+  subtypeNote: '流式免疫表型推断（2026-07-17）；送检临床诊断原文「AL?」',
+  stage: '巩固治疗第 2 程',
+  hospital: '某某总医院 · 血液科',
+  attending: '×医生',
+  comorbidities: '高血压',
+  allergies: '青霉素过敏',
+  medications: '达沙替尼 100mg qd 在服；7-20 VDCLP 化疗后；近期未输血',
+  clinicalContext: {
+    lastChemo: '2026-07-20 VDCLP',
+    recentTxOrGcsf: '8-01 输注血小板 1 治疗量；未用升白针',
+    marrowSummary: '07-15 骨髓形态：原始细胞 3.5%，CR；MRD 0.02%',
+  },
+  questions: {
+    focus: '10-16 头颈 MRI 提示额叶强化结节，想弄清是否需要提前复查',
+    confirm: '是否现在开始鞘内预防，还是等下一次腰穿结果',
+    nextVisit: '两周后复查血常规；发热≥38.5 或剧烈头痛立即急诊',
+  },
+  chiefComplaint: '外院 10-16 头颈 MRI 发现头部阴影/结节，担心中枢侵犯或感染，特来二诊评估。',
+  keyConclusions: {
+    karyotype: '2个核型：t(9;22)；5个核型：9p-,t(9;22),15q+,16q+；13个核型：正常核型。',
+    marrow: '骨髓增生明显活跃，原始细胞 3.5%。',
+    imaging: '脑实质未见明显异常强化影；对比 2026-08-20 片，左侧额叶强化结节本次未见确切显示。',
+  },
+}
+
 it('体量上限：105 行 / 35 项 + 3 页版式时 <tr> ≤ 90、HTML ≤ 40 KB', () => {
-  const card = buildCard({ reports: makeReports(), mask: true, today: TODAY })
+  const card = buildCard({ reports: makeReports(), mask: true, today: TODAY, patient: RICH_PATIENT })
   const tr = trCount(card.html)
   const bytes = Buffer.byteLength(card.html)
   assert.ok(tr <= 90, `<tr> 已 ${tr} 行（上限 90）`)
-  // 2026-11-14 预算从 40 KB 调到 44 KB：趋势图加了 Y 轴刻度 + 每个点的数值标注（用户要求「图要能读数」），
-  // 8 张图合计约 +2 KB。上限仍守住「不许滚雪球」的原意（实测 41.8 KB）。
-  assert.ok(bytes <= 44 * 1024, `HTML 已 ${(bytes / 1024).toFixed(1)} KB（上限 44 KB）`)
+  // 2026-11-14 预算从 40 KB 调到 44 KB：趋势图加了 Y 轴刻度 + 每个点的数值标注（用户要求「图要能读数」）。
+  // 2026-11-15 再调到 48 KB：批次 B/C 新增「①-b 关键结论原文摘录」+「⚠ 患者口述新情况」两块，
+  // 用字段全填的最坏样本实测 44.8 KB（此前这条一直隐式读真实 patient.json，量出来的数飘）。
+  // 真正的硬约束不是 KB，而是 tools/card-pdf.mjs 的「3 页 A4 / 第 1 页 ≤1054px / 零重叠」——
+  // 这里只是防「悄悄滚雪球」的护栏。
+  assert.ok(bytes <= 48 * 1024, `HTML 已 ${(bytes / 1024).toFixed(1)} KB（上限 48 KB）`)
   console.log(`      实测：<tr> ${tr} 行 / ${(bytes / 1024).toFixed(1)} KB / counts=${JSON.stringify(card.counts)}`)
 })
 

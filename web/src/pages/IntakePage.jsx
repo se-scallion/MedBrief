@@ -58,6 +58,8 @@ export default function IntakePage() {
 
   const [reports, setReports] = useState([])
   const [mdOpen, setMdOpen] = useState(false) // 四引擎实验台（抽屉）
+  // ② 校对区折叠面板的展开键：识别完自动把这张展开，用户才看得见系统填了什么
+  const [openKeys, setOpenKeys] = useState([])
 
   // 页内分段（2026-11-13）：①②③ 原本纵向堆叠、一屏只见 ①，医生/家属要一路往下滚。
   // 这里加一条吸顶分段条：点哪段滚到哪段，滚动时高亮当前段。不动 state、不拆页面。
@@ -126,7 +128,7 @@ export default function IntakePage() {
           text: '',
           rows: [],
           parsed: null,
-          meta: { kind: 'lab', reportDate: '', hospital: '' },
+          meta: { reportDate: '', hospital: '' },
           _file: f,
         })
       }
@@ -203,7 +205,7 @@ export default function IntakePage() {
         text: '',
         rows: [],
         parsed: null,
-        meta: { kind: a.meta.kind || b.meta.kind || 'lab', reportDate: '', hospital: '' },
+        meta: { kind: a.meta.kind || b.meta.kind || '', reportDate: '', hospital: '' },
       }
       // 用返回图替换这两张（并保留 stitching 的来源链，方便回查原图）
       setItems((prev) => [...prev.filter((it) => it.id !== a.id && it.id !== b.id), merged])
@@ -226,14 +228,17 @@ export default function IntakePage() {
       const m = it.meta || {}
       const next = {
         ...m,
-        kind: m.kind || meta.kind || 'lab',
+        kind: m.kind || meta.kind || '',
         reportDate: m.reportDate || meta.reportDate || '',
         sampledAt: m.sampledAt || meta.sampledAt || '',
         hospital: m.hospital || meta.hospital || '',
         reportType: m.reportType || meta.reportType || '',
         barcode: m.barcode || meta.barcode || '',
       }
-      return { meta: next }
+      // 报告类型（具体类型，如「染色体核型」）是否由系统自动识别出来的：
+      // 用户没手填过才打「自动识别」标；他一改就撤标（改过的以人为准）。
+      const typeAuto = m.reportType ? !!it.typeAuto : !!meta.reportType
+      return { meta: next, typeAuto }
     })
   }, [])
 
@@ -287,6 +292,8 @@ export default function IntakePage() {
       // 2026-11-15：识别完自动把「报告日期 / 类型 / 医院 / 条码」填进表单项（只在原值为空时才填，
       // 绝不覆盖用户已经改过的内容）。过去这几栏全靠手敲，用户反馈「识别完了表单还是空的」。
       mergeMeta(item.id, body.meta)
+      // 并自动展开这张的校对区：表单填了但折叠着，用户看不见 = 等于没填（这个坑是 11-15 端到端跑出来的）
+      setOpenKeys((ks) => (ks.includes(item.id) ? ks : [...ks, item.id]))
       const deduped = body.stitchedDeduped || 0
       pushLog(
         `「${item.name}」识别完成，得到 ${(body.rows || []).length} 行` +
@@ -612,14 +619,29 @@ export default function IntakePage() {
       <Divider style={{ margin: '4px 0' }} />
 
       <Space wrap>
-        <Text style={{ fontSize: 12 }}>报告类型</Text>
+        <Text style={{ fontSize: 12 }}>报告大类</Text>
         <Select
           size="small"
-          style={{ width: 130 }}
-          value={item.meta.kind}
+          style={{ width: 110 }}
+          value={item.meta.kind || undefined}
+          placeholder="自动判断"
           options={KIND_OPTIONS}
           onChange={(v) => patchItem(item.id, (it) => ({ meta: { ...it.meta, kind: v } }))}
         />
+        {/* 报告类型（具体类型）2026-11-15：过去这里只有一个「大类」下拉，
+            系统判出来的「染色体核型」这类**具体类型既不显示也改不了**，用户只能说「类型识别不了」。
+            现在把具体类型显式摆出来、可编辑，自动识别出来的打「自动识别」标。 */}
+        <Text style={{ fontSize: 12 }}>报告类型</Text>
+        <Input
+          size="small"
+          style={{ width: 150 }}
+          placeholder="如 染色体核型 / 血常规"
+          value={item.meta.reportType || ''}
+          onChange={(e) =>
+            patchItem(item.id, (it) => ({ meta: { ...it.meta, reportType: e.target.value }, typeAuto: false }))
+          }
+        />
+        {item.typeAuto && item.meta.reportType ? <Tag color="blue" style={{ marginInlineEnd: 0 }}>自动识别</Tag> : null}
         <Space size={4}>
           <Text style={{ fontSize: 12 }}>报告日期</Text>
           {item.meta.sampledAt && (
@@ -635,6 +657,11 @@ export default function IntakePage() {
           value={item.meta.reportDate}
           onChange={(e) => patchItem(item.id, (it) => ({ meta: { ...it.meta, reportDate: e.target.value } }))}
         />
+        {item.meta.barcode ? (
+          <Tooltip title="检测条码（同批报告可能共用，用于查重与回溯原件）">
+            <Text type="secondary" style={{ fontSize: 11 }}>条码 {item.meta.barcode}</Text>
+          </Tooltip>
+        ) : null}
         <Text style={{ fontSize: 12 }}>医院</Text>
         <Input
           size="small"
@@ -712,6 +739,7 @@ export default function IntakePage() {
       {/* 3 + 4：识别校对与入库 */}
       <div id="sec-review" style={{ scrollMarginTop: 56 }}>
         <ReviewPanel items={items} renderItemBody={renderItemBody} batch={batch}
+          openKeys={openKeys} onOpenChange={setOpenKeys}
           onBatchStop={() => { batchStop.current = true }} onImportAll={importAll} />
       </div>
 
