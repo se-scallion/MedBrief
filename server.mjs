@@ -48,6 +48,7 @@ import {
 import { loadPatient, savePatient, buildCard } from './lib/intakeCard.js'
 import { saveBlob, saveBlobIfAbsent, getBlob, listBlobs, linkBlobToReport, deleteBlob, blobStats } from './lib/blobStore.mjs'
 import { appendCorrections, listCorrections, correctionsStats } from './lib/correctionsStore.mjs'
+import { readStore, writeStore } from './lib/reportStore.mjs'
 import { planChunks, cropChunks, imageSize, cropToContent } from './lib/imageChunker.mjs'
 import { autoDeskew } from './lib/deskew.mjs'
 import { readPdf, guessReportDate } from './lib/pdfIntake.mjs'
@@ -343,16 +344,10 @@ async function readJsonBody(req) {
  * 旧文件（无这两个字段）照读，默认空数组 —— 不迁移、不改写历史数据。
  */
 function readReports() {
-  try {
-    const j = JSON.parse(fs.readFileSync(REPORTS_FILE, 'utf8'))
-    return {
-      reports: Array.isArray(j.reports) ? j.reports : [],
-      trashed: Array.isArray(j.trashed) ? j.trashed : [],
-      audit: Array.isArray(j.audit) ? j.audit : [],
-    }
-  } catch {
-    return { reports: [], trashed: [], audit: [] }
-  }
+  // v2 阶段 1.1：解析失败/坏文件一律抛错，绝不静默返回空库（否则下一次写入会覆盖真实数据）。
+  // 唯一允许空库的情况是「文件本来就不存在」，由 reportStore 内部处理。
+  const { version, reports, trashed, audit } = readStore(REPORTS_FILE)
+  return { reports, trashed, audit, version }
 }
 
 // 报告原件反查（2026-11-13 v3 第 1 步）：
@@ -377,13 +372,9 @@ function attachBlobIds(reports = []) {
   })
 }
 function writeReports(store) {
-  fs.mkdirSync(path.dirname(REPORTS_FILE), { recursive: true })
-  // ⚠️ 必须把 trashed / audit 一起写：早先这里只写 {version, reports}，
-  // 软删除的记录会在下一次写入时凭空消失（= 一重启就复活），那是「删了又回来」的经典坑。
-  const out = { version: 2, reports: store.reports }
-  if (Array.isArray(store.trashed)) out.trashed = store.trashed
-  if (Array.isArray(store.audit)) out.audit = store.audit
-  fs.writeFileSync(REPORTS_FILE, JSON.stringify(out, null, 2), 'utf8')
+  // v2 阶段 1.1：tmp + fsync + rename 原子写，保 {version, reports, trashed, audit} 四字段；
+  // 进程内单写者队列防并发交错。旧实现 writeFileSync 直写目标文件，崩在半途会覆盖 63 份报告。
+  return writeStore(REPORTS_FILE, store)
 }
 
 function getNextReleaseCountdown() {
