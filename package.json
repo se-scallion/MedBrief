@@ -32,7 +32,8 @@
     "test:reportdelete": "node tests/verify-report-delete.mjs",
     "test:meta": "node tests/verify-report-meta.mjs",
     "test:library": "node tests/verify-library.mjs",
-    "test:realdoc": "node tests/verify-realdoc.mjs"
+    "test:realdoc": "node tests/verify-realdoc.mjs",
+    "test:hits": "node tests/verify-recognition-hits.mjs"
   },
   "keywords": [
     "guahao",

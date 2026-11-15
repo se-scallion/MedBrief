@@ -60,6 +60,8 @@ import { buildVisitBrief } from './lib/visitBrief.js'
 import { fetchLiveDoctorSchedule } from './lib/bjcyhScraper.js'
 // M2a 切流：MEDREC_BACKEND=8011 时走统一识别服务；=legacy（默认）时本模块不参与，行为零变化
 import { isService as medrecOn, extractImage as medrecExtractImage, extractText as medrecExtractText, ocrImage as medrecOcrImage, backend as medrecBackend } from './medrec-adapter.mjs'
+// M3 观测件：只记一次命中，不改响应、不降级、不重试
+import { bump as bumpRecognitionHit, summary as recognitionSummary } from './lib/recognitionHits.mjs'
 import { createGuahao114Service } from './lib/guahao114Service.js'
 import { mountMedData } from './meddata/mount.mjs'
 
@@ -216,6 +218,20 @@ const server = http.createServer(async (req, res) => {
 
   const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`)
   const pathname = parsedUrl.pathname
+
+  // M3 前置观测：记录「这条识别请求走的是 legacy 还是 8011」。
+  // 只 bump 一次、不进入任何判定；异常由 bump 内部吞掉，绝不影响响应。
+  const OBSERVED_ROUTES = new Set(['/api/intake/ocr', '/api/intake/parse', '/api/ai-docread'])
+  if (OBSERVED_ROUTES.has(pathname) && req.method === 'POST') {
+    const kind = pathname === '/api/intake/parse' ? 'parse' : pathname === '/api/ai-docread' ? 'docread' : 'ocr'
+    bumpRecognitionHit({ side: 'medbrief', route: pathname, backend: medrecBackend(), kind })
+  }
+
+  // 0. M3 观测汇总（只读，不改任何状态）：curl -s /api/recognition-hits?days=7
+  if (req.method === 'GET' && pathname === '/api/recognition-hits') {
+    const days = Math.max(1, Math.min(90, Number(parsedUrl.searchParams.get('days') || 7)))
+    return sendJson(res, 200, { ok: true, ...recognitionSummary({ days }) })
+  }
 
   // 1. GET /api/health
   //    ⚠️ 带上 head/startedAt：长驻 node 进程不热更新，改了 lib/* 忘重启会静默用旧模块

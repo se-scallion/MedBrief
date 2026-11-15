@@ -20,3 +20,6 @@ data/medbrief.db
 data/medbrief.db-journal
 data/reports.json.bak-*
 data/tmp/inbox/manifest.json
+
+# M3 观测计数（本机数据，不入库）
+data/recognition-hits.jsonl
