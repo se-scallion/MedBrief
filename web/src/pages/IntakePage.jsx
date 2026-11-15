@@ -218,6 +218,25 @@ export default function IntakePage() {
     }
   }
 
+  // 把后端推断出的 meta 合进表单项：**只填空字段，不覆盖用户已填**。
+  // 识别（图片/PDF）与手工粘贴文本后的「重新解析」都走这一条，避免两处逻辑漂移。
+  const mergeMeta = useCallback((itemId, meta) => {
+    if (!meta) return
+    patchItem(itemId, (it) => {
+      const m = it.meta || {}
+      const next = {
+        ...m,
+        kind: m.kind || meta.kind || 'lab',
+        reportDate: m.reportDate || meta.reportDate || '',
+        sampledAt: m.sampledAt || meta.sampledAt || '',
+        hospital: m.hospital || meta.hospital || '',
+        reportType: m.reportType || meta.reportType || '',
+        barcode: m.barcode || meta.barcode || '',
+      }
+      return { meta: next }
+    })
+  }, [])
+
   // ---------- 3. 识别 + 解析 ----------
   const recognize = async (item) => {
     if (!item.dataUrl) {
@@ -267,21 +286,7 @@ export default function IntakePage() {
       })
       // 2026-11-15：识别完自动把「报告日期 / 类型 / 医院 / 条码」填进表单项（只在原值为空时才填，
       // 绝不覆盖用户已经改过的内容）。过去这几栏全靠手敲，用户反馈「识别完了表单还是空的」。
-      if (body.meta) {
-        patchItem(item.id, (it) => {
-          const m = it.meta || {}
-          return {
-            meta: {
-              ...m,
-              kind: m.kind || body.meta.kind || 'lab',
-              reportDate: m.reportDate || body.meta.reportDate || '',
-              hospital: m.hospital || body.meta.hospital || '',
-              reportType: m.reportType || body.meta.reportType || '',
-              barcode: m.barcode || body.meta.barcode || '',
-            },
-          }
-        })
-      }
+      mergeMeta(item.id, body.meta)
       const deduped = body.stitchedDeduped || 0
       pushLog(
         `「${item.name}」识别完成，得到 ${(body.rows || []).length} 行` +
@@ -306,6 +311,7 @@ export default function IntakePage() {
       const { body } = await postJson('/api/intake/parse', { text: item.text || '' })
       if (!body.ok) throw new Error(body.error || '解析失败')
       patchItem(item.id, { rows: body.rows || [], parsed: body })
+      mergeMeta(item.id, body.meta)
       pushLog(`「${item.name}」重新解析：${(body.rows || []).length} 行`, 'info')
     } catch (e) {
       message.error(e.message)
@@ -629,7 +635,14 @@ export default function IntakePage() {
           options={KIND_OPTIONS}
           onChange={(v) => patchItem(item.id, (it) => ({ meta: { ...it.meta, kind: v } }))}
         />
-        <Text style={{ fontSize: 12 }}>报告日期</Text>
+        <Space size={4}>
+          <Text style={{ fontSize: 12 }}>报告日期</Text>
+          {item.meta.sampledAt && (
+            <Tooltip title="按 MedData 口径：报告日期取「报告时间」，采样/检查日期单独保留，便于核对">
+              <Text type="secondary" style={{ fontSize: 11 }}>（采样 {String(item.meta.sampledAt)}）</Text>
+            </Tooltip>
+          )}
+        </Space>
         <Input
           size="small"
           style={{ width: 130 }}

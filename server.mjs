@@ -52,6 +52,7 @@ import { autoDeskew } from './lib/deskew.mjs'
 import { readPdf, guessReportDate } from './lib/pdfIntake.mjs'
 import { classifyReport } from './lib/reportClassify.mjs'
 import { buildSignatureIndex, suggestBySignature, nameLooksUnusable } from './lib/analyteSignature.mjs'
+import { guessMeta } from './lib/reportMeta.mjs'
 import { summarizeState, formatSummaryText } from './lib/metricsSummary.js'
 import { buildVisitBrief } from './lib/visitBrief.js'
 import { fetchLiveDoctorSchedule } from './lib/bjcyhScraper.js'
@@ -1221,32 +1222,6 @@ function getNextReleaseCountdown() {
     return
   }
 
-  // 2026-11-15：识别完成后**自动填表单项**（报告日期 / 类型 / 医院 / 条码）。
-  // 过去识别只回 text+rows，元信息（日期/医院/类型）要用户自己敲 —— 用户实测反馈「识别完了表单还是空的」。
-  // 只在文本里**找得到证据**时才给建议值；前端只在对应字段为空时采用，绝不覆盖用户已填的。
-  function guessMetaFromText(text = '', rows = []) {
-    const t = String(text || '')
-    const meta = {}
-    try {
-      const d = guessReportDate(t)
-      if (d) meta.reportDate = d
-    } catch {}
-    try {
-      const cls = classifyReport({ text: t, rows: Array.isArray(rows) ? rows : [] })
-      if (cls?.reportType && cls.reportType !== 'LAB_PANEL') meta.reportType = cls.reportType
-      if (cls?.kind) meta.kind = cls.kind
-    } catch {}
-    const bc = t.match(/V\d{8,}|\b\d{8}G\d{6,}\b/)
-    if (bc) meta.barcode = bc[0]
-    // 医院：优先「XX医院」结尾的机构名，排除「检验科/报告单/科室」这类噪声行
-    const hos = t.split(/\r?\n/).map((l) => l.trim())
-      .filter((l) => l && !/报告单|检验科|科室|送检|打印|审核|标本|电话|地址/.test(l))
-      .map((l) => (l.match(/[\u4e00-\u9fa5（）()]{2,20}(?:医院|医学检验实验室|检验中心|卫生院)/) || [])[0])
-      .filter(Boolean)
-    if (hos.length) meta.hospital = hos[0]
-    return Object.keys(meta).length ? meta : null
-  }
-
   // 10b. 问诊资料卡：把已导入的报告渲染成 A4 一页（mask=0 关闭姓名脱敏，默认脱敏）
   if (req.method === 'GET' && pathname === '/api/intake/card') {
     try {
@@ -1330,7 +1305,7 @@ function getNextReleaseCountdown() {
         console.warn('[intake/parse] 项目名候选反查失败（不影响解析结果）：', e.message)
       }
       const groups = groupForDoctorCard(rows)
-      sendJson(res, 200, { ok: true, rows, groups, summary: summarizeForCard(groups) })
+      sendJson(res, 200, { ok: true, rows, groups, meta: guessMeta(body.text || '', rows, { classifyReport }), summary: summarizeForCard(groups) })
     } catch (e) {
       sendJson(res, 500, { ok: false, error: e.message })
     }
@@ -1442,6 +1417,8 @@ function getNextReleaseCountdown() {
             text: allText,
             rows,
             rawRowCount: rows.length,
+            // 2026-11-15：表单项自动填充（按 MedData 标签优先口径，见 lib/reportMeta.mjs）
+            meta: guessMeta(allText, rows, { classifyReport }),
             reportDate: guessReportDate(allText),
             layout: 'pdf-text',
             chunked: false,
@@ -1474,6 +1451,7 @@ function getNextReleaseCountdown() {
           text: rasterTexts.filter(Boolean).join('\n'),
           rows: rowsAll,
           rawRowCount: rawTotal,
+          meta: guessMeta(rasterTexts.join('\n'), rowsAll, { classifyReport }),
           reportDate: guessReportDate(rasterTexts.join('\n')),
           layout: 'reconstructed',
           chunked: anyChunked,
@@ -1486,7 +1464,7 @@ function getNextReleaseCountdown() {
 
       // ---------- 图片 ----------
       const out = await runImagePipeline(image)
-      sendJson(res, 200, { ok: !!out.text, kind: 'image', engine: '8008/ocr-vision', meta: guessMetaFromText(out.text, out.rows), ...out })
+      sendJson(res, 200, { ok: !!out.text, kind: 'image', engine: '8008/ocr-vision', meta: guessMeta(out.text, out.rows, { classifyReport }), ...out })
     } catch (e) {
       sendJson(res, 200, { ok: false, unavailable: true, reason: e.message, fallback: 'paste-text' })
     }

@@ -19,7 +19,8 @@ export default function ReviewPanel({ items, renderItemBody, batch, onBatchStop,
           <Button size="small" danger onClick={onBatchStop}>停止</Button>
         </Space>
       ) : (
-        <Button size="small" type="primary" onClick={onImportAll} disabled={!importable}>
+        <Button size="small" type="primary" onClick={onImportAll}
+          title={importable ? '逐张入库（疑似重复会自动跳过）' : '还没有可入库的条目：先识别并确认有指标行'}>
           一键导入全部{importable ? `（${importable}）` : ''}
         </Button>
       )}>

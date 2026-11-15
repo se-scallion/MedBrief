@@ -26,7 +26,7 @@ export default function UploadPanel({ items, pendingCount, failedCount, dupCount
             </>
           ) : (
             <Button size="small" type="primary" onClick={onRecognizeAll}
-              disabled={!items.length || pendingCount + failedCount === 0}>
+              title={pendingCount + failedCount === 0 ? '当前没有待识别的图片（已识别的不重复跑）' : '逐张识别，串行执行，可随时停止'}>
               一键识别全部{pendingCount + failedCount > 0 ? `（${pendingCount + failedCount}）` : ''}
             </Button>
           )}

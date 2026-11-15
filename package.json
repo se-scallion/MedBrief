@@ -29,7 +29,8 @@
     "check:blob": "node tools/check-blob-integrity.mjs",
     "test:reportsort": "node tests/verify-reportsort.mjs",
     "test:classify": "node tests/verify-classify.mjs",
-    "test:reportdelete": "node tests/verify-report-delete.mjs"
+    "test:reportdelete": "node tests/verify-report-delete.mjs",
+    "test:meta": "node tests/verify-report-meta.mjs"
   },
   "keywords": [
     "guahao",
