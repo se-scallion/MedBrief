@@ -88,12 +88,16 @@ export default function CardPage() {
           stage: j.patient.stage || '',
           hospital: j.patient.hospital || '',
           attending: j.patient.attending || '',
+          chiefComplaint: j.patient.chiefComplaint || '',
           focus: j.patient.questions?.focus || '',
           confirm: j.patient.questions?.confirm || '',
           nextVisit: j.patient.questions?.nextVisit || '',
           lastChemo: j.patient.clinicalContext?.lastChemo || '',
           recentTxOrGcsf: j.patient.clinicalContext?.recentTxOrGcsf || '',
           marrowSummary: j.patient.clinicalContext?.marrowSummary || '',
+          kcKaryotype: j.patient.keyConclusions?.karyotype || '',
+          kcMarrow: j.patient.keyConclusions?.marrow || '',
+          kcImaging: j.patient.keyConclusions?.imaging || '',
           comorbidities: j.patient.comorbidities || '',
           allergies: j.patient.allergies || '',
           medications: j.patient.medications || '',
@@ -133,12 +137,18 @@ export default function CardPage() {
     try {
       const { body } = await postJson('/api/intake/patient', {
         name: v.name || '', sex: v.sex || '', age: v.age || '',
-        diagnosis: v.diagnosis || '', subtype: v.subtype || '', stage: v.stage || '',
+        diagnosis: v.diagnosis || '', subtype: v.subtype || '',
+        // 分型「原文依据」单独存：subtype 只放短标签（如 Ph+·高危），依据留作只读注释
+        subtypeNote: patient?.subtypeNote || '',
+        stage: v.stage || '',
         hospital: v.hospital || '', attending: v.attending || '',
         // 选「无」= 明确清空（卡面完全不显示该项）；选「有」才落库文本
         comorbidities: v.comorbiditiesHas === 'has' ? (v.comorbidities || '') : '',
         allergies: v.allergiesHas === 'has' ? (v.allergies || '') : '',
         medications: v.medicationsHas === 'has' ? (v.medications || '') : '',
+        // 2026-11-15 用户口径：本次来意置顶展示；关键结论三格是「人工摘录」，留空则卡片用自动抽取
+        chiefComplaint: v.chiefComplaint || '',
+        keyConclusions: { karyotype: v.kcKaryotype || '', marrow: v.kcMarrow || '', imaging: v.kcImaging || '' },
         questions: { focus: v.focus || '', confirm: v.confirm || '', nextVisit: v.nextVisit || '' },
         clinicalContext: {
           lastChemo: v.lastChemo || '',
@@ -282,6 +292,7 @@ export default function CardPage() {
         form={form}
         patient={patient}
         saving={patientSaving}
+        autoConclusions={card?.keyConclusions || []}
         onSave={savePatient}
         focusField={focusField}
       />

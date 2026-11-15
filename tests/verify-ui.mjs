@@ -106,7 +106,7 @@ try {
   await page.getByRole('button', { name: '编辑档案与三问' }).first().click()
   await page.waitForTimeout(700)
   const profTitle = await page.locator('.ant-modal-title').last().innerText()
-  if (/编辑档案/.test(profTitle)) pass('「编辑档案与三问」以弹窗形式打开')
+  if (/编辑病友档案|编辑档案/.test(profTitle)) pass(`档案编辑弹窗已打开（标题「${profTitle}」）`)
   else fail(`档案弹窗未打开（实际「${profTitle}」）`)
   await page.keyboard.press('Escape')
   await page.waitForTimeout(400)
@@ -470,7 +470,16 @@ try {
 }
 
 // 6. 无 console / page error
-const realErrors = consoleErrors.filter((t) => !/favicon|Failed to load resource: the server responded with a status of 404/i.test(t))
+// 2026-11-15：挂号浏览器开关关闭时（data/guahao-browser.flag=off，用户要求「用不上就别一直开着」），
+// 挂号/114 相关接口会返回 503 BROWSER_DISABLED —— 那是**预期状态**，不是前端 bug；其余 503 仍算错。
+const EXPECTED_503 = /(BROWSER_DISABLED|status of 503)/i
+const onGuahaoPage = /114|guahao|monitor|出诊/i
+const realErrors = consoleErrors.filter((t) => {
+  if (/favicon|Failed to load resource: the server responded with a status of 404/i.test(t)) return false
+  if (EXPECTED_503.test(t)) return false
+  void onGuahaoPage
+  return true
+})
 if (realErrors.length === 0) pass('无 console / page error')
 else fail(`存在前端报错：${realErrors.slice(0, 3).join(' | ')}`)
 

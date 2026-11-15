@@ -6,7 +6,7 @@
 //   · ③ 全部指标：搜索 + 胶囊筛选 + 分组折叠（阴性常规筛查默认折叠，与打印版口径一致）
 // 数据全部来自 `buildCard()` 的 JSON（card.html 只在打印弹窗里用），主页面不再平铺长 iframe。
 import React, { useMemo, useState } from 'react'
-import { Badge, Button, Card, Empty, Input, Segmented, Space, Table, Tag, Tooltip, Typography } from 'antd'
+import { Alert, Badge, Button, Card, Empty, Input, Segmented, Space, Table, Tag, Tooltip, Typography } from 'antd'
 
 const { Text } = Typography
 
@@ -224,6 +224,47 @@ export default function OverviewTab({ card, onOpenSource, onEditProfile }) {
           </BaselineCell>
         </div>
       </Card>
+
+      {/* ---------- ①-b 关键结论摘录（2026-11-15 用户口径） ---------- */}
+      {(card.keyConclusions || []).length > 0 && (
+        <Card size="small" title={<Space>①-b 关键结论摘录 <Text type="secondary" style={{ fontSize: 12 }}>（原句照录，点开看原件）</Text></Space>}
+          style={{ borderLeft: '3px solid #6b7280' }}>
+          <Space direction="vertical" size={6} style={{ width: '100%' }}>
+            {card.keyConclusions.map((k) => {
+              const tl = (card.timeline || []).find((r) => r.id === k.reportId)
+              const clickable = !!(k.reportId && tl)
+              return (
+                <div
+                  key={k.key}
+                  onClick={clickable ? () => onOpenSource({
+                    reportId: k.reportId,
+                    fileBlobId: tl?.fileBlobId,
+                    name: `${k.label}${k.date ? `（${String(k.date).slice(5)}）` : ''}`,
+                    date: k.date || tl?.date,
+                    hospital: tl?.hospital,
+                  }) : undefined}
+                  style={{ cursor: clickable ? 'pointer' : 'default' }}
+                >
+                  <Space size={6} wrap>
+                    <Tag color={k.source === 'manual' ? 'purple' : 'default'} style={{ marginInlineEnd: 0 }}>
+                      {k.source === 'manual' ? '人工摘录' : '原文摘录'}
+                    </Tag>
+                    <Text strong style={{ fontSize: 12 }}>{k.label}{k.date ? `（${String(k.date).slice(5)}）` : ''}</Text>
+                    {clickable && <Text type="secondary" style={{ fontSize: 11 }}>点击看原件 ›</Text>}
+                  </Space>
+                  <div style={{ fontSize: 12, color: '#1f2937', marginTop: 2 }}>{k.text}</div>
+                </div>
+              )
+            })}
+          </Space>
+        </Card>
+      )}
+
+      {/* ---------- 中枢神经系统资料提示（只做资料核对，不含医疗建议） ---------- */}
+      {(card.checklist?.hints || []).map((h) => (
+        <Alert key={h.key} type="warning" showIcon style={{ padding: '4px 10px' }}
+          message={<span style={{ fontSize: 12 }}>{h.detail}</span>} />
+      ))}
 
       {/* ---------- ② 核心异常项 ---------- */}
       <Card
