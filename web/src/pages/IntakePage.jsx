@@ -265,6 +265,23 @@ export default function IntakePage() {
         deskewAngle: body.deskewAngle ?? null,
         deskewMs: body.deskewMs ?? null,
       })
+      // 2026-11-15：识别完自动把「报告日期 / 类型 / 医院 / 条码」填进表单项（只在原值为空时才填，
+      // 绝不覆盖用户已经改过的内容）。过去这几栏全靠手敲，用户反馈「识别完了表单还是空的」。
+      if (body.meta) {
+        patchItem(item.id, (it) => {
+          const m = it.meta || {}
+          return {
+            meta: {
+              ...m,
+              kind: m.kind || body.meta.kind || 'lab',
+              reportDate: m.reportDate || body.meta.reportDate || '',
+              hospital: m.hospital || body.meta.hospital || '',
+              reportType: m.reportType || body.meta.reportType || '',
+              barcode: m.barcode || body.meta.barcode || '',
+            },
+          }
+        })
+      }
       const deduped = body.stitchedDeduped || 0
       pushLog(
         `「${item.name}」识别完成，得到 ${(body.rows || []).length} 行` +
@@ -433,7 +450,16 @@ export default function IntakePage() {
         width: '22%',
         render: (v, r) => (
           <Space size={4} wrap>
-            <Text strong>{v}</Text>
+            <Text strong>{v || <Text type="secondary">（没认出名字）</Text>}</Text>
+            {/* 项目名认坏/认空时的候选（2026-11-15 C 方案）：只给建议，点一下才改名，绝不自动改 */}
+            {(r.nameSuggestions || []).map((sug) => (
+              <Tooltip key={sug.name} title={`依据：${sug.why}（来自本机已有报告的同单位/同参考区间记录，仅供比对）`}>
+                <Tag color="blue" style={{ cursor: 'pointer' }}
+                  onClick={() => updateRow(r.__itemId, r.__idx, { name: sug.name })}>
+                  可能：{sug.name}
+                </Tag>
+              </Tooltip>
+            ))}
             {r.suspectedStitchDuplicate && (
               <Tooltip title="该行在拼接重叠区出现过多次，已合并为一行，原始值未丢弃">
                 <Tag color="gold">重叠合并 {r.dedupedFrom ? `×${r.dedupedFrom}` : ''}</Tag>
