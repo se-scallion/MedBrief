@@ -46,6 +46,10 @@ export default function IntakePage() {
   const { pushLog } = useLog()
 
   const [items, setItems] = useState([])
+  // 一键批量（2026-11-15 用户：每张都点「识别这张」太累，要一键识别 / 一键导入）
+  // 串行执行（识别是重任务，并发会打架且难定位失败）；随时可停；单张失败不中断整批。
+  const [batch, setBatch] = useState(null)          // { mode:'ocr'|'import', done, total }
+  const batchStop = useRef(false)
   const [selected, setSelected] = useState([]) // 勾选做拼接的图片 id
   const [stitching, setStitching] = useState(false)
 
@@ -301,7 +305,7 @@ export default function IntakePage() {
   }
 
   // ---------- 4. 入库（重复必须二次确认，绝不静默丢弃） ----------
-  const saveReport = async (item, { force = false } = {}) => {
+  const saveReport = async (item, { force = false, silent = false } = {}) => {
     const payload = {
       image: item.isPdf ? '' : (item.dataUrl || ''),
       // PDF 不入 sha256 查重图指纹（它是文档不是截图）；靠内容指纹查重
@@ -318,12 +322,18 @@ export default function IntakePage() {
       loadReports()
       pushLog(`「${item.name}」已入库（${body.report?.id}），共 ${body.total} 份报告`, 'ok')
       message.success('已入库')
-      return
+      return { ok: true, id: body.report?.id }
     }
 
     if (body.duplicate) {
       const of = body.duplicate.of || '已存在的报告'
       patchItem(item.id, { status: 'dup' })
+      // 批量导入时不弹确认框（一次弹 N 个没法用）：记为「疑似重复·已跳过」，
+      // 想强导的那张，单独点它的「入库」再确认即可。
+      if (silent) {
+        pushLog(`「${item.name}」疑似重复（与 ${of} 相似），批量导入已跳过；要强导请单独点这张的「入库」`, 'warn')
+        return { duplicate: true, of }
+      }
       modal.confirm({
         title: '这张可能已经导入过',
         content: (
@@ -349,6 +359,55 @@ export default function IntakePage() {
     }
 
     throw new Error(body.error || '入库失败')
+  }
+
+  // ---------- 一键识别全部 ----------
+  const recognizeAll = async () => {
+    const targets = items.filter((it) => !it.saved && it.status !== 'ocr' && !(Array.isArray(it.rows) && it.rows.length > 0))
+    if (!targets.length) { message.info('没有待识别的图片（已识别的不会重复跑）'); return }
+    batchStop.current = false
+    setBatch({ mode: 'ocr', done: 0, total: targets.length })
+    pushLog(`开始一键识别：共 ${targets.length} 张（串行执行，可随时停止）`, 'info')
+    let ok = 0; let bad = 0
+    for (let i = 0; i < targets.length; i++) {
+      if (batchStop.current) { pushLog(`批量识别已停止（完成 ${i}/${targets.length}）`, 'warn'); break }
+      setBatch({ mode: 'ocr', done: i, total: targets.length })
+      try {
+        await recognize(targets[i])
+        ok++
+      } catch (e) {
+        bad++
+        pushLog(`「${targets[i].name}」识别异常：${e.message}`, 'err')
+      }
+    }
+    setBatch(null)
+    pushLog(`一键识别结束：成功 ${ok} 张${bad ? `，异常 ${bad} 张` : ''}`, bad ? 'warn' : 'ok')
+    message[bad ? 'warning' : 'success'](`识别完成：成功 ${ok} 张${bad ? `，异常 ${bad} 张` : ''}`)
+  }
+
+  // ---------- 一键导入全部（只导入已解析出指标行的） ----------
+  const importAll = async () => {
+    const targets = items.filter((it) => !it.saved && Array.isArray(it.rows) && it.rows.length > 0)
+    if (!targets.length) { message.info('没有可入库的条目（先识别，或识别后补上指标行）'); return }
+    batchStop.current = false
+    setBatch({ mode: 'import', done: 0, total: targets.length })
+    pushLog(`开始一键导入：共 ${targets.length} 张（疑似重复的会自动跳过并记日志）`, 'info')
+    let ok = 0; let dup = 0; let bad = 0
+    for (let i = 0; i < targets.length; i++) {
+      if (batchStop.current) { pushLog(`批量导入已停止（完成 ${i}/${targets.length}）`, 'warn'); break }
+      setBatch({ mode: 'import', done: i, total: targets.length })
+      try {
+        const r = await saveReport(targets[i], { silent: true })
+        if (r?.duplicate) dup++
+        else if (r?.ok) ok++
+      } catch (e) {
+        bad++
+        pushLog(`「${targets[i].name}」入库失败：${e.message}`, 'err')
+      }
+    }
+    setBatch(null)
+    pushLog(`一键导入结束：入库 ${ok} 张${dup ? `，跳过重复 ${dup} 张` : ''}${bad ? `，失败 ${bad} 张` : ''}`, bad ? 'warn' : 'ok')
+    message[bad ? 'warning' : 'success'](`入库完成：${ok} 张${dup ? `（跳过重复 ${dup}）` : ''}${bad ? `，失败 ${bad}` : ''}`)
   }
 
   const onSaveReport = async (item) => {
@@ -620,12 +679,16 @@ export default function IntakePage() {
         doStitch={doStitch}
         removeItem={removeItem}
         toggleSelect={toggleSelect}
+        batch={batch}
+        onBatchStop={() => { batchStop.current = true }}
+        onRecognizeAll={recognizeAll}
       />
       </div>
 
       {/* 3 + 4：识别校对与入库 */}
       <div id="sec-review" style={{ scrollMarginTop: 56 }}>
-        <ReviewPanel items={items} renderItemBody={renderItemBody} />
+        <ReviewPanel items={items} renderItemBody={renderItemBody} batch={batch}
+          onBatchStop={() => { batchStop.current = true }} onImportAll={importAll} />
       </div>
 
       <Drawer

@@ -8,17 +8,28 @@ const { Dragger } = Upload
 import { ST, KIND_OPTIONS, FLAG_TEXT, uid, fmtSize, rawJson, postJson } from './shared.js'
 
 const { Text, Paragraph } = Typography
-export default function UploadPanel({ items, pendingCount, failedCount, dupCount, selected, setSelected, stitching, addFiles, recognize, doStitch, removeItem, toggleSelect }) {
+export default function UploadPanel({ items, pendingCount, failedCount, dupCount, selected, setSelected, stitching, addFiles, recognize, doStitch, removeItem, toggleSelect, batch, onBatchStop, onRecognizeAll }) {
   return (
     <Card
       size="small"
       title="① 批量导入"
       extra={
-        <Space>
+        <Space wrap>
           <Tag>共 {items.length} 张</Tag>
           {pendingCount > 0 && <Tag color="default">待识别 {pendingCount}</Tag>}
           {failedCount > 0 && <Tag color="red">未识别 {failedCount}</Tag>}
           {dupCount > 0 && <Tag color="orange">疑似重复 {dupCount}</Tag>}
+          {batch?.mode === 'ocr' ? (
+            <>
+              <Tag color="processing">识别中 {batch.done}/{batch.total}</Tag>
+              <Button size="small" danger onClick={onBatchStop}>停止</Button>
+            </>
+          ) : (
+            <Button size="small" type="primary" onClick={onRecognizeAll}
+              disabled={!items.length || pendingCount + failedCount === 0}>
+              一键识别全部{pendingCount + failedCount > 0 ? `（${pendingCount + failedCount}）` : ''}
+            </Button>
+          )}
         </Space>
       }
     >

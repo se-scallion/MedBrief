@@ -8,10 +8,21 @@ const { Dragger } = Upload
 import { ST, KIND_OPTIONS, FLAG_TEXT, uid, fmtSize, rawJson, postJson } from './shared.js'
 
 const { Text, Paragraph } = Typography
-export default function ReviewPanel({ items, renderItemBody }) {
+export default function ReviewPanel({ items, renderItemBody, batch, onBatchStop, onImportAll }) {
+  const importable = items.filter((it) => !it.saved && Array.isArray(it.rows) && it.rows.length > 0).length
   // 3 + 4：识别校对与入库
   return (
-    <Card size="small" title="② 识别与校对（每张可改可删，确认后入库）">
+    <Card size="small" title="② 识别与校对（每张可改可删，确认后入库）"
+      extra={batch?.mode === 'import' ? (
+        <Space>
+          <Tag color="processing">导入中 {batch.done}/{batch.total}</Tag>
+          <Button size="small" danger onClick={onBatchStop}>停止</Button>
+        </Space>
+      ) : (
+        <Button size="small" type="primary" onClick={onImportAll} disabled={!importable}>
+          一键导入全部{importable ? `（${importable}）` : ''}
+        </Button>
+      )}>
       {items.length === 0 ? (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="先导入图片" />
       ) : (
