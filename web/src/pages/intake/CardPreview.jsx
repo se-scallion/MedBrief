@@ -65,7 +65,7 @@ export default function CardPreview({ open, onClose, card, embedHtml, loading, m
           </Text>
         </Space>
       }
-      styles={{ body: { background: '#525659', padding: 12, borderRadius: 6 } }}
+      styles={{ body: { background: '#eef1f4', padding: 12, borderRadius: 6 } }}
       footer={[
         <Space key="l" size={8} onClick={() => onMaskChange(!mask)}
           style={{ float: 'left', minHeight: 32, alignItems: 'center', cursor: 'pointer',
@@ -85,7 +85,7 @@ export default function CardPreview({ open, onClose, card, embedHtml, loading, m
           <Spin tip="生成中…" />
         </div>
       ) : card?.html ? (
-        <div style={{ background: '#fff', borderRadius: 4, overflow: 'hidden' }}>
+        <div style={{ background: 'transparent' }}>
           <iframe
             ref={frame}
             title="问诊资料卡打印预览"
@@ -94,7 +94,7 @@ export default function CardPreview({ open, onClose, card, embedHtml, loading, m
           />
         </div>
       ) : (
-        <div style={{ height: 240, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
+        <div style={{ height: 240, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280' }}>
           还没有生成资料卡
         </div>
       )}
