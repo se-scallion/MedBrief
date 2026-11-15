@@ -97,3 +97,19 @@
   必须走薄封装在边界 `format('YYYY-MM-DD')`，存储值域不变。
 - 再触发条件：用户说「按 forms-component-plan 执行」（或等价确认）；届时按该文档 §5 三项改动 +
   `build:web` / `test:ui` / `tools/e2e-real-pdf.mjs` / `test:card` / `test:library` 全绿验收。
+
+## 收尾终态（2026-11-15，session-wrap-up Step 3）
+
+以下 6 项在本次收尾时逐项裁到终态，**不再挂账给用户**；每条都有证据与再触发条件，
+状态标记沿用 `【不改·日期】` / `【护栏·日期】`。收尾结束时不留「要不要修」类问题。
+
+| # | 事项 | 决策 | 证据（可复跑） | 再触发条件 |
+|---|---|---|---|---|
+| 1 | 表单组件替换（报告日期 DatePicker 等） | **不改·2026-11-15** | `.agents/forms-component-plan.md` 已过排雷但用户口径是「先方案、确认后执行」；`DateField` 不存在、`IntakePage.jsx:653` 与 `ReportsPanel.jsx:484` 仍是 `<Input>`（本文件 Bug 10 已记） | 用户说「按 forms-component-plan 执行」 |
+| 2 | 3 张截图拼图 / N 张内容级合并 | **不改·2026-11-15** | `.agents/plan-stitch-2line-1115.md` 顶部补记：两行版式等已由 `a9c3c45` 落地；直接照做会重复施工 | 用户指出剩余 3 项（N 张合并 / 选 3+ 张 / 截断行取值）中任一仍需做 |
+| 3 | M3 旧代码物理删除 | **护栏·2026-11-15** | `curl -s 127.0.0.1:5174/api/recognition-hits?days=7` → `retireGate=false, observedDays=1, 样本 1 < 50`；`tests/verify-recognition-hits.mjs` 4/0 | 连续 7 天 `retireGate=true`（每天有观测 + legacy 全 0 + 样本 ≥50） |
+| 4 | 用户复验「AI 精读」findings/conclusion 回填 | **不改·2026-11-15** | 服务侧已真跑（8–10s done、measures 8/10、doc_type=血常规，`MedRecognition/docs/m1.md §7`、`MedData c408650`）；界面观感只能真人看，不是缺陷 | 用户明确回报「回填与老通道不一致」并给出字段 |
+| 5 | 验收截图 01–13 缺失 | **不改·2026-11-15** | `ls MedBrief-验收截图/` 只剩 14/15/16；01–13 是旧 `/tmp` 图，已不可恢复，且当前代码下重截无意义（页面已多轮变化） | 用户要求重新生成全套终验截图 |
+| 6 | `data/guahao-browser.flag`（挂号浏览器开关） | **不改·2026-11-15** | 文件 4 字节 `off`、11-15 00:09 创建，属挂号线的运行态开关且非本会话产出；已加 `.gitignore`，文件不动 | 挂号线的 owner 认领并在其会话里提交 |
+
+自检：`grep -nE '【待修】|待决策|待拍板' .agents/{bugs,MEMORY,architecture,testing-lessons,forms-component-plan,plan-stitch-2line-1115}.md` → **本会话相关 0 条**。
