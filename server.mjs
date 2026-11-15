@@ -58,6 +58,8 @@ import { detectReportType, buildTypeRowIndex } from './lib/reportTypeDetect.mjs'
 import { summarizeState, formatSummaryText } from './lib/metricsSummary.js'
 import { buildVisitBrief } from './lib/visitBrief.js'
 import { fetchLiveDoctorSchedule } from './lib/bjcyhScraper.js'
+// M2a 切流：MEDREC_BACKEND=8011 时走统一识别服务；=legacy（默认）时本模块不参与，行为零变化
+import { isService as medrecOn, extractImage as medrecExtractImage, extractText as medrecExtractText, ocrImage as medrecOcrImage, backend as medrecBackend } from './medrec-adapter.mjs'
 import { createGuahao114Service } from './lib/guahao114Service.js'
 import { mountMedData } from './meddata/mount.mjs'
 
@@ -1325,7 +1327,8 @@ function getNextReleaseCountdown() {
   if (pathname === '/api/intake/parse' && req.method === 'POST') {
     const body = await readJsonBody(req)
     try {
-      const rows = parseLabRows(body.text || '')
+      // M2a：MEDREC_BACKEND=8011 → 解析走 /v1/extract（服务出参已映射回本地行形状）
+      const rows = medrecOn() ? (await medrecExtractText(body.text || '')).rows : parseLabRows(body.text || '')
       // 2026-11-15（用户选定 C 方案）：项目名认坏/认空的行，用「单位+参考区间」签名反查候选项目。
       // **只给候选，绝不自动改名**；依据仅来自本机已有报告（见 lib/analyteSignature.mjs 的红线注释）。
       try {
@@ -1358,6 +1361,19 @@ function getNextReleaseCountdown() {
       // 单次 OCR（一块图 → 文本 + 行）
       const ocrOnce = async (dataUrl) => {
         const id = `intake-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`
+        // M2a：MEDREC_BACKEND=8011 → 一次 /v1/extract 同时拿文本与指标行（不再本地 parseLabRows）
+        if (medrecOn()) {
+          const r = await medrecExtractImage(dataUrl)
+          const layoutLines = String(r.text || '').split('\n').filter(Boolean)
+          return {
+            text: r.text,
+            layoutLines,
+            rows: r.rows,
+            layout: 'med-recognition',
+            source: r.source,
+            upstream: undefined,
+          }
+        }
         const r = await fetch('http://127.0.0.1:8008/api/ocr-vision', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1428,6 +1444,8 @@ function getNextReleaseCountdown() {
           deskewMs: skew.ms,
           deskewConfidence: skew.confidence,
           layout: results[0]?.layout || 'raw-text',
+          // 这次识别实际走的是哪条链路（legacy 8008 / med-recognition 8011）—— M3 退役靠它数命中
+          source: results.find((r) => r.source)?.source,
           upstream: results.find((r) => r.upstream)?.upstream,
         }
       }
@@ -1441,7 +1459,7 @@ function getNextReleaseCountdown() {
 
         if (textMode) {
           // 有文字层：直接抽文本解析（快、准；报告类 PDF 可能出 0 行指标，那属正常 —— 它会以文本形式入库）
-          const rowsAllText = parseLabRows(allText)
+          const rowsAllText = medrecOn() ? (await medrecExtractText(allText)).rows : parseLabRows(allText)
           const metaTxt = metaFor(allText, rowsAllText)
           const gatedTxt = rowsForType(rowsAllText, metaTxt.reportType)
           const rows = gatedTxt.rows
@@ -1507,7 +1525,7 @@ function getNextReleaseCountdown() {
       const out = await runImagePipeline(image)
       const metaImg = metaFor(out.text, out.rows)
       const gatedImg = rowsForType(out.rows, metaImg.reportType)
-      sendJson(res, 200, { ok: !!out.text, kind: 'image', engine: '8008/ocr-vision', meta: metaImg, ...out, rows: gatedImg.rows, rawRowCount: out.rawRowCount ?? out.rows.length, rowsDropped: gatedImg.dropped })
+      sendJson(res, 200, { ok: !!out.text, kind: 'image', engine: out.source === 'med-recognition' ? 'med-recognition' : '8008/ocr-vision', recognitionSource: medrecBackend(), meta: metaImg, ...out, rows: gatedImg.rows, rawRowCount: out.rawRowCount ?? out.rows.length, rowsDropped: gatedImg.dropped })
     } catch (e) {
       sendJson(res, 200, { ok: false, unavailable: true, reason: e.message, fallback: 'paste-text' })
     }
@@ -1525,7 +1543,7 @@ function getNextReleaseCountdown() {
       // 其它路径（网页纯文本导入、rows 被用户清空）保留原有回退语义，不改既有行为。
       const parsedRows = meta.textOnly === true
         ? (Array.isArray(body.rows) ? body.rows : [])
-        : (Array.isArray(body.rows) && body.rows.length ? body.rows : parseLabRows(body.text || ''))
+        : (Array.isArray(body.rows) && body.rows.length ? body.rows : (medrecOn() ? (await medrecExtractText(body.text || '')).rows : parseLabRows(body.text || '')))
       // 每条 row 都落日期：资料卡的「趋势段」按 row.measuredAt 取时间，缺失就退回 row.reportDate；
       // 两者都空则趋势段直接少行（不是空表就是静默丢数据）。故入库时统一用 meta.reportDate 兜底打戳。
       const reportDate = String(meta.reportDate || '')
