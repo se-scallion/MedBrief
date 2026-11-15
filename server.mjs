@@ -1452,7 +1452,10 @@ function getNextReleaseCountdown() {
             rawRowCount: rows.length,
             // 2026-11-15：表单项自动填充（按 MedData 标签优先口径，见 lib/reportMeta.mjs）
             meta: metaFor(allText, rows),
-            reportDate: guessReportDate(allText),
+            // 2026-11-15 实测：这里曾同时返回 meta.reportDate(2026-07-17，标签优先) 与
+            // guessReportDate(2026-07-15，兜底扫日期) 两个**互相矛盾**的日期，前端取哪个都"有理"。
+            // 现在只认一个：标签优先口径；只有它为空才退回扫日期。
+            reportDate: metaFor(allText, rows).reportDate || guessReportDate(allText),
             layout: 'pdf-text',
             chunked: false,
             chunks: pageTexts.length,
@@ -1535,10 +1538,18 @@ function getNextReleaseCountdown() {
       const fingerprint = buildReportFingerprint(rows, meta)
       // force=true：用户已在弹窗里确认「仍要导入」——跳过去重判定，但仍计算并保存指纹，
       // 否则这条记录永久不受查重覆盖（旧的前端兜底是「不带 image 重发」，那是查重盲区）
+      // 类型识别（放在查重之前：查重要用 reportType —— 同条码同日期但不同类型的报告不是同一份）
+      const cls = classifyReport({
+        text: String(body.text || ''),
+        rows,
+        kind: meta.kind || '',
+        reportType: meta.reportType || '',
+      })
+      const detected = detectType(String(body.text || ''), rows)
       const force = body.force === true
       if (!force) {
         // 传入内容指纹：同一条码被多份报告共用时，靠指纹区分「同一份」与「同批不同报告」
-        const dup = findDuplicate({ sha256, dhash, reportDate: String(meta.reportDate || ''), barcode: String(meta.barcode || ''), fingerprint }, store.reports)
+        const dup = findDuplicate({ sha256, dhash, reportDate: String(meta.reportDate || ''), barcode: String(meta.barcode || ''), fingerprint, reportType: meta.reportType || detected?.reportType || cls.reportType || '', sampledAt: String(meta.sampledAt || ''), receivedAt: String(meta.receivedAt || ''), text: String(body.text || '') }, store.reports)
         if (dup.dup) return sendJson(res, 200, { ok: false, duplicate: dup, hint: '这张图已导入过' })
         const sameContent = store.reports.find((r) => r.fingerprint === fingerprint)
         if (sameContent) return sendJson(res, 200, { ok: false, duplicate: { dup: true, kind: 'content', of: sameContent.id }, hint: '同一份报告（内容一致）' })
@@ -1550,16 +1561,7 @@ function getNextReleaseCountdown() {
       // 截图导入的抬头常常没有「报告类型」这一行，入库后只剩 kind 默认值 'lab' —— 一份心脏彩超
       // 就被存成化验单。口径照 MedData parseDoc.detectDocType（见 lib/reportClassify.mjs 文件头）。
       // **推断值必须可分辨**：写 reportTypeInferred / kindInferred，人工填过的一律不覆盖。
-      const cls = classifyReport({
-        text: String(body.text || ''),
-        rows,
-        kind: meta.kind || '',
-        reportType: meta.reportType || '',
-      })
-      // 入库时再用**标题优先的判定链**复核一次（2026-11-15 用户实测：一份染色体核型 PDF
-      // 前端传上来 kind 是空/默认值，存进库就变成「化验单」，用户在报告库里看到的类型是错的）。
-      // 口径：人填的（meta.kind / meta.reportType 非空）一律以人为准；没填才用识别结果。
-      const detected = detectType(String(body.text || ''), rows)
+      // 口径：人填的（meta.kind / meta.reportType 非空）一律以人为准；没填才用识别结果（cls/detected 已在查重前算好）。
       // 原件兜底：页面导入路径从不传 sourceBlobs，于是「图在内存里、字节没落库」，以后既不能回看也不能重识别
       // （实测 55 份里 1 份如此，字节已不可恢复）。这里由服务端自己存一份，把「有图必有原件」变成接口保证。
       let sourceBlobs = Array.isArray(body.sourceBlobs) ? body.sourceBlobs : (Array.isArray(meta.sourceBlobs) ? meta.sourceBlobs : [])
