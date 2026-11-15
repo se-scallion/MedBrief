@@ -19,6 +19,13 @@ import { jget, jpost } from '../../api.js'
 import { rawJson } from './shared.js'
 import { KIND_OPTIONS } from './shared.js'
 import { DEFAULT_SORT, sortReports, nextSort } from './reportSort.js'
+// D2（2026-11-15 用户拍板 + 代诊-Manager 审核放行）：报告库编辑态**直接复用 MedData 的指标行
+// 组件 DataGrid**，不再手写 5 个裸 Input。它与「资料导入」tab 里用的是同一个组件、同一个 bundle
+// （见 web/vite.config.js 的 meddataAdapter），所以代码列、审计色、一键修正、粘贴解析都在。
+// 样式：embedded.css（Tailwind 产物）只在需要它的页面引入；这里跟着组件一起引。
+import DataGrid from '../../../../meddata/src/components/DataGrid.jsx'
+import { getOps, clearOps } from '../../../../meddata/src/utils/oplog.js'
+import '../../meddata/embedded.css'
 
 const { Text } = Typography
 
@@ -26,6 +33,26 @@ const { Text } = Typography
 // 那是临床事实，会被资料卡的时效与趋势直接消费）。两种日期在列里也必须看得出区别。
 const kindLabel = (r) => r.reportType || KIND_OPTIONS.find((k) => k.value === r.kind)?.label || r.kind || ''
 const rowCountOf = (r) => (Array.isArray(r.rows) ? r.rows.length : 0)
+// 我们的行长这样：{ name, value, unit, refRange, code, status }
+// DataGrid 的 point 长这样：{ _row, _item_no, standard_code, original_name, value, unit, ref_range, arrow }
+// 两个方向都要映射，而且**保存时只回吐 patch 认的 5 个字段**（否则 patch 段记不到，见方案 F6）。
+const toPoints = (rows = []) => (rows || []).map((r, i) => ({
+  _row: i,
+  _item_no: i + 1,
+  standard_code: r.code || '',
+  original_name: r.name || '',
+  value: r.value ?? '',
+  unit: r.unit || '',
+  ref_range: r.refRange || '',
+  arrow: r.flag === 'high' ? '↑' : r.flag === 'low' ? '↓' : '',
+}))
+const fromPoints = (points = []) => (points || []).map((p) => ({
+  name: p.original_name || p.name || '',
+  value: p.value ?? '',
+  unit: p.unit || '',
+  refRange: p.ref_range || '',
+  code: p.standard_code || '',
+}))
 const abnormalOf = (r) => (Array.isArray(r.rows) ? r.rows.filter((x) => ['high', 'low', 'positive'].includes(x.status)).length : 0)
 const fmtWhen = (iso) => {
   const t = String(iso || '')
@@ -120,31 +147,49 @@ export default function ReportsPanel() {
 
   const openEdit = useCallback(async (id) => {
     try {
-      const j = await jget('/api/intake/reports?normalized=1')
-      const rep = (j.reports || []).find((r) => r.id === id)
-      if (!rep) return message.error('报告不存在')
+      // 走详情接口：它同时给「清洗后视图」（编辑初值，带 code）与「原始行」（= 基线，
+      // 供 DataGrid 算「哪些字段被改过」与「清空本次」用）。列表接口为省负载把 text 剥掉了。
+      const j = await jget(`/api/intake/reports/${encodeURIComponent(id)}`)
+      if (!j.ok) throw new Error(j.error || '报告不存在')
+      const rep = j.report || {}
+      clearOps() // 每次开编辑清空上一次的操作序列（会话级单例）
       setEditing({
         id,
         hospital: rep.hospital || '',
         reportDate: rep.reportDate || '',
         reportType: rep.reportType || '',
-        rows: (rep.rows || []).map((r) => ({ name: r.name || '', value: r.value ?? '', unit: r.unit || '', refRange: r.refRange || '' })),
+        text: j.report?.text || '',
+        points: toPoints(j.rows || []),
+        baselinePoints: toPoints(j.rawRows || []),
       })
-    } catch (e) { message.error(`读取清洗视图失败：${e.message}`) }
+    } catch (e) { message.error(`读取报告失败：${e.message}`) }
   }, [message])
 
   const saveEdit = async () => {
     if (!editing) return
     setSaving(true)
     try {
+      const rows = fromPoints(editing.points)
       const { body } = await jpost(`/api/intake/reports/${encodeURIComponent(editing.id)}/patch`, {
         hospital: editing.hospital,
         reportDate: editing.reportDate,
         reportType: editing.reportType,
-        rows: editing.rows.map((r, index) => ({ index, name: r.name, value: r.value, unit: r.unit, refRange: r.refRange })),
+        // 只回吐 patch 白名单认的 5 个字段（code 只用于显示，不进 patch —— 方案 F6）
+        rows: rows.map((r, index) => ({ index, name: r.name, value: r.value, unit: r.unit, refRange: r.refRange })),
       })
       if (!body.ok) throw new Error(body.error || '保存失败')
-      message.success(`已保存 ${body.changed.length} 处修改（旧值已记入 patchLog）`)
+      // 「用户怎么操作的」单独落 corrections 表（只追加、绝不回灌）。保存失败就不上报，
+      // 否则会在库里留下「操作了但没生效」的假记录（方案 D1 / F2）。
+      const ops = getOps()
+      if (ops.length) {
+        try {
+          await jpost(`/api/intake/reports/${encodeURIComponent(editing.id)}/corrections`, {
+            ops, sessionId: `${editing.id}-${Date.now().toString(36)}`,
+          })
+        } catch { /* 反馈失败不影响保存结果，但用户已在界面上得到保存成功提示 */ }
+        clearOps()
+      }
+      message.success(`已保存 ${body.changed.length} 处修改（旧值已记入 patchLog，操作记录 ${ops.length} 条）`)
       setEditing(null)
       load()
     } catch (e) { message.error(e.message) } finally { setSaving(false) }
@@ -426,6 +471,9 @@ export default function ReportsPanel() {
                       dataSource={viewing.data.rows}
                       scroll={{ y: 420 }}
                       columns={[
+                        // 指标代码（2026-11-15 用户要求「还得显示指标代码」）：code 是详情接口读出时
+                        // 用 classifyAnalyte 现算的（不落库，避免与识别结果形成两份真相）。认不出就写「—」。
+                        { title: '代码', dataIndex: 'code', width: 92, render: (v) => (v ? <code style={{ fontSize: 12 }}>{v}</code> : <Text type="secondary">—</Text>) },
                         { title: '项目', dataIndex: 'name', render: (v, r) => <span>{v}{r.nameDirty && <Tag color="warning" style={{ marginInlineStart: 4 }}>名称待核</Tag>}{r.noteRow && <Tag>说明文本·已剔除</Tag>}</span> },
                         { title: '数值', dataIndex: 'value', width: 150, render: (v, r) => <span>{v}{r.unit ? ` ${r.unit}` : ''}</span> },
                         { title: '参考区间', dataIndex: 'refRange', width: 130, render: (v) => v || '—' },
@@ -479,28 +527,41 @@ export default function ReportsPanel() {
       >
         {editing && (
           <Space direction="vertical" size={10} style={{ width: '100%' }}>
+            {/* 医院在 DataGrid 里没有对应输入（它只管日期/类型/指标行），所以留在这里；
+                报告日期与报告类型已由下方 DataGrid 自带输入框接管（同一份 state，不会两处打架）。 */}
             <Space wrap>
-              <span>医院：<Input size="small" style={{ width: 200 }} value={editing.hospital} onChange={(e) => setEditing({ ...editing, hospital: e.target.value })} /></span>
-              <span>报告日期：<Input size="small" style={{ width: 130 }} placeholder="YYYY-MM-DD" value={editing.reportDate} onChange={(e) => setEditing({ ...editing, reportDate: e.target.value })} /></span>
-              <span>报告类型：<Input size="small" style={{ width: 170 }} placeholder="如 血常规 / 超声-心脏" value={editing.reportType} onChange={(e) => setEditing({ ...editing, reportType: e.target.value })} /></span>
+              <span>医院：<Input size="small" style={{ width: 220 }} value={editing.hospital} onChange={(e) => setEditing({ ...editing, hospital: e.target.value })} /></span>
               <Button size="small" type="primary" loading={saving} onClick={saveEdit}>保存修改</Button>
             </Space>
             <Text type="secondary" style={{ fontSize: 12 }}>
               初值来自清洗后视图；保存只改白名单字段（医院 / 日期 / 类型 / 指标行的名称·数值·单位·参考区间），旧值会自动记入 patchLog。
               报告日期留空就是「未提供」——不要用它代替导入时间。
+              这次的编辑动作（改了哪格、改了几次、有没有增删行）另存进操作记录表，只用于改进识别，不会改动报告本身。
             </Text>
-            <Table
-              size="small"
-              rowKey={(_, i) => i}
-              pagination={false}
-              dataSource={editing.rows}
-              columns={[
-                { title: '项目', dataIndex: 'name', render: (v, r, i) => <Input size="small" value={v} onChange={(e) => { const rows = editing.rows.slice(); rows[i] = { ...rows[i], name: e.target.value }; setEditing({ ...editing, rows }) }} /> },
-                { title: '数值', dataIndex: 'value', width: 130, render: (v, r, i) => <Input size="small" value={v} onChange={(e) => { const rows = editing.rows.slice(); rows[i] = { ...rows[i], value: e.target.value }; setEditing({ ...editing, rows }) }} /> },
-                { title: '单位', dataIndex: 'unit', width: 100, render: (v, r, i) => <Input size="small" value={v} onChange={(e) => { const rows = editing.rows.slice(); rows[i] = { ...rows[i], unit: e.target.value }; setEditing({ ...editing, rows }) }} /> },
-                { title: '参考区间', dataIndex: 'refRange', width: 130, render: (v, r, i) => <Input size="small" value={v} onChange={(e) => { const rows = editing.rows.slice(); rows[i] = { ...rows[i], refRange: e.target.value }; setEditing({ ...editing, rows }) }} /> },
-              ]}
-            />
+            {/* 指标行：MedData DataGrid（代码列 / 审计色 / 一键修正 / 粘贴解析）。
+                modal 900px 下它的响应式栅格会走 md 断点，横排区域自动折行。 */}
+            <div style={{ maxHeight: '58vh', overflow: 'auto' }}>
+              <DataGrid
+                date=""
+                time=""
+                onDateChange={() => {}}
+                onTimeChange={() => {}}
+                reportedDate={editing.reportDate}
+                reportedTime=""
+                onReportedDateChange={(v) => setEditing((e) => ({ ...e, reportDate: v }))}
+                onReportedTimeChange={() => {}}
+                reportType={editing.reportType}
+                onReportTypeChange={(v) => setEditing((e) => ({ ...e, reportType: v }))}
+                points={editing.points}
+                onPointsChange={(next) => setEditing((e) => ({ ...e, points: next }))}
+                reportText={editing.text}
+                onReportTextChange={(v) => setEditing((e) => ({ ...e, text: v }))}
+                baselinePoints={editing.baselinePoints}
+                traceId=""
+                onSave={saveEdit}
+                onReset={() => setEditing((e) => ({ ...e, points: (e.baselinePoints || []).map((p) => ({ ...p })) }))}
+              />
+            </div>
           </Space>
         )}
       </Modal>
