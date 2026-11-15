@@ -96,6 +96,39 @@ it('空输入不抛错；超长文本不吃满（只判类型不解析数值）'
   assert.equal(cls(long).reportType, 'CT')
 })
 
+// ---------- 2026-11-15：11 份真报告实测出的误判（都是「裸关键词」惹的祸） ----------
+it('骨髓形态表的「裸核型巨细胞」不得把骨穿判成染色体核型', () => {
+  const t = '细胞名称 (%) 参考值\n原始巨核细胞\n幼稚巨核细胞\n颗粒型巨核细胞\n产板型巨核细胞\n裸核型巨核细胞\n分析：粒：红比例 = 2.34: 1.0'
+  const r = cls(t)
+  assert.equal(r.reportType, '骨髓形态学（骨穿）', `实际 ${r.reportType}`)
+  // 真·染色体核型报告仍须判对
+  assert.equal(cls('染色体核型分析报告单 核型：46,XX[20] 结果：未见克隆性异常').reportType, '染色体核型')
+})
+
+it('「骨髓病理检查报告」是病理活检，不是骨髓涂片形态（病理优先于骨髓）', () => {
+  const t = '骨髓病理检查报告 病理号：HJ000000\n特征：造血组织容量：40%，脂肪组织容量：60%\n5.巨核细胞增生，形态及分布大致正常\n诊断意见：骨髓增生活跃，请结合病史分析'
+  assert.equal(cls(t).reportType, '病理活检')
+})
+
+it('FISH 信号描述页（nuc ish / 探针）→ 融合基因，不得因「取材：骨髓」判成骨穿', () => {
+  const t = '科别：血液科门诊 取材：骨髓 标本状态：合格\n图片结果：\nBCR：：ABL1\n信号描述：\n探针\t信号描述\nBCR：：ABLI（22q11.2：：9q34）\tnuc ish（ABL1,BCR） X2［500］'
+  assert.equal(cls(t).reportType, '融合基因', `实际 ${cls(t).reportType}`)
+})
+
+it('PCR 基因定量报告（检测基因/结果）→ 融合基因，同样不得被「标本种类：骨髓」带偏', () => {
+  const t = '血液病相关基因PCR检测报告单\n标本种类：骨髓\n检测方法：RQ-PCR\n检测基因\t结果\nBCR-ABL P190\t0\nABL\t395707\nBCR-ABL P190/ABL\t0%'
+  assert.equal(cls(t).reportType, '融合基因', `实际 ${cls(t).reportType}`)
+})
+
+it('骨穿第 2 页只有「粒：红比例」+ 化学染色时仍判骨髓形态（该页通常没有标题）', () => {
+  const t = '细胞名称 (%) 平均值 标准差\n原始粒细胞 1.00 0.64 ±0.01\n分析：粒：红比例 = 2.34: 1.0\nNAP积分值 NAP阳性率\nPOX PAS\nNAE NAE+NaF'
+  assert.equal(cls(t).reportType, '骨髓形态学（骨穿）', `实际 ${cls(t).reportType}`)
+})
+
+it('全角冒号的 BCR：：ABL1 也要认（OCR 常见），不能只认半角', () => {
+  assert.equal(cls('检测项目：FISH检测BCR：：ABL1融合基因 结论：未见异常').reportType, '融合基因')
+})
+
 console.log('\n' + '='.repeat(46))
 console.log(fails.length === 0 ? `报告类型识别：${pass} 通过 / 0 失败` : `报告类型识别：${pass} 通过 / ${fails.length} 失败 → ${fails.join(', ')}`)
 process.exit(fails.length ? 1 : 0)

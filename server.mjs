@@ -51,6 +51,7 @@ import { planChunks, cropChunks, imageSize, cropToContent } from './lib/imageChu
 import { autoDeskew } from './lib/deskew.mjs'
 import { readPdf, guessReportDate } from './lib/pdfIntake.mjs'
 import { classifyReport } from './lib/reportClassify.mjs'
+import { rowsForType } from './lib/reportIntake.mjs'
 import { buildSignatureIndex, suggestBySignature, nameLooksUnusable } from './lib/analyteSignature.mjs'
 import { guessMeta } from './lib/reportMeta.mjs'
 import { detectReportType, buildTypeRowIndex } from './lib/reportTypeDetect.mjs'
@@ -1440,7 +1441,10 @@ function getNextReleaseCountdown() {
 
         if (textMode) {
           // 有文字层：直接抽文本解析（快、准；报告类 PDF 可能出 0 行指标，那属正常 —— 它会以文本形式入库）
-          const rows = parseLabRows(allText)
+          const rowsAllText = parseLabRows(allText)
+          const metaTxt = metaFor(allText, rowsAllText)
+          const gatedTxt = rowsForType(rowsAllText, metaTxt.reportType)
+          const rows = gatedTxt.rows
           return sendJson(res, 200, {
             ok: true,
             kind: 'pdf',
@@ -1449,9 +1453,10 @@ function getNextReleaseCountdown() {
             pageTexts,
             text: allText,
             rows,
-            rawRowCount: rows.length,
+            rawRowCount: gatedTxt.rows.length + gatedTxt.dropped,
+            rowsDropped: gatedTxt.dropped,
             // 2026-11-15：表单项自动填充（按 MedData 标签优先口径，见 lib/reportMeta.mjs）
-            meta: metaFor(allText, rows),
+            meta: metaTxt,
             // 2026-11-15 实测：这里曾同时返回 meta.reportDate(2026-07-17，标签优先) 与
             // guessReportDate(2026-07-15，兜底扫日期) 两个**互相矛盾**的日期，前端取哪个都"有理"。
             // 现在只认一个：标签优先口径；只有它为空才退回扫日期。
@@ -1500,7 +1505,9 @@ function getNextReleaseCountdown() {
 
       // ---------- 图片 ----------
       const out = await runImagePipeline(image)
-      sendJson(res, 200, { ok: !!out.text, kind: 'image', engine: '8008/ocr-vision', meta: metaFor(out.text, out.rows), ...out })
+      const metaImg = metaFor(out.text, out.rows)
+      const gatedImg = rowsForType(out.rows, metaImg.reportType)
+      sendJson(res, 200, { ok: !!out.text, kind: 'image', engine: '8008/ocr-vision', meta: metaImg, ...out, rows: gatedImg.rows, rawRowCount: out.rawRowCount ?? out.rows.length, rowsDropped: gatedImg.dropped })
     } catch (e) {
       sendJson(res, 200, { ok: false, unavailable: true, reason: e.message, fallback: 'paste-text' })
     }

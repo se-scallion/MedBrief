@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import {
   sha256Bytes, dhash64, hamming64, findDuplicate, NEAR_DUP_THRESHOLD,
   parseLabRows, classifyAnalyte, buildReportFingerprint, groupForDoctorCard, summarizeForCard,
-  normalizeUnit, detectCbcCode, CBC_ORDER, splitTwoColumnLine, dedupeStitchRows, joinTwoLineNameRows, textSim,
+  normalizeUnit, detectCbcCode, CBC_ORDER, splitTwoColumnLine, dedupeStitchRows, joinTwoLineNameRows, textSim, rowsForType,
 } from '../lib/reportIntake.mjs'
 
 let pass = 0
@@ -334,6 +334,28 @@ it('查重：文本型报告同一份文档的两次抽取（Jaccard ≥ 0.9）�
   assert.equal(r.dup, true); assert.equal(r.kind, 'text-similar')
   // 不同报告不得被判重
   assert.ok(textSim(t1, '融合基因 BCR::ABL1 P210 定量 结果 12.3% 参考 0-0.1') < 0.6)
+})
+
+// ---------- 图文型报告不收指标行（2026-11-15 真报告实测） ----------
+// 骨髓形态学的表是「细胞名称/(%)/参考值/均值/标准差」且大量空单元；流式是两列并排的「细胞群/比例%」。
+// 硬按四列解析会产出垃圾（髓片 31 行垃圾；流式把 176,646 截成 176、造出「Cx=105」）。
+it('图文型报告（骨髓形态/病理/流式）一律不出指标行，且 dropped 数如实上报', () => {
+  const junk = [{ name: '原始粒细胞', value: '1.50' }, { name: '晚幼', value: '1.5' }]
+  for (const ty of ['骨髓形态学（骨穿）', '病理活检', '流式免疫分型', '出院记录', '诊断证明']) {
+    const r = rowsForType(junk, ty)
+    assert.deepEqual(r.rows, [], `${ty} 不该出行`)
+    assert.equal(r.dropped, 2, `${ty} 的 dropped 应如实为 2`)
+  }
+})
+
+it('化验/分子类报告照常出行（PCR 的 BCR-ABL 定量三行是准的）', () => {
+  const good = [{ name: 'BCR-ABL P190', value: '0' }, { name: 'ABL', value: '395707' }, { name: 'BCR-ABL P190/ABL', value: '0%' }]
+  for (const ty of ['融合基因', '血常规', '凝血四项', '生化', '尿常规', '心衰+感染标志物']) {
+    const r = rowsForType(good, ty)
+    assert.equal(r.rows.length, 3, `${ty} 应保留 3 行`)
+    assert.equal(r.dropped, 0)
+  }
+  assert.deepEqual(rowsForType([], '骨髓形态学（骨穿）'), { rows: [], dropped: 0 })
 })
 
 console.log('\n' + '='.repeat(46))
