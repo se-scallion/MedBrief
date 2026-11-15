@@ -618,58 +618,66 @@ export default function IntakePage() {
 
       <Divider style={{ margin: '4px 0' }} />
 
-      <Space wrap>
-        <Text style={{ fontSize: 12 }}>报告大类</Text>
-        <Select
-          size="small"
-          style={{ width: 110 }}
-          value={item.meta.kind || undefined}
-          placeholder="自动判断"
-          options={KIND_OPTIONS}
-          onChange={(v) => patchItem(item.id, (it) => ({ meta: { ...it.meta, kind: v } }))}
-        />
+      {/* 每个「标签 + 控件」用一个不换行的组包住：
+          375 下原来是「报告类型」标签在上一行、输入框被挤到下一行，读起来像两个字段。 */}
+      <Space wrap size={10}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+          <Text style={{ fontSize: 12 }}>报告大类</Text>
+          <Select
+            size="small"
+            style={{ width: 110 }}
+            value={item.meta.kind || undefined}
+            placeholder="自动判断"
+            options={KIND_OPTIONS}
+            onChange={(v) => patchItem(item.id, (it) => ({ meta: { ...it.meta, kind: v } }))}
+          />
+        </span>
         {/* 报告类型（具体类型）2026-11-15：过去这里只有一个「大类」下拉，
             系统判出来的「染色体核型」这类**具体类型既不显示也改不了**，用户只能说「类型识别不了」。
             现在把具体类型显式摆出来、可编辑，自动识别出来的打「自动识别」标。 */}
-        <Text style={{ fontSize: 12 }}>报告类型</Text>
-        <Input
-          size="small"
-          style={{ width: 150 }}
-          placeholder="如 染色体核型 / 血常规"
-          value={item.meta.reportType || ''}
-          onChange={(e) =>
-            patchItem(item.id, (it) => ({ meta: { ...it.meta, reportType: e.target.value }, typeAuto: false }))
-          }
-        />
-        {item.typeAuto && item.meta.reportType ? <Tag color="blue" style={{ marginInlineEnd: 0 }}>自动识别</Tag> : null}
-        <Space size={4}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+          <Text style={{ fontSize: 12 }}>报告类型</Text>
+          <Input
+            size="small"
+            style={{ width: 150 }}
+            placeholder="如 染色体核型 / 血常规"
+            value={item.meta.reportType || ''}
+            onChange={(e) =>
+              patchItem(item.id, (it) => ({ meta: { ...it.meta, reportType: e.target.value }, typeAuto: false }))
+            }
+          />
+          {item.typeAuto && item.meta.reportType ? <Tag color="blue" style={{ marginInlineEnd: 0 }}>自动识别</Tag> : null}
+        </span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
           <Text style={{ fontSize: 12 }}>报告日期</Text>
+          <Input
+            size="small"
+            style={{ width: 130 }}
+            placeholder="2026-11-01"
+            value={item.meta.reportDate}
+            onChange={(e) => patchItem(item.id, (it) => ({ meta: { ...it.meta, reportDate: e.target.value } }))}
+          />
           {item.meta.sampledAt && (
             <Tooltip title="按 MedData 口径：报告日期取「报告时间」，采样/检查日期单独保留，便于核对">
               <Text type="secondary" style={{ fontSize: 11 }}>（采样 {String(item.meta.sampledAt)}）</Text>
             </Tooltip>
           )}
-        </Space>
-        <Input
-          size="small"
-          style={{ width: 130 }}
-          placeholder="2026-11-01"
-          value={item.meta.reportDate}
-          onChange={(e) => patchItem(item.id, (it) => ({ meta: { ...it.meta, reportDate: e.target.value } }))}
-        />
+        </span>
         {item.meta.barcode ? (
           <Tooltip title="检测条码（同批报告可能共用，用于查重与回溯原件）">
-            <Text type="secondary" style={{ fontSize: 11 }}>条码 {item.meta.barcode}</Text>
+            <Text type="secondary" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>条码 {item.meta.barcode}</Text>
           </Tooltip>
         ) : null}
-        <Text style={{ fontSize: 12 }}>医院</Text>
-        <Input
-          size="small"
-          style={{ width: 160 }}
-          placeholder="如：某某医院"
-          value={item.meta.hospital}
-          onChange={(e) => patchItem(item.id, (it) => ({ meta: { ...it.meta, hospital: e.target.value } }))}
-        />
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+          <Text style={{ fontSize: 12 }}>医院</Text>
+          <Input
+            size="small"
+            style={{ width: 160 }}
+            placeholder="如：某某医院"
+            value={item.meta.hospital}
+            onChange={(e) => patchItem(item.id, (it) => ({ meta: { ...it.meta, hospital: e.target.value } }))}
+          />
+        </span>
         <Button type="primary" size="small" onClick={() => onSaveReport(item)} disabled={!item.rows.length && !item.text}>
           入库这份报告
         </Button>

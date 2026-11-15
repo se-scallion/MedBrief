@@ -111,8 +111,22 @@ try {
 
   if (shotsDir) {
     fs.mkdirSync(shotsDir, { recursive: true })
+    // 截到「填好的表单项」本身：先把校对区滚进视野，再截图（否则只拍到上面的 ① 批量导入）
+    // 滚到表单项本身再截（页面用 window 滚动；实测该输入框在 y≈1225，不滚就截不到）
+    // 表单项在页面最底部（实测 1440 下 y≈1225，滚到底才看得见）；scrollIntoView 在这套布局里不生效，
+    // 实测 window.scrollTo 才动（直接用 document.documentElement.scrollHeight）
+    // 表单项在页面最底部。实测：window.scrollTo / scrollIntoView 在这套布局里都可能被吞掉，
+    // 只有鼠标滚轮事件稳定生效 —— 滚 4 次到底再截。
+    for (let i = 0; i < 4; i++) { await page.mouse.wheel(0, 600); await page.waitForTimeout(120) }
+    await page.waitForTimeout(400)
     await page.screenshot({ path: path.join(shotsDir, 'e2e-1-1440-识别后表单.png'), fullPage: false })
     await page.setViewportSize({ width: 375, height: 900 })
+    await page.waitForTimeout(400)
+    // 表单项在页面最底部（实测 1440 下 y≈1225，滚到底才看得见）；scrollIntoView 在这套布局里不生效，
+    // 实测 window.scrollTo 才动（直接用 document.documentElement.scrollHeight）
+    // 表单项在页面最底部。实测：window.scrollTo / scrollIntoView 在这套布局里都可能被吞掉，
+    // 只有鼠标滚轮事件稳定生效 —— 滚 4 次到底再截。
+    for (let i = 0; i < 4; i++) { await page.mouse.wheel(0, 600); await page.waitForTimeout(120) }
     await page.waitForTimeout(400)
     await page.screenshot({ path: path.join(shotsDir, 'e2e-2-375-识别后表单.png'), fullPage: false })
     await page.setViewportSize({ width: 1440, height: 1000 })
