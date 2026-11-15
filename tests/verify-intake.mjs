@@ -7,6 +7,7 @@ import {
   parseLabRows, classifyAnalyte, buildReportFingerprint, groupForDoctorCard, summarizeForCard,
   normalizeUnit, detectCbcCode, CBC_ORDER, splitTwoColumnLine, dedupeStitchRows, joinTwoLineNameRows, textSim, rowsForType,
 } from '../lib/reportIntake.mjs'
+import { FIELD_META, fieldMeta, expectedUnitRef } from '../lib/fieldDict.mjs'
 
 let pass = 0
 const fails = []
@@ -479,6 +480,16 @@ it('真截图 E：幂次单位与字形变体归一（10~9/L → 10^9/L，不猜
   assert.equal(normalizeUnit('PG'), 'pg')
 })
 
+
+it('指标字段元数据：标准单位/参考区间可查，认不出的码返回空（不猜）', () => {
+  assert.ok(FIELD_META.length >= 150, `字段数量异常：${FIELD_META.length}`)
+  assert.deepEqual(expectedUnitRef('WBC'), { unit: '10^9/L', ref: '3.5-9.5' })
+  assert.deepEqual(expectedUnitRef('MCHC'), { unit: 'g/L', ref: '316-354' })
+  assert.equal(fieldMeta('NOPE_NOT_A_CODE'), null, '未知码必须返回 null，不许编')
+  assert.deepEqual(expectedUnitRef('NOPE_NOT_A_CODE'), { unit: '', ref: '' })
+  // 红线：元数据里的 ref 只是「常见区间」，不得被当成判定依据（各院区间不同）
+  assert.ok(!/判定|judge/i.test(String(fieldMeta('WBC').ref)), 'ref 只是展示用区间')
+})
 
 console.log('\n' + '='.repeat(46))
 console.log(fails.length === 0 ? `报告导入层：${pass} 通过 / 0 失败` : `报告导入层：${pass} 通过 / ${fails.length} 失败 → ${fails.join(', ')}`)
