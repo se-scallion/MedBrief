@@ -53,6 +53,7 @@ import { readPdf, guessReportDate } from './lib/pdfIntake.mjs'
 import { classifyReport } from './lib/reportClassify.mjs'
 import { buildSignatureIndex, suggestBySignature, nameLooksUnusable } from './lib/analyteSignature.mjs'
 import { guessMeta } from './lib/reportMeta.mjs'
+import { classifyByTitle, classifyByRows, buildTypeRowIndex } from './lib/reportTypeDetect.mjs'
 import { summarizeState, formatSummaryText } from './lib/metricsSummary.js'
 import { buildVisitBrief } from './lib/visitBrief.js'
 import { fetchLiveDoctorSchedule } from './lib/bjcyhScraper.js'
@@ -1222,6 +1223,26 @@ function getNextReleaseCountdown() {
     return
   }
 
+  // 报告类型判定链（2026-11-15，照 MedData inferReportType 的三步）：
+  //   ① 标题（只看抬头，标题优先，正文不参与）→ ② 项目集反推（Jaccard，用本库历史）→ ③ 旧的正文关键词兜底。
+  // 之所以要链：实测「染色体核型报告」的正文结论里写着「…易位形成 BCR::ABL 融合基因」，
+  // 旧实现只扫正文关键词，直接把核型报告判成了融合基因。
+  let _typeRowIndexCache = null
+  function detectType(text = '', rows = []) {
+    const byTitle = classifyByTitle(text)
+    if (byTitle) return { reportType: byTitle.reportType, kind: byTitle.kind, evidence: byTitle.evidence }
+    try {
+      if (!_typeRowIndexCache) _typeRowIndexCache = buildTypeRowIndex(readReports().reports || [])
+      const byRows = classifyByRows(rows, _typeRowIndexCache)
+      if (byRows) return { reportType: byRows.reportType, kind: byRows.kind, evidence: byRows.evidence }
+    } catch {}
+    try {
+      const cls = classifyReport({ text, rows })
+      if (cls?.reportType && cls.reportType !== 'LAB_PANEL') return { reportType: cls.reportType, kind: cls.kind, evidence: 'body-keyword' }
+    } catch {}
+    return null
+  }
+
   // 10b. 问诊资料卡：把已导入的报告渲染成 A4 一页（mask=0 关闭姓名脱敏，默认脱敏）
   if (req.method === 'GET' && pathname === '/api/intake/card') {
     try {
@@ -1305,7 +1326,7 @@ function getNextReleaseCountdown() {
         console.warn('[intake/parse] 项目名候选反查失败（不影响解析结果）：', e.message)
       }
       const groups = groupForDoctorCard(rows)
-      sendJson(res, 200, { ok: true, rows, groups, meta: guessMeta(body.text || '', rows, { classifyReport }), summary: summarizeForCard(groups) })
+      sendJson(res, 200, { ok: true, rows, groups, meta: guessMeta(body.text || '', rows, { classifyReport: () => detectType(body.text || '', rows) }), summary: summarizeForCard(groups) })
     } catch (e) {
       sendJson(res, 500, { ok: false, error: e.message })
     }
@@ -1418,7 +1439,7 @@ function getNextReleaseCountdown() {
             rows,
             rawRowCount: rows.length,
             // 2026-11-15：表单项自动填充（按 MedData 标签优先口径，见 lib/reportMeta.mjs）
-            meta: guessMeta(allText, rows, { classifyReport }),
+            meta: guessMeta(allText, rows, { classifyReport: () => detectType(allText, rows) }),
             reportDate: guessReportDate(allText),
             layout: 'pdf-text',
             chunked: false,
@@ -1451,7 +1472,7 @@ function getNextReleaseCountdown() {
           text: rasterTexts.filter(Boolean).join('\n'),
           rows: rowsAll,
           rawRowCount: rawTotal,
-          meta: guessMeta(rasterTexts.join('\n'), rowsAll, { classifyReport }),
+          meta: guessMeta(rasterTexts.join('\n'), rowsAll, { classifyReport: () => detectType(rasterTexts.join('\n'), rowsAll) }),
           reportDate: guessReportDate(rasterTexts.join('\n')),
           layout: 'reconstructed',
           chunked: anyChunked,
@@ -1464,7 +1485,7 @@ function getNextReleaseCountdown() {
 
       // ---------- 图片 ----------
       const out = await runImagePipeline(image)
-      sendJson(res, 200, { ok: !!out.text, kind: 'image', engine: '8008/ocr-vision', meta: guessMeta(out.text, out.rows, { classifyReport }), ...out })
+      sendJson(res, 200, { ok: !!out.text, kind: 'image', engine: '8008/ocr-vision', meta: guessMeta(out.text, out.rows, { classifyReport: () => detectType(out.text, out.rows) }), ...out })
     } catch (e) {
       sendJson(res, 200, { ok: false, unavailable: true, reason: e.message, fallback: 'paste-text' })
     }

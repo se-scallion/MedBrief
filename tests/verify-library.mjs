@@ -12,6 +12,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { extractDocDates, guessBarcode, guessMeta } from '../lib/reportMeta.mjs'
 import { buildSignatureIndex, suggestBySignature } from '../lib/analyteSignature.mjs'
+import { classifyByTitle, classifyByRows, buildTypeRowIndex, detectTitle } from '../lib/reportTypeDetect.mjs'
 import { runBatch } from '../web/src/pages/intake/shared.js'
 
 let pass = 0
@@ -117,6 +118,46 @@ if (!fs.existsSync(FILE)) {
       assert.ok(String(r.text).includes(bc), `第 ${reports.indexOf(r) + 1} 份条码不在原文`)
     }
     assert.ok(checked >= 1, '库里应有带条码的报告')
+  })
+
+  it('类型不变量①：标题判出来的类型必须与库里已标注的一致（0 条不符）', () => {
+    let checked = 0; const bad = []
+    for (const r of withText) {
+      const got = classifyByTitle(r.text)
+      if (!got) continue
+      checked++
+      if (got.reportType !== r.reportType) bad.push(`${r.reportType}→${got.reportType}`)
+    }
+    console.log(`       标题判定覆盖 ${checked}/${withText.length} 份，不符 ${bad.length}`)
+    assert.deepEqual(bad.slice(0, 5), [], `标题判定与库内标注不符：${bad.slice(0, 5).join('、')}`)
+    assert.ok(checked >= Math.floor(withText.length * 0.4), `标题覆盖太低（${checked}/${withText.length}），类型识别对真实数据不可用`)
+  })
+
+  it('类型不变量②：有指标行的报告，「标题→项目集」组合判定同样 0 条不符', () => {
+    const idx = buildTypeRowIndex(reports)
+    assert.ok(idx.size >= 5, `项目集索引太小（${idx.size}）`)
+    let checked = 0; const bad = []
+    for (const r of reports) {
+      if (!Array.isArray(r.rows) || !r.rows.length) continue
+      const got = classifyByTitle(r.text || '') || classifyByRows(r.rows, idx)
+      if (!got) continue
+      checked++
+      if (got.reportType !== r.reportType) bad.push(`${r.reportType}→${got.reportType}`)
+    }
+    console.log(`       组合判定覆盖 ${checked} 份，不符 ${bad.length}`)
+    assert.deepEqual(bad.slice(0, 5), [], `组合判定与库内标注不符：${bad.slice(0, 5).join('、')}`)
+  })
+
+  it('类型回归（本次 bug 的钉子）：染色体核型报告不得被判成融合基因', () => {
+    // 真实库里有 1 份核型报告，其结论里写着「…易位形成 BCR::ABL 融合基因」，
+    // 旧实现只扫正文关键词 → 判成融合基因。这条断言就是那次事故的守门人。
+    const k = reports.find((r) => r.reportType === '染色体核型' && String(r.text || '').trim())
+    if (!k) { console.log('       （库内暂无核型报告，SKIP）'); return }
+    const got = classifyByTitle(k.text)
+    assert.ok(got, '核型报告必须能判出类型')
+    assert.equal(got.reportType, '染色体核型', `被判成了 ${got.reportType}（正文出现「融合基因」不代表它是融合基因报告）`)
+    // 同时确认标题识别本身是对的（不是碰巧）
+    assert.ok(/核型/.test(detectTitle(k.text)), `标题识别结果应含「核型」，实际「${detectTitle(k.text).slice(0, 20)}」`)
   })
 
   it('项目名候选（C 方案）在真实行上的召回：抹掉名字后，正确名字应出现在候选里', () => {
