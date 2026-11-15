@@ -47,6 +47,7 @@ import {
 } from './lib/reportIntake.mjs'
 import { loadPatient, savePatient, buildCard } from './lib/intakeCard.js'
 import { saveBlob, saveBlobIfAbsent, getBlob, listBlobs, linkBlobToReport, deleteBlob, blobStats } from './lib/blobStore.mjs'
+import { appendCorrections, listCorrections, correctionsStats } from './lib/correctionsStore.mjs'
 import { planChunks, cropChunks, imageSize, cropToContent } from './lib/imageChunker.mjs'
 import { autoDeskew } from './lib/deskew.mjs'
 import { readPdf, guessReportDate } from './lib/pdfIntake.mjs'
@@ -1222,6 +1223,39 @@ function getNextReleaseCountdown() {
       writeReports(store)
     }
     return sendJson(res, 200, { ok: true, id, changed, patchedAt: rep.patchedAt || null, patchLogCount: log.length, report: rep })
+  }
+
+  // 10p. 报告编辑「操作记录」（2026-11-15 用户口径：记录操作用于优化反馈；Manager 审核放行 D1）
+  //     与 patch 的分工必须分清（方案 .agents/plan-reportgrid-1115.md R6/F2）：
+  //       · POST /patch  → 改库，字段级 from/to 进 patchLog（**唯一真相**）
+  //       · POST /corrections → **只追加**「用户怎么操作的」序列，绝不改报告、绝不回灌
+  //     为什么需要它：只存 diff 区分不了「OCR 认错（真值信号）」与「用户手滑（噪声）」，op 序列才能区分。
+  if (req.method === 'POST' && /^\/api\/intake\/reports\/[^/]+\/corrections$/.test(pathname)) {
+    const id = decodeURIComponent(pathname.slice('/api/intake/reports/'.length, -'/corrections'.length))
+    const body = await readJsonBody(req).catch(() => ({}))
+    const store = readReports()
+    const exists = store.reports.some((r) => r.id === id) || store.trashed.some((r) => r.id === id)
+    if (!exists) return sendJson(res, 404, { ok: false, error: `报告不存在：${id}` })
+    const ops = Array.isArray(body.ops) ? body.ops : []
+    if (!ops.length) return sendJson(res, 400, { ok: false, error: 'ops 不能为空（没有操作就不该上报）' })
+    try {
+      const r = appendCorrections(ops, { reportId: id, sessionId: body.sessionId || '' })
+      sendJson(res, 200, { ok: true, id, ...r, stats: correctionsStats() })
+    } catch (e) {
+      sendJson(res, 500, { ok: false, error: `存操作记录失败：${e.message}` })
+    }
+    return
+  }
+
+  if (req.method === 'GET' && /^\/api\/intake\/reports\/[^/]+\/corrections$/.test(pathname)) {
+    const id = decodeURIComponent(pathname.slice('/api/intake/reports/'.length, -'/corrections'.length))
+    try {
+      const items = listCorrections({ reportId: id, sessionId: parsedUrl.searchParams.get('session') || '', limit: parsedUrl.searchParams.get('limit') || 500 })
+      sendJson(res, 200, { ok: true, id, total: items.length, items })
+    } catch (e) {
+      sendJson(res, 500, { ok: false, error: e.message })
+    }
+    return
   }
 
   // 10a. 病友档案（资料卡的抬头）：只收非身份字段，身份类一律不收

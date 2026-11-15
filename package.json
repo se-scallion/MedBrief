@@ -30,6 +30,7 @@
     "test:reportsort": "node tests/verify-reportsort.mjs",
     "test:classify": "node tests/verify-classify.mjs",
     "test:reportdelete": "node tests/verify-report-delete.mjs",
+    "test:corrections": "node tests/verify-corrections.mjs",
     "test:meta": "node tests/verify-report-meta.mjs",
     "test:library": "node tests/verify-library.mjs",
     "test:realdoc": "node tests/verify-realdoc.mjs",
