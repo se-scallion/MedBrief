@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import {
   sha256Bytes, dhash64, hamming64, findDuplicate, NEAR_DUP_THRESHOLD,
   parseLabRows, classifyAnalyte, buildReportFingerprint, groupForDoctorCard, summarizeForCard,
-  normalizeUnit, detectCbcCode, CBC_ORDER, splitTwoColumnLine, dedupeStitchRows,
+  normalizeUnit, detectCbcCode, CBC_ORDER, splitTwoColumnLine, dedupeStitchRows, joinTwoLineNameRows, textSim,
 } from '../lib/reportIntake.mjs'
 
 let pass = 0
@@ -205,6 +205,135 @@ it('空输入不抛错', () => {
   assert.deepEqual(parseLabRows(''), [])
   assert.deepEqual(groupForDoctorCard([]), [])
   assert.equal(sha256Bytes(Buffer.from('')).length, 64)
+})
+
+// ---------- 两行式版式（2026-11-15 手机端「检验报告详情」实测） ----------
+// 原文：项目名单独一行，下一行是「正常范围：3.5~9.5<TAB>4.66*10~9/L」。
+// 修复前 3 张截图 OCR 出 345~400 字却 **0 行**（用户以为识别失败了）。
+it('两行式版式：项目名一行 + 正常范围行 → 必须解析成行（修复前是 0 行）', () => {
+  const text = [
+    '白细胞（WBC）',
+    '正常范围：3.5~9.5\t4.66*10~9/L',
+    '中性粒细胞百分比（NEUT%）',
+    '正常范围：40~75\t64.7%',
+    '血红蛋白（HGB）',
+    '正常范围：115~150\t88 g/L',
+  ].join('\n')
+  const rows = parseLabRows(text)
+  assert.equal(rows.length, 3, `应解析出 3 行，实际 ${rows.length}`)
+  const hb = rows.find((r) => /血红蛋白/.test(r.name))
+  assert.equal(hb.value, '88')
+  assert.equal(hb.refRange, '115-150')
+  assert.equal(hb.status, 'low', '血红蛋白 88 < 115 应判偏低')
+  const wbc = rows.find((r) => /白细胞/.test(r.name))
+  assert.equal(wbc.value, '4.66')
+  assert.equal(wbc.unit, '10^9/L', '`10~9/L` 必须归一成 `10^9/L`')
+  assert.equal(wbc.status, 'normal')
+})
+
+it('两行式版式：全角波浪号区间 `9～13` / `82～100` 必须能判高低（旧 REF_RE 只认 ASCII ~）', () => {
+  const text = [
+    '红细胞平均体积（MCV）',
+    '正常范围：82～100\t102.4fL',
+    '平均血小板体积（MPV）',
+    '正常范围：9～13\t7.8fL',
+  ].join('\n')
+  const rows = parseLabRows(text)
+  assert.equal(rows.length, 2)
+  assert.equal(rows[0].refRange, '82-100')
+  assert.equal(rows[0].status, 'high', 'MCV 102.4 > 100 应判偏高')
+  assert.equal(rows[1].refRange, '9-13')
+  assert.equal(rows[1].status, 'low', 'MPV 7.8 < 9 应判偏低')
+})
+
+it('两行式拼接：幂等（已是一行的文本不再变），且不吞非两行式的行', () => {
+  const single = '白细胞 6.83 3.5-9.5 10^9/L'
+  assert.equal(joinTwoLineNameRows(single), single, '已是一行不该被改写')
+  const mixed = '检验报告详情\n白细胞（WBC）\n正常范围：3.5~9.5\t4.66*10~9/L\n返回'
+  const out = joinTwoLineNameRows(mixed).split('\n')
+  assert.deepEqual(out, ['检验报告详情', '白细胞（WBC） 4.66 3.5~9.5 *10^9/L', '返回'], '只拼「名称+范围行」这一对，其余原样')
+})
+
+it('两行式版式：整份手机截图（23 项）必须全部出炉，且高低判定与截图箭头一致', () => {
+  // 真实三屏合并后的行（值/区间照抄 OCR 原文，单位按归一后的写法）
+  const src = [
+    ['白细胞（WBC）', '3.5~9.5', '4.66', '10^9/L'],
+    ['中性粒细胞百分比（NEUT%）', '40~75', '64.7', '%'],
+    ['淋巴细胞百分比（LYM%）', '20~50', '28.9', '%'],
+    ['单核细胞百分比（MXD%）', '3~10', '5.7', '%'],
+    ['嗜酸性粒细胞百分比（EO%）', '0.4~8', '0.3', '%'],
+    ['嗜碱性粒细胞百分比（BASO%）', '0.00~1', '0.40', '%'],
+    ['中性粒细胞绝对值（NEUT#）', '1.8~6.3', '3.01', '*10^9/L'],
+    ['淋巴细胞绝对值（LYM#）', '1.1～3.2', '1.35', '*10^9/L'],
+    ['单核细胞绝对值（MXD#）', '0.10~0.60', '0.27', '*10^9/L'],
+    ['嗜酸性粒细胞绝对值（EO#）', '0.02~0.52', '0.01', '*10^9/L'],
+    ['嗜碱性粒细胞绝对值（BASO#）', '0.00～0.06', '0.02', '*10^9/L'],
+    ['血红蛋白（HGB）', '115~150', '88', 'g/L'],
+    ['红细胞（RBC）', '4.1~5.3', '2.63', '*10^12/L'],
+    ['红细胞压积（HCT）', '35~45', '26.9', '%'],
+    ['红细胞平均体积（MCV）', '82～100', '102.4', 'fL'],
+    ['平均血红蛋白量（MCH）', '27~34', '33.4', 'pg'],
+    ['平均血红蛋白浓度（MCHC）', '316~354', '326', 'g/L'],
+    ['红细胞分布宽度（RDW-CV）', '11~16', '16.0', '%'],
+    ['红细胞分布宽度（RDW-SD）', '37~54', '58.9', 'fL'],
+    ['血小板（PLT）', '100~300', '275', '*10^9/L'],
+    ['血小板压积（PCT）', '0.08~0.32', '0.21', '%'],
+    ['平均血小板体积（MPV）', '9～13', '7.8', 'fL'],
+    ['血小板分布宽度（PDW）', '9~17', '16.4', '%'],
+  ]
+  const text = src.map(([n, ref, v, u]) => `${n}\n正常范围：${ref}\t${v}${u}`).join('\n')
+  const rows = parseLabRows(text)
+  assert.equal(rows.length, 23, `应解析 23 项，实际 ${rows.length}`)
+  assert.equal(rows.filter((r) => r.status === 'unknown').length, 0, '每一项都必须判出高低（unknown 意味着漏判）')
+  assert.deepEqual(rows.filter((r) => r.status === 'high').map((r) => r.name.replace(/（.*?）/g, '')).sort(), ['红细胞平均体积', '红细胞分布宽度'].sort())
+  assert.deepEqual(rows.filter((r) => r.status === 'low').map((r) => r.name.replace(/（.*?）/g, '')).sort(),
+    ['嗜酸性粒细胞百分比', '嗜酸性粒细胞绝对值', '平均血小板体积', '红细胞', '红细胞压积', '血红蛋白'].sort())
+})
+
+// ---------- 查重：同一份报告的不同文件形态（2026-11-15 实测） ----------
+// 事故：一份染色体核型 PDF 与库里已有的同一份（截图/旧提取）条码、类型全相同，
+// 但字节不同（PDF vs png）、文本型报告又没有 dHash → 旧查重两条全落空 → **重复入库成功**。
+it('查重：同条码 + 同日期 + 同类型 → 判重复（barcode-date）', () => {
+  const lib = [{ id: 'a', barcode: 'V1', reportDate: '2026-07-15', reportType: '染色体核型' }]
+  const r = findDuplicate({ barcode: 'V1', reportDate: '2026-07-15', reportType: '染色体核型' }, lib)
+  assert.equal(r.dup, true); assert.equal(r.kind, 'barcode-date'); assert.equal(r.of, 'a')
+})
+
+it('查重：日期口径不同但互指（报告日期 / 采样 / 接检任一天相同）→ 仍判重复', () => {
+  const lib = [{ id: 'a', barcode: 'V1', reportDate: '2026-07-15', sampledAt: '2026-07-15 12:51', receivedAt: '2026-07-17 10:07', reportType: '染色体核型' }]
+  // 新抽取取了「接检 2026-07-17」当报告日期 —— 只比 reportDate 会漏判
+  const r = findDuplicate({ barcode: 'V1', reportDate: '2026-07-17', reportType: '染色体核型' }, lib)
+  assert.equal(r.dup, true, '跨日期口径必须判重复')
+  assert.equal(r.kind, 'barcode-date-crosscheck')
+})
+
+it('查重不得误杀：同条码不同日期/不同类型 → 不判重复（同批共用条码很常见）', () => {
+  const lib = [
+    { id: 'a', barcode: 'V1', reportDate: '2026-07-18', reportType: '融合基因' },
+    { id: 'b', barcode: 'V1', reportDate: '2026-07-15', reportType: '染色体核型' },
+  ]
+  assert.equal(findDuplicate({ barcode: 'V1', reportDate: '2026-07-19', reportType: '融合基因' }, lib).dup, false, '不同日期不得判重')
+  assert.equal(findDuplicate({ barcode: 'V1', reportDate: '2026-07-15', reportType: '融合基因' }, lib).dup, false, '同日期不同类型不得判重')
+  assert.equal(findDuplicate({ reportDate: '2026-07-15', reportType: '染色体核型' }, lib).dup, false, '没有条码时不按日期判重')
+})
+
+it('查重：任一方缺类型时退回旧行为（只看 sha/dHash），不按条码+日期拦（同批同条码很常见）', () => {
+  const lib = [{ id: 'a', barcode: 'V1', reportDate: '2026-10-16', sha256: 'sha_old', dhash: '0'.repeat(64), fingerprint: 'fp_old' }]
+  const r = findDuplicate({ barcode: 'V1', reportDate: '2026-10-16', sha256: 'sha_new', fingerprint: 'fp_new' }, lib)
+  assert.equal(r.dup, false, '没有类型时不得仅凭「同条码同日期」判重')
+  const withType = findDuplicate({ barcode: 'V1', reportDate: '2026-10-16', sha256: 'sha_new', fingerprint: 'fp_new', reportType: '血常规' }, lib)
+  assert.equal(withType.dup, false, '库里那条没类型，仍然只能按 sha/dHash 判')
+})
+
+it('查重：文本型报告同一份文档的两次抽取（Jaccard ≥ 0.9）→ 判重复', () => {
+  const t1 = '染色体核型分析报告单 检测结论 46,XX,t(9;22)(q34;q11.2)[2]/46,XX[13] 结果描述：正常核型。'
+  const t2 = '染色体核型分析报告单 检测结论: 46,XX,t(9;22)(q34;q11.2)[2]/46,XX[13] 结果描述：正常核型'
+  assert.ok(textSim(t1, t2) >= 0.9, `同一份文本相似度应 ≥0.9，实际 ${textSim(t1, t2)}`)
+  const lib = [{ id: 'a', barcode: 'V1', reportDate: '2026-07-15', reportType: '染色体核型', text: t1 }]
+  const r = findDuplicate({ barcode: 'V1', reportDate: '2026-07-16', reportType: '染色体核型', text: t2 }, lib)
+  assert.equal(r.dup, true); assert.equal(r.kind, 'text-similar')
+  // 不同报告不得被判重
+  assert.ok(textSim(t1, '融合基因 BCR::ABL1 P210 定量 结果 12.3% 参考 0-0.1') < 0.6)
 })
 
 console.log('\n' + '='.repeat(46))
