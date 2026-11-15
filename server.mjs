@@ -86,6 +86,24 @@ const AUTH_FILE = path.join(DATA_DIR, '114-auth.json')
 const guahaoManager = createGuahaoManager({ storageFile: STORAGE_FILE, fs })
 const guahao114 = createGuahao114Service({ dataDir: DATA_DIR, ordersFile: STORAGE_FILE })
 
+// 挂号浏览器总开关（2026-11-15 用户要求：「挂号监控设置个开关，现在用不上，别一直打开了」）。
+// 关掉后不再拉起 ego-browser / Playwright / Chrome 窗口：挂号监控 realtime、114 会话检查、
+// 114 目录抓取、114 挂号流程、launch-login 全部直接返回 disabled。
+// 开法：环境变量 GUAHO_BROWSER=on/1，或 data/guahao-browser.flag 内容不是 off/0；二者都缺省时视为开（老行为）。
+const GUAHO_BROWSER_FLAG = path.join(DATA_DIR, 'guahao-browser.flag')
+function guahaoBrowserOn() {
+  const env = (process.env.GUAHO_BROWSER || '').trim().toLowerCase()
+  if (env === 'on' || env === '1') return true
+  if (env === 'off' || env === '0') return false
+  try {
+    const flag = fs.readFileSync(GUAHO_BROWSER_FLAG, 'utf8').trim().toLowerCase()
+    return flag !== 'off' && flag !== '0'
+  } catch {
+    return true
+  }
+}
+const GUAHO_BROWSER_DISABLED = { code: 'BROWSER_DISABLED', error: '挂号浏览器已关（GUAHO_BROWSER=off / data/guahao-browser.flag=off），要用时先打开开关' }
+
 let activeLoginBrowser = null
 // 最近一次导入的 .meddata state（内存态，仅用于生成「本次就诊一页速览」，不落盘）
 let lastImportedState = null
@@ -385,6 +403,10 @@ function getNextReleaseCountdown() {
 
   // 1b. GET /api/guahao/monitor/realtime
   if (req.method === 'GET' && pathname === '/api/guahao/monitor/realtime') {
+    if (!guahaoBrowserOn()) {
+      sendJson(res, 200, { ok: true, disabled: true, slots: [], slotCount: 0, activeCount: 0, suspendedCount: 0, countdown: getNextReleaseCountdown(), ...GUAHO_BROWSER_DISABLED })
+      return
+    }
     try {
       const force = parsedUrl.searchParams.get('force') === 'true'
       const schedule = await fetchLiveDoctorSchedule(force)
@@ -413,6 +435,10 @@ function getNextReleaseCountdown() {
   // ===== 114 真实浏览器挂号：查询类接口 =====
   // GET /api/guahao/114/catalog/hospitals?force=1
   if (req.method === 'GET' && pathname === '/api/guahao/114/catalog/hospitals') {
+    if (!guahaoBrowserOn()) {
+      sendJson(res, 503, { ok: false, ...GUAHO_BROWSER_DISABLED })
+      return
+    }
     try {
       const force = parsedUrl.searchParams.get('force') === '1'
       const data = await guahao114.fetchHospitals({ force })
@@ -425,6 +451,10 @@ function getNextReleaseCountdown() {
 
   // GET /api/guahao/114/catalog/depts?hosCode=xxx&force=1
   if (req.method === 'GET' && pathname === '/api/guahao/114/catalog/depts') {
+    if (!guahaoBrowserOn()) {
+      sendJson(res, 503, { ok: false, ...GUAHO_BROWSER_DISABLED })
+      return
+    }
     try {
       const hosCode = parsedUrl.searchParams.get('hosCode') || ''
       if (!hosCode) {
@@ -442,6 +472,10 @@ function getNextReleaseCountdown() {
 
   // GET /api/guahao/114/session —— 浏览器里现有登录态（不触发短信）
   if (req.method === 'GET' && pathname === '/api/guahao/114/session') {
+    if (!guahaoBrowserOn()) {
+      sendJson(res, 200, { ok: true, loggedIn: false, disabled: true, ...GUAHO_BROWSER_DISABLED })
+      return
+    }
     try {
       const r = await guahao114.checkSession()
       if (!r.ok) {
@@ -622,6 +656,10 @@ function getNextReleaseCountdown() {
     // ===== 114 真实浏览器挂号：动作类接口 =====
     // POST /api/guahao/114/flow/start
     if (pathname === '/api/guahao/114/flow/start') {
+      if (!guahaoBrowserOn()) {
+        sendJson(res, 503, { ok: false, ...GUAHO_BROWSER_DISABLED })
+        return
+      }
       try {
         const result = guahao114.startFlow(payload)
         sendJson(res, result.ok ? 200 : 409, result)
@@ -728,6 +766,10 @@ function getNextReleaseCountdown() {
 
     // 7c. POST /api/guahao/114/launch-login (方案1：弹出真实窗口无感捕获)
     if (pathname === '/api/guahao/114/launch-login') {
+      if (!guahaoBrowserOn()) {
+        sendJson(res, 503, { ok: false, ...GUAHO_BROWSER_DISABLED })
+        return
+      }
       try {
         if (activeLoginBrowser) {
           try { await activeLoginBrowser.close() } catch {}
@@ -1440,7 +1482,8 @@ function getNextReleaseCountdown() {
       // 否则这条记录永久不受查重覆盖（旧的前端兜底是「不带 image 重发」，那是查重盲区）
       const force = body.force === true
       if (!force) {
-        const dup = findDuplicate({ sha256, dhash, reportDate: String(meta.reportDate || ''), barcode: String(meta.barcode || '') }, store.reports)
+        // 传入内容指纹：同一条码被多份报告共用时，靠指纹区分「同一份」与「同批不同报告」
+        const dup = findDuplicate({ sha256, dhash, reportDate: String(meta.reportDate || ''), barcode: String(meta.barcode || ''), fingerprint }, store.reports)
         if (dup.dup) return sendJson(res, 200, { ok: false, duplicate: dup, hint: '这张图已导入过' })
         const sameContent = store.reports.find((r) => r.fingerprint === fingerprint)
         if (sameContent) return sendJson(res, 200, { ok: false, duplicate: { dup: true, kind: 'content', of: sameContent.id }, hint: '同一份报告（内容一致）' })

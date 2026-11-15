@@ -13,7 +13,8 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { pickAdapter, stripWatermarkTokens, collectSuspects } from '../tools/report-adapters/index.mjs'
-import labPanelAdapter from '../tools/report-adapters/lab-panel.mjs' // 直接进叶子模块：验证没有循环依赖（曾因 index↔适配器互相 import 报 TDZ）
+import labPanelAdapter from '../tools/report-adapters/lab-panel.mjs'
+import { findDuplicate } from '../lib/reportIntake.mjs' // 直接进叶子模块：验证没有循环依赖（曾因 index↔适配器互相 import 报 TDZ）
 import { isPlausibleLabRow, buildReportFingerprint, parseLabRowsDetailed } from '../lib/reportIntake.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -281,6 +282,21 @@ it('CLI 批量：并发参数被夹在 1..8，且并发跑不改变解析结果'
 })
 
 console.log('\n' + '='.repeat(46))
+// 查重护栏（2026-11-15 修）：同一条码会被同一送检批的多份报告共用（真实库 V02008911352 被 6 份共用），
+// 旧规则「有条码就只比条码」会把同批的新报告判成重复 —— 现在要求条码/日期/内容指纹都对上才算同一份。
+it('查重：同条码同日期但内容指纹不同 → 不是重复；指纹相同 → 才是重复', () => {
+  const dhash0 = '0'.repeat(64)
+  const existing = [{ id: 'rep_old', sha256: 'sha_old', dhash: dhash0, reportDate: '2026-10-16', barcode: 'V02008911352', fingerprint: 'fp_old' }]
+  const same = findDuplicate({ sha256: 'sha_new', dhash: dhash0, reportDate: '2026-10-16', barcode: 'V02008911352', fingerprint: 'fp_old' }, existing)
+  assert.equal(same.dup, true, '完全同一份（指纹也相同）必须判重复')
+  const diff = findDuplicate({ sha256: 'sha_new2', dhash: dhash0, reportDate: '2026-10-16', barcode: 'V02008911352', fingerprint: 'fp_new' }, existing)
+  assert.equal(diff.dup, false, '同条码同日但内容不同的新报告不得判重复')
+  const otherDay = findDuplicate({ sha256: 'sha_new3', dhash: dhash0, reportDate: '2026-11-01', barcode: 'V02008911352', fingerprint: 'fp_old' }, existing)
+  assert.equal(otherDay.dup, false, '日期不同不得判重复')
+  const exact = findDuplicate({ sha256: 'sha_old', dhash: '', reportDate: '', barcode: '' }, existing)
+  assert.equal(exact.kind, 'exact', '同一张图（sha256 相同）仍须精确命中')
+})
+
 console.log(`报告导入流程：${pass} 通过 / ${fails.length} 失败`)
 if (fails.length) {
   console.log('失败项：\n  - ' + fails.join('\n  - '))
