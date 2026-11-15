@@ -16,6 +16,7 @@ import { pickAdapter, stripWatermarkTokens, collectSuspects } from '../tools/rep
 import labPanelAdapter from '../tools/report-adapters/lab-panel.mjs'
 import { findDuplicate } from '../lib/reportIntake.mjs' // 直接进叶子模块：验证没有循环依赖（曾因 index↔适配器互相 import 报 TDZ）
 import { isPlausibleLabRow, buildReportFingerprint, parseLabRowsDetailed } from '../lib/reportIntake.mjs'
+import { hospitalCandidates, guessHospital } from '../lib/reportMeta.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '..')
@@ -279,6 +280,17 @@ it('CLI 批量：并发参数被夹在 1..8，且并发跑不改变解析结果'
   const huge = run(99) // 应被夹到 8，不崩
   assert.equal(huge.status, 0)
   assert.match(huge.stdout, /并发 8/)
+})
+
+// 2026-11-15 用户真截图 20260718G0110035（第 2 页）实测：页脚「本结果仅供参考，请以医院纸质报告及
+// 医生意见为准。」被抽成院名 `请以医院` —— 一入库就把「请以医院」写进报告抬头，医生看到的是句残句。
+// 判据：院名必须以地名/机构名起头；中文虚词起头的（请以/至/到/该/本/此…）一定不是机构名。
+it('院名：免责声明里的「请以医院」不得当院名，真院名仍要认出来', () => {
+  const disclaimer = '检验免责声明：\n本结果仅供参考，请以医院纸质报告及医生意见为准。\n分享报告'
+  assert.deepEqual(hospitalCandidates(disclaimer), [], `免责声明不得产出院名，实际 ${JSON.stringify(hospitalCandidates(disclaimer))}`)
+  assert.equal(guessHospital(disclaimer), '')
+  assert.deepEqual(hospitalCandidates('陆军军医大学新桥医院血液病医学中心\n治疗后微小残留病检测流式报告'), ['陆军军医大学新桥医院'])
+  assert.equal(guessHospital('北京市朝阳区某某医院\n检验科 血常规报告'), '北京市朝阳区某某医院')
 })
 
 console.log('\n' + '='.repeat(46))

@@ -358,6 +358,128 @@ it('化验/分子类报告照常出行（PCR 的 BCR-ABL 定量三行是准的�
   assert.deepEqual(rowsForType([], '骨髓形态学（骨穿）'), { rows: [], dropped: 0 })
 })
 
+// ---------- 真截图回归（2026-11-15 用户两张 20260718 血常规截图，已脱敏）----------
+// 那次实测暴露 6 类缺陷，全部用这份原文守着：
+//   ① `中性粒细胞百分 •20.1J 40-75 %` 的值前有 `•` → 名称正则的 lookahead 不认 → 整行丢（11 项只出 10）
+//   ② `报告单号 20260101G0000001` 被解析成 `报告单号=20260101` → 卡片凭空多一个假指标
+//   ③ `10~9/L`、`fI`、`PG`、`FL` 不在单位表里 → 单位整格丢失
+//   ④ `＜=15%` 是单边阈值不是区间 → 旧逻辑把 % 当单位、区间丢失 → 12.6 判 unknown（本应正常）
+//   ⑤ 名称折行（续行排在值行之后）→ 31.9 与 362 两条不同指标都叫「红细胞平均血红」
+//   ⑥ 免责声明「请以医院纸质报告…」被抽成院名 `请以医院`（这条在 verify-import-report 里守）
+const PAGE1 = `12:12
+<	检验报告	◎
+全血细胞计数＋五分类
+患者信息 张三（00000000）◎女|
+30岁
+报告单号 20260101G0000001
+报告时间 2026-01-01 07:56:07	更多
+检验项目
+检验项目	结果	参考范围	单位
+白细胞计数	71.90	3.5-9.5	10~9/L
+红细胞计数	4.08	3.8-5.1	10~12/L
+血红蛋白	130	115-150	G/L
+红细胞比积	35.9	35-45	%
+红细胞平均体积	88.0	82-100	fl
+红细胞平均血红	31.9	27-34	PG
+蛋白含量
+红细胞平均血红	362 个	316-354	G/L
+蛋白浓度
+淋巴细胞百分比	78.8个	20-50	%
+单核细胞百分比	0.7	3-10	%
+中性粒细胞百分	•20.1J	40-75	%
+比
+嗜酸性粒细胞百	0.3	0.4-8	%
+分比
+⑦分享报告`
+const PAGE2 = `12:12
+<	检验报告	••	◎
+、~	~
+比
+嗜酸性粒细胞百	0.3J	0.4-8	%
+分比
+嗜碱性粒细胞百	0.1	0-1	%
+分比
+淋巴细胞计数	56.66个	1.1-3.2	10~9/L
+单核细胞计数	0.50	0.1-0.6	10~9/L
+嗜酸性粒细胞计	0.22	0.02-0.52	10~9/L
+数
+嗜碱性粒细胞计	0.07个	0-0.06	10~9/L
+数
+红细胞分布宽度	12.6	＜=15%	fl
+变异系数
+血小板分布宽度	16.6	fI
+血小板平均体积	8.3	fI
+血小板	104	125-350	10~9/L
+中性粒细胞计数 14.45个	1.8-6.3	10~9/L
+红细胞分布宽度	38.10	FL
+标准差
+血小板压积	0.086	％
+检验免责声明：
+本结果仅供参考，请以医院纸质报告及医生意见为准。
+C分享报告`
+
+it('真截图 A：抬头行不得变成指标行（报告单号=20260101 这类假行）', () => {
+  const rows = parseLabRows('报告单号 20260101G0000001\n报告时间 2026-01-01 07:56:07')
+  assert.equal(rows.length, 0, `抬头行不得解析成指标，实际 ${JSON.stringify(rows.map((r) => r.name))}`)
+})
+
+it('真截图 B：值前噪声（•20.1J）不得让整行消失', () => {
+  const rows = parseLabRows('中性粒细胞百分\t•20.1J\t40-75\t%')
+  assert.equal(rows.length, 1, '整行被丢 = 卡片少一个数')
+  assert.equal(rows[0].value, '20.1')
+  assert.equal(rows[0].refRange, '40-75')
+  assert.equal(rows[0].status, 'low')
+})
+
+it('真截图 C：两页合并 23 项、0 假行、名称/单位/单边区间全对（用户报「识别数出错」的那一份）', () => {
+  const p1 = parseLabRows(PAGE1)
+  const p2 = parseLabRows(PAGE2)
+  assert.equal(p1.length, 11, `页1 应出 11 行，实际 ${p1.length}（少一行 = 卡片少一个数）`)
+  assert.equal(p2.length, 13, `页2 应出 13 行，实际 ${p2.length}`)
+  const all = [...p1, ...p2]
+  const seen = new Set()
+  const uniq = all.filter((r) => { const k = r.name + '|' + r.value; if (seen.has(k)) return false; seen.add(k); return true })
+  assert.equal(uniq.length, 23, `两页合并应为 23 项，实际 ${uniq.length}`)
+  assert.ok(!all.some((r) => /报告单号|报告时间|患者信息|检验项目/.test(r.name)), '抬头行不得出现在指标里')
+  const mch = uniq.find((r) => r.code === 'MCH')
+  const mchc = uniq.find((r) => r.code === 'MCHC')
+  assert.ok(mch && mchc, `MCH/MCHC 必须能区分，实际 ${JSON.stringify(uniq.map((r) => r.name))}`)
+  assert.notEqual(mch.name, mchc.name, '两个不同指标不得同名')
+  assert.deepEqual([mch.name, mch.value, mch.unit], ['红细胞平均血红蛋白含量', '31.9', 'pg'])
+  assert.deepEqual([mchc.name, mchc.value, mchc.unit], ['红细胞平均血红蛋白浓度', '362', 'g/L'])
+  assert.equal(uniq.find((r) => r.code === 'WBC').unit, '10^9/L')
+  assert.equal(uniq.find((r) => r.code === 'PLT').unit, '10^9/L')
+  assert.equal(uniq.find((r) => r.code === 'PDW').unit, 'fL')
+  assert.equal(uniq.find((r) => r.code === 'RDW_SD').unit, 'fL')
+  const rdwcv = uniq.find((r) => r.code === 'RDW_CV')
+  assert.equal(rdwcv.refRange, '<15%', `单边阈值必须保留，实际「${rdwcv.refRange}」`)
+  assert.equal(rdwcv.unit, '', '阈值里的 % 不是这一项的单位')
+  assert.equal(rdwcv.status, 'normal')
+  const abn = uniq.filter((r) => r.status === 'high' || r.status === 'low').map((r) => `${r.code}:${r.status}`).sort()
+  assert.deepEqual(abn, ['BASO_ABS:high', 'EO_PCT:low', 'LYM_ABS:high', 'LYM_PCT:high', 'MCHC:high', 'MONO_PCT:low', 'NEUT_ABS:high', 'NEUT_PCT:low', 'PLT:low', 'WBC:high'])
+})
+
+it('真截图 D：单边阈值（<15% / ≤0.5）不得被当成区间下限、也不得抢走单位', () => {
+  const a = parseLabRows('红细胞分布宽度 12.6 ＜=15%')
+  assert.equal(a[0].refRange, '<15%')
+  assert.equal(a[0].unit, '')
+  assert.equal(a[0].status, 'normal')
+  const b = parseLabRows('降钙素原 0.02 ≤0.5 ng/mL')
+  assert.equal(b[0].refRange, '<0.5')
+  assert.equal(b[0].unit, 'ng/mL')
+  assert.equal(b[0].status, 'normal')
+})
+
+it('真截图 E：幂次单位与字形变体归一（10~9/L → 10^9/L，不猜不删）', () => {
+  assert.equal(normalizeUnit('10~9/L'), '10^9/L')
+  assert.equal(normalizeUnit('10°9/L'), '10^9/L')
+  assert.equal(normalizeUnit('10 9/L'), '10^9/L')
+  assert.equal(normalizeUnit('fI'), 'fL')
+  assert.equal(normalizeUnit('FL'), 'fL')
+  assert.equal(normalizeUnit('PG'), 'pg')
+})
+
+
 console.log('\n' + '='.repeat(46))
 console.log(fails.length === 0 ? `报告导入层：${pass} 通过 / 0 失败` : `报告导入层：${pass} 通过 / ${fails.length} 失败 → ${fails.join(', ')}`)
 process.exit(fails.length ? 1 : 0)
