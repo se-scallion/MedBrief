@@ -32,7 +32,7 @@ const { Text, Paragraph } = Typography
 const { Dragger } = Upload
 
 // 常量与工具已搬到 ./intake/shared.js（2026-11-13 抽页）；此处只保留页面状态与副作用。
-import { ST, KIND_OPTIONS, FLAG_TEXT, uid, fmtSize, rawJson, postJson } from './intake/shared.js'
+import { runBatch, ST, KIND_OPTIONS, FLAG_TEXT, uid, fmtSize, rawJson, postJson } from './intake/shared.js'
 import UploadPanel from './intake/UploadPanel.jsx'
 import ReviewPanel from './intake/ReviewPanel.jsx'
 
@@ -391,21 +391,14 @@ export default function IntakePage() {
     batchStop.current = false
     setBatch({ mode: 'ocr', done: 0, total: targets.length })
     pushLog(`开始一键识别：共 ${targets.length} 张（串行执行，可随时停止）`, 'info')
-    let ok = 0; let bad = 0
-    for (let i = 0; i < targets.length; i++) {
-      if (batchStop.current) { pushLog(`批量识别已停止（完成 ${i}/${targets.length}）`, 'warn'); break }
-      setBatch({ mode: 'ocr', done: i, total: targets.length })
-      try {
-        await recognize(targets[i])
-        ok++
-      } catch (e) {
-        bad++
-        pushLog(`「${targets[i].name}」识别异常：${e.message}`, 'err')
-      }
-    }
+    const r = await runBatch(targets, (it) => recognize(it), {
+      onProgress: (done) => setBatch({ mode: 'ocr', done, total: targets.length }),
+      shouldStop: () => batchStop.current,
+    })
+    if (r.stopped) pushLog(`批量识别已停止（完成 ${r.done}/${r.total}）`, 'warn')
     setBatch(null)
-    pushLog(`一键识别结束：成功 ${ok} 张${bad ? `，异常 ${bad} 张` : ''}`, bad ? 'warn' : 'ok')
-    message[bad ? 'warning' : 'success'](`识别完成：成功 ${ok} 张${bad ? `，异常 ${bad} 张` : ''}`)
+    pushLog(`一键识别结束：成功 ${r.ok} 张${r.failed ? `，异常 ${r.failed} 张` : ''}`, r.failed ? 'warn' : 'ok')
+    message[r.failed ? 'warning' : 'success'](`识别完成：成功 ${r.ok} 张${r.failed ? `，异常 ${r.failed} 张` : ''}`)
   }
 
   // ---------- 一键导入全部（只导入已解析出指标行的） ----------
@@ -415,22 +408,14 @@ export default function IntakePage() {
     batchStop.current = false
     setBatch({ mode: 'import', done: 0, total: targets.length })
     pushLog(`开始一键导入：共 ${targets.length} 张（疑似重复的会自动跳过并记日志）`, 'info')
-    let ok = 0; let dup = 0; let bad = 0
-    for (let i = 0; i < targets.length; i++) {
-      if (batchStop.current) { pushLog(`批量导入已停止（完成 ${i}/${targets.length}）`, 'warn'); break }
-      setBatch({ mode: 'import', done: i, total: targets.length })
-      try {
-        const r = await saveReport(targets[i], { silent: true })
-        if (r?.duplicate) dup++
-        else if (r?.ok) ok++
-      } catch (e) {
-        bad++
-        pushLog(`「${targets[i].name}」入库失败：${e.message}`, 'err')
-      }
-    }
+    const r = await runBatch(targets, (it) => saveReport(it, { silent: true }), {
+      onProgress: (done) => setBatch({ mode: 'import', done, total: targets.length }),
+      shouldStop: () => batchStop.current,
+    })
+    if (r.stopped) pushLog(`批量导入已停止（完成 ${r.done}/${r.total}）`, 'warn')
     setBatch(null)
-    pushLog(`一键导入结束：入库 ${ok} 张${dup ? `，跳过重复 ${dup} 张` : ''}${bad ? `，失败 ${bad} 张` : ''}`, bad ? 'warn' : 'ok')
-    message[bad ? 'warning' : 'success'](`入库完成：${ok} 张${dup ? `（跳过重复 ${dup}）` : ''}${bad ? `，失败 ${bad}` : ''}`)
+    pushLog(`一键导入结束：入库 ${r.ok} 张${r.skipped ? `，跳过重复 ${r.skipped} 张` : ''}${r.failed ? `，失败 ${r.failed} 张` : ''}`, r.failed ? 'warn' : 'ok')
+    message[r.failed ? 'warning' : 'success'](`入库完成：${r.ok} 张${r.skipped ? `（跳过重复 ${r.skipped}）` : ''}${r.failed ? `，失败 ${r.failed}` : ''}`)
   }
 
   const onSaveReport = async (item) => {

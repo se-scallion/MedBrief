@@ -30,7 +30,8 @@
     "test:reportsort": "node tests/verify-reportsort.mjs",
     "test:classify": "node tests/verify-classify.mjs",
     "test:reportdelete": "node tests/verify-report-delete.mjs",
-    "test:meta": "node tests/verify-report-meta.mjs"
+    "test:meta": "node tests/verify-report-meta.mjs",
+    "test:library": "node tests/verify-library.mjs"
   },
   "keywords": [
     "guahao",

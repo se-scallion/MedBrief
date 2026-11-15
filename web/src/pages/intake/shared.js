@@ -68,3 +68,32 @@ export function buildRowPatch(rows = []) {
     refRange: String(r.refRange ?? '').trim(),
   }))
 }
+
+/**
+ * 串行批量执行（2026-11-15 从 IntakePage 抽成纯函数，便于单测）：
+ * 「一键识别 / 一键导入」都是这个模型 —— 逐条执行、可随时停、单条失败不中断整批、可统计重复跳过。
+ *
+ * @param {Array} items
+ * @param {(item:any)=>Promise<any>} worker  返回 { ok?:boolean, duplicate?:boolean, skipped?:boolean }
+ * @param {{onProgress?:(done:number,total:number)=>void, shouldStop?:()=>boolean}} opts
+ * @returns {Promise<{stopped:boolean, done:number, total:number, ok:number, skipped:number, failed:number}>}
+ */
+export async function runBatch(items = [], worker, { onProgress, shouldStop } = {}) {
+  const total = items.length
+  const res = { stopped: false, done: 0, total, ok: 0, skipped: 0, failed: 0 }
+  for (let i = 0; i < total; i++) {
+    if (shouldStop && shouldStop()) { res.stopped = true; res.done = i; return res }
+    if (onProgress) onProgress(i, total)
+    try {
+      const r = await worker(items[i])
+      if (r?.duplicate || r?.skipped) res.skipped += 1
+      else if (r?.ok === false) res.failed += 1
+      else res.ok += 1
+    } catch {
+      res.failed += 1
+    }
+    res.done = i + 1
+  }
+  if (onProgress) onProgress(total, total)
+  return res
+}
