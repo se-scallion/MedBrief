@@ -93,6 +93,30 @@ it('区分「没做」与「过期」：MRD 做过但超 90 天 → 待补写「
   assert.ok(flow.detail.includes(`超 ${RECENT_MRD_DAYS} 天`), `detail 必须说明阈值 ${RECENT_MRD_DAYS} 天，实际「${flow.detail}」`)
 })
 
+it('图文型残留病检测报告（rows=[]）也算 MRD 复查；但正文「请结合 MRD」不算', () => {
+  // 2026-11-15 实测事故：一份 2026-09-30 的「治疗后微小残留病检测流式报告」（图文型，rows=[]）入库后，
+  // 卡面仍写「MRD 仅 2026-07-15（123 天前）」—— 材料在手里、卡面说缺，家属会当场发现。
+  // 根源：图文型报告按设计不出指标行（rowsForType），MRD 只能从**检测名称**里认。
+  const textOnlyMrd = patho('2026-09-30', '流式免疫分型',
+    '治疗后微小残留病检测流式报告\n结果解释：本次流式细胞获取CD19+占NC:0.69%', [])
+  const c = buildChecklist([textOnlyMrd], TODAY)
+  const flow = c.items.find((x) => x.key === 'flow-mrd')
+  assert.ok(flow.ok, `rows=[] 的残留病检测报告必须算 MRD 复查，detail=${flow.detail}`)
+  // 判据是「残留病检测」这个**检测名称**，不是「有 MRD 结果行」——
+  // 但结果必须标明「未结构化」，别让人以为卡面读到了结构化指标
+  assert.ok(/未结构化/.test(flow.detail), `detail 要说明这份是原文证据，实际「${flow.detail}」`)
+
+  // 反例（同一次实测抓到的误判路径）：骨髓形态报告的「意见」里写着「请结合 MRD 及病史分析」，
+  // 那是**引用别人做过的检查**，不是这一份做了 MRD。裸 /MRD/ 关键词会把它算成复查 → 谎报「已做」。
+  const morphCitingMrd = patho('2026-09-30', '骨髓形态学（骨穿）',
+    '髓像 意见：结合病史考虑ALL-CR，请结合MRD及病史分析', [])
+  const oldFlow = patho('2026-07-17', '流式免疫分型', '流式细胞术检测 免疫分型', [])
+  const c2 = buildChecklist([morphCitingMrd, oldFlow], TODAY)
+  const flow2 = c2.items.find((x) => x.key === 'flow-mrd')
+  assert.ok(!flow2.ok, `骨髓报告只引用 MRD、没有残留病检测报告时必须仍报缺，detail=${flow2.detail}`)
+  assert.ok(c2.missing.includes('MRD 复查'), `待补必须仍写「MRD 复查」，实际 ${JSON.stringify(c2.missing)}`)
+})
+
 it('近期血常规：30 天外的血常规不算「近期」，且缺项要指名（ANC 缺 → 提示 ANC）', () => {
   const stale = buildChecklist([lab('2026-10-01', [
     { name: '白细胞', value: '4.1', code: 'WBC' },
