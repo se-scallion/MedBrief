@@ -69,3 +69,31 @@
   输入框占位「北京朝阳医院」→「某某医院」。**注意**：删 Tag 后副标题从第 3 项变第 2 项，
   窄屏隐藏选择器必须同步改，否则会误隐藏标题。
 - 证据：`web/src/App.jsx`（Tag 已删 + 选择器收成 `nth-child(2)`）、`tests/verify-ui.mjs`（断言「Tag 必须不存在」防止回潮）。
+
+## Bug 9 【已修·2026-11-15】`rep_mwh9w5et3um` 报告日期空着：旧记录在日期修复之前入库
+
+- 症状：FISH 报告（原文有 `报告日期：2026-9-30`）在报告库里 `reportDate=""`，用户报「图片上明明有，还是没识别出日期」。
+- 根因：**不是识别逻辑坏**。该记录 `createdAt=2026-11-15T03:26Z`（本地 11:26），
+  而日期标签优先的修复 `eca9de7` 落地在 12:15 —— 记录是在修复**之前**入库的。
+  当前 `guessMeta(text)` 对同一段文本实测返回 `2026-09-30`（`source=label-reported`）。
+- 修法：按「库内数据改动先快照」口径，先 `data/backups/reports-before-datefix-20261115-201007.json`
+  （63 份全量、314831 字节、不入库），再用 `guessMeta` 从记录**自己存的 text** 回填 `reportDate/sampledAt/dateSource`。
+  判据：全库「空日期但文本里有报告/送检/采集日期标签」= **0 条**。
+- 证据：`git log --format='%h %ci %s' -- lib/reportMeta.mjs`；`node -e` 调 `guessMeta`；
+  `npm run test:library` 12/0、`npm run test:meta` 9/0、`npm run test:card` 61/0。
+- 教训：修了识别链路**不等于**修了历史记录；「用户说没识别」要先比 `createdAt` 与修复提交时间。
+
+## Bug 10 【不改·2026-11-15】两处报告日期仍用裸 `<Input>`，不是 Ant Design 标准组件
+
+- 症状：`IntakePage.jsx:653`（录入校对区）、`ReportsPanel.jsx:484`（报告库编辑弹窗）用
+  `<Input placeholder="YYYY-MM-DD">`，用户点名「没有使用 Ant Design 的标准组件」。
+- 根因：antd 6.6.6 + dayjs 1.11.23 早已声明（`package.json:52-53`），`BookingForm.jsx:552` 就是本项目自己的
+  `DatePicker` 标准范本；识别线是后来边补边加，用最省事的 Input 顶上，没有回头统一。
+- 决策：**不改（本会话收尾时）** —— 用户口径是「先给方案与改动清单，确认后执行」，方案
+  `.agents/forms-component-plan.md` 已过 plan-review 四段排雷但**尚未获准执行**；收尾不得把待确认方案擅自落地。
+- 边界（防止下个会话改崩）：后端/卡片/排序/趋势里 `reportDate` 全是 `YYYY-MM-DD` **字符串**
+  （`lib/intakeCard.js:181,482,506,530`、`lib/conclusionExtract.mjs:147`、`lib/leukemiaChecklist.mjs:22,70`、
+  `web/src/pages/intake/reportSort.js:13` 全部 `String(x).slice(0,10)`），而 DatePicker 给 dayjs 对象；
+  必须走薄封装在边界 `format('YYYY-MM-DD')`，存储值域不变。
+- 再触发条件：用户说「按 forms-component-plan 执行」（或等价确认）；届时按该文档 §5 三项改动 +
+  `build:web` / `test:ui` / `tools/e2e-real-pdf.mjs` / `test:card` / `test:library` 全绿验收。

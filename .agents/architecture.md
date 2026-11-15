@@ -443,3 +443,18 @@ ego lite 的 Chromium（真实指纹 + 独立 profile）可通过。故 `lib/ego
 - **改动陷阱（已踩过两次）**：给顶栏加/删元素会让 `nth-child` 序号整体位移；antd `Space` 会为
   `display:none` 的 item 仍保留 gap（桌面整体右移 12px）。所以：按文本/稳定 class 选元素，
   按钮放 Header 直接子元素而非 `Space` 内。
+
+## 2026-11-15 · 识别能力拆成独立服务（MedRecognition 8011），MedBrief/MedData 只做 Adapter
+
+- 目录：`/Users/scallion/Documents/projects/MedRecognition/`（本地 git，无远端）。
+  端点：`/v1/ocr`、同步 `/v1/extract`、异步 `/v1/extract/jobs`（VLM 精读）、`/v1/version`、`/health/live|ready`。
+  只 bind `127.0.0.1:8011`，浏览器不直连；launchd `com.user.medrecognition.api` 守护（`AGENTS.md` D3）。
+- 切流开关：`MEDREC_BACKEND=legacy|8011`（默认 legacy）。MedBrief 改 `server.mjs` 的 `ocrOnce()` 与三处解析入口，
+  MedData 改 `/api/ocr-vision` 与 `/api/ai-docread`；**两侧都只改调用点 + Adapter，lib 不动、旧代码不删**。
+- 契约：`docs/schema-v1.md` 的 `fields/measures[]` 必须**双出/并存**（`refRange`↔`ref_range`、
+  `code`↔`standard_code`、`flag`↔`arrow`），一侧独有字段进 `extras`，不静默丢。
+  `reportDate` 在服务与两侧**始终是 `YYYY-MM-DD` 字符串**（DatePicker 的转换留在前端边界）。
+- 服务**无状态**：查重键（sha256/dhash/fingerprint）、类型判定第 ② 步（项目集反推）、拼图/切块、
+  资料卡渲染分组全留项目侧；服务判不出类型时给 `kind=unknown|lab` + `extras.gaps.rows_reverse`，由调用方自己反推。
+- 退役门禁（M3）：两侧 `GET /api/recognition-hits?days=7` 只读汇总，`retireGate` 需连续 7 天
+  legacy 全 0 + 每天有观测 + 样本 ≥50；物理删除前 dry-run + mv 到 `.agents/_backup/`（禁 rm）。
