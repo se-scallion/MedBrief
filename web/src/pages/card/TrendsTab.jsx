@@ -10,14 +10,45 @@ import { Badge, Button, Card, Checkbox, Empty, Segmented, Space, Tag, Typography
 
 const { Text } = Typography
 
+// 参考区间解析（与 lib/intakeCard.js parseRefRange 同规则，浏览器侧不能用 node:fs 版）。
+// 支持双边 `3.5-9.5`、单边 `<125` / `>450`、全角符号、尾部粘连单位；解析不了返回 null（不猜）。
+function parseRefRange(s) {
+  const t = String(s || '')
+    .replace(/[＜﹤]/g, '<').replace(/[＞﹥]/g, '>')
+    .replace(/[≤≦]/g, '<=').replace(/[≥≧]/g, '>=')
+    .replace(/[～〜]/g, '~').replace(/[－—–]/g, '-')
+    .replace(/\s+/g, '')
+  if (!t) return null
+  const m = t.match(/^(-?\d+(?:\.\d+)?)(?:--|~|-|至)(-?\d+(?:\.\d+)?)/)
+  if (m) {
+    const lo = Number(m[1]), hi = Number(m[2])
+    return Number.isFinite(lo) && Number.isFinite(hi) && hi >= lo ? { lo, hi } : null
+  }
+  const up = t.match(/^<=?(-?\d+(?:\.\d+)?)/)
+  if (up) { const hi = Number(up[1]); return Number.isFinite(hi) ? { lo: null, hi } : null }
+  const low = t.match(/^>=?(-?\d+(?:\.\d+)?)/)
+  if (low) { const lo = Number(low[1]); return Number.isFinite(lo) ? { lo, hi: null } : null }
+  return null
+}
+
 function TrendChart({ series, onOpenSource, height = 150 }) {
   const pts = series.points.filter((p) => Number.isFinite(Number(p.num)))
   if (pts.length < 2) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="数值点不足 2 个" />
   const w = 460
   const pad = { l: 40, r: 12, t: 14, b: 20 }
   const nums = pts.map((p) => Number(p.num))
-  let min = Math.min(...nums)
-  let max = Math.max(...nums)
+  const refBands = []
+  const seenRef = new Set()
+  for (const pt of pts) {
+    const r = parseRefRange(pt.refRange)
+    if (!r) continue
+    const key = `${r.lo ?? ''}/${r.hi ?? ''}`
+    if (seenRef.has(key)) continue
+    seenRef.add(key)
+    refBands.push({ ...r, label: String(pt.refRange).trim() })
+  }
+  let min = Math.min(...nums, ...refBands.map((b) => b.lo).filter((v) => v != null))
+  let max = Math.max(...nums, ...refBands.map((b) => b.hi).filter((v) => v != null))
   if (max === min) { max += 1; min -= 1 }
   // X 轴按**真实日期比例**（W13-A1，与打印版 lib/intakeCard.js svgTrend 同一套规则）：
   // 隔 9 天必须比隔 1 天宽 9 倍，否则会误导病情变化速度。
@@ -40,6 +71,25 @@ function TrendChart({ series, onOpenSource, height = 150 }) {
   const y = (v) => height - pad.b - ((v - min) / (max - min)) * (height - pad.t - pad.b)
   const path = pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(Number(p.num)).toFixed(1)}`).join(' ')
   const ticks = [min, (min + max) / 2, max]
+  // 2026-11-17 用户口径「图表上将正常范围线画出来」：每条参考区间画上下两条虚线，右端标原文。
+  // 多区间（跨院不同参考值）逐条都画 —— 血红蛋白/血小板旧版只有警告文字，一条线都没有。
+  // 标签按 y 排序后强制最小间距，避免两条区间接近时叠字。
+  const refLabels = []
+  const refLines = refBands.map((b, i) => {
+    const yHi = b.hi == null ? null : y(b.hi)
+    const yLo = b.lo == null ? null : y(b.lo)
+    let out = ''
+    if (yHi != null) out += <line key={`r${i}h`} x1={pad.l} y1={yHi} x2={w - pad.r} y2={yHi} stroke="#9ca3af" strokeWidth="0.8" strokeDasharray="3 2" />
+    if (yLo != null) out += <line key={`r${i}l`} x1={pad.l} y1={yLo} x2={w - pad.r} y2={yLo} stroke="#9ca3af" strokeWidth="0.8" strokeDasharray="3 2" />
+    if (yHi != null && yLo != null && Math.abs(yHi - yLo) >= 1.5) {
+      out += <line key={`r${i}b`} x1={w - pad.r - 2.5} y1={yHi} x2={w - pad.r - 2.5} y2={yLo} stroke="#9ca3af" strokeWidth="0.8" />
+    }
+    const midY = yHi != null && yLo != null ? (yHi + yLo) / 2 : (yHi ?? yLo)
+    if (Number.isFinite(midY)) refLabels.push({ y: midY, text: b.label })
+    return out
+  })
+  refLabels.sort((a, b) => a.y - b.y)
+  for (let i = 1; i < refLabels.length; i++) if (refLabels[i].y - refLabels[i - 1].y < 9) refLabels[i].y = refLabels[i - 1].y + 9
   // 日期标签两级避让（与打印版同规则）：相邻 <26px 奇偶两行错位、底部加高 8px 防 viewBox 裁切；
   // 仍 <13px 则抽稀（留首点、末点、每月首个点），点值标签与 hover tooltip 不受影响。
   const xs = pts.map((_, i) => x(i))
@@ -59,6 +109,10 @@ function TrendChart({ series, onOpenSource, height = 150 }) {
         <g key={i}>
           <line x1={pad.l} y1={y(v)} x2={w - pad.r} y2={y(v)} stroke="#f0f0f0" strokeWidth="0.8" />
         </g>
+      ))}
+      {refLines}
+      {refLabels.map((l, i) => (
+        <text key={`rl${i}`} x={w - pad.r - 4} y={Math.min(Math.max(l.y, 8), height - pad.b - 1)} fontSize="7" fill="#6b7280" textAnchor="end" stroke="#fff" strokeWidth="1.6" paintOrder="stroke">{l.text}</text>
       ))}
       <path d={path} fill="none" stroke="#2563eb" strokeWidth="1.6" />
       {pts.map((p, i) => {

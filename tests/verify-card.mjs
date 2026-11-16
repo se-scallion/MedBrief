@@ -819,6 +819,35 @@ it('趋势 SVG：参考区间画上下两条虚线（不靠绿带），点形状
   assert.ok(!/<rect/.test(svg), '不得再用绿色矩形色带')
 })
 
+// 2026-11-17 用户口径「图表上将正常范围线画出来」：
+//   每条趋势图都必须把参考区间画成虚线；跨院多区间的项（HGB/PLT）每条区间都要画，
+//   不许像旧实现那样 refRanges.length>1 就把 ref 置 null，只剩一行警告文字。
+it('趋势图正常范围线：每项都画虚线，跨院多区间逐条都画（不许只剩警告文字）', () => {
+  const reports = makeReports() // 35 项带 refRange 的夹具，含跨院？见下补造
+  // 补造两条跨院参考区间（同项、不同 refRange）来断言多区间分支
+  for (const r of reports) {
+    const hgb = r.rows.find((x) => x.name === '血红蛋白')
+    if (hgb) hgb.refRange = r.reportDate === reports[0].reportDate ? '115-150' : '130-175'
+    const plt = r.rows.find((x) => x.name === '血小板')
+    if (plt) plt.refRange = r.reportDate === reports[0].reportDate ? '100-300' : '125-350'
+  }
+  const card = buildCard({ reports, mask: true, today: TODAY })
+  const svg = block(card.html, '⑤ 关键趋势')
+  const svgs = [...svg.matchAll(/<svg[\s\S]*?<\/svg>/g)].map((m) => m[0])
+  assert.ok(svgs.length > 0, '应有趋势图')
+  // 逐图核对：每张图至少一条虚线（参考线），且虚线文字标注存在
+  for (const [i, one] of svgs.entries()) {
+    const dash = (one.match(/stroke-dasharray/g) || []).length
+    assert.ok(dash >= 2, `第 ${i + 1} 张趋势图没有画参考区间的上下虚线（dash=${dash}）`)
+  }
+  // 跨院项：4 条虚线（两条区间各上下），右端标签写区间原文
+  const cross = svgs.filter((s) => /130-175|125-350/.test(s))
+  assert.ok(cross.length >= 2, '跨院多区间的项必须画出两条区间的虚线')
+  for (const s of cross) {
+    assert.ok(/跨院参考区间不同，图上两条区间线都画了/.test(block(card.html, '⑤ 关键趋势')), '警告文字要与图并存，不许替代图')
+  }
+})
+
 it('日期去重：同一年内显示 MM-DD（不重复年份）', () => {
   const card = buildCard({ reports: makeReports(), mask: true, today: TODAY })
   const seg = block(card.html, '② 核心异常项', '③ 本次主诉与核心诉求')
