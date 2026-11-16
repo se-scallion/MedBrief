@@ -32,7 +32,7 @@ const { Text, Paragraph } = Typography
 const { Dragger } = Upload
 
 // 常量与工具已搬到 ./intake/shared.js（2026-11-13 抽页）；此处只保留页面状态与副作用。
-import { runBatch, ST, KIND_OPTIONS, FLAG_TEXT, uid, fmtSize, rawJson, postJson } from './intake/shared.js'
+import { runBatch, ST, KIND_OPTIONS, FLAG_TEXT, uid, fmtSize, rawJson, postJson, sha256FileSafe } from './intake/shared.js'
 import UploadPanel from './intake/UploadPanel.jsx'
 import ReviewPanel from './intake/ReviewPanel.jsx'
 // v0.6 第 2 段：② 校对区整份复用 MedData DataGrid（与报告库编辑弹窗同一个组件、同一个 bundle）
@@ -84,7 +84,15 @@ export default function IntakePage() {
   // 串行执行（识别是重任务，并发会打架且难定位失败）；随时可停；单张失败不中断整批。
   const [batch, setBatch] = useState(null)          // { mode:'ocr'|'import', done, total }
   const batchStop = useRef(false)
-  const [selected, setSelected] = useState([]) // 勾选做拼接的图片 id
+  const [selected, setSelected] = useState([]) // 通用多选（批量移除 / 拼接），顺序 = 勾选顺序
+  // 2026-11-17 批量导入改造（计划 v0.14 / 规格 v1.8）：
+  //   MAX_SELECT = 一次能勾几张；MAX_STITCH = 一次能拼几张（C-9 未放行 ⇒ 常量锁 2，
+  //   闸门在 doStitch 函数里，不靠按钮 disabled —— disabled 只是第二道保险）。
+  const MAX_SELECT = 4
+  const MAX_STITCH = 2
+  // 批内查重索引：必须跨多次 addFiles 累计（"拖一次 + 粘贴一次"是两次调用）
+  const batchIdx = useRef(new Map())      // sha256 -> itemId
+  const batchIdxLoose = useRef(new Map()) // `${name}|${size}` -> itemId（仅 sha 为 null 时兜底）
   const [stitching, setStitching] = useState(false)
 
 
@@ -150,16 +158,41 @@ export default function IntakePage() {
   }, [loadReports])
 
   // ---------- 1. 批量导入 ----------
+  // 导入即查重：三路（规格 §7.1/§7.2）
+  //   P1  批内强比对（sha 非空）：命中 ⇒ **不建第二张卡**（同批误选两次，零信息增量）
+  //   P1′ 批内粗判（sha === null）：命中 ⇒ **仍建卡、只打标**（同名同大小的不同截图很常见，跳过=丢数据）
+  //   P2  对库 exact：命中 ⇒ 仍建卡 + 橙 Tag「同一文件已导入过」（用户可能想覆盖/更新原报告）
+  // 判定真相仍归服务端 findDuplicate（server.mjs:1683），这里只提示、不改入库结果。
   const addFiles = useCallback(
-    (fileList) => {
+    async (fileList) => {
+      if (!fileList || !fileList.length) return
+      // 先把哈希全部算完，再一次性建卡（避免"先建卡再补 Tag"的闪烁）
+      const hashed = await Promise.all(
+        Array.from(fileList).map(async (f) => ({ f, res: await sha256FileSafe(f) })),
+      )
+      const libSha = new Map((reports || []).filter((r) => r.sha256).map((r) => [r.sha256, r.id]))
       const accepted = []
-      for (const f of fileList) {
+      let hashSkipped = 0
+      for (const { f, res } of hashed) {
         const isPdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name || '')
         if (!isPdf && !/^image\//.test(f.type || '')) {
           message.warning(`${f.name} 既不是图片也不是 PDF，已跳过`)
           continue
         }
-        accepted.push({
+        const sha = res.sha
+        const looseKey = `${f.name || '截图'}|${f.size}`
+        if (sha && batchIdx.current.has(sha)) {
+          message.warning('这张图本次已选过，已跳过')
+          pushLog(`批内重复：${f.name} 已选过，已跳过`, 'warn')
+          continue
+        }
+        let predup = null
+        if (!sha) hashSkipped += 1
+        // P1′：批内粗判只打标、绝不跳过
+        if (!sha && batchIdxLoose.current.has(looseKey)) predup = { kind: 'name-size-suspect' }
+        // P2：对库 exact（sha 非空时；降级态对库不做任何判断）
+        if (sha && libSha.has(sha)) predup = { kind: 'exact-file', of: libSha.get(sha) }
+        const item = {
           id: uid(),
           name: f.name || '截图',
           size: f.size,
@@ -172,7 +205,14 @@ export default function IntakePage() {
           parsed: null,
           meta: { reportDate: '', hospital: '' },
           _file: f,
-        })
+          sha256: sha || '',
+          hashSkipped: !sha,
+          hashSkipReason: res.reason || '',
+          predup,
+        }
+        if (sha) batchIdx.current.set(sha, item.id)
+        batchIdxLoose.current.set(looseKey, item.id)
+        accepted.push(item)
       }
       if (!accepted.length) return
       setItems((prev) => [...prev, ...accepted])
@@ -185,9 +225,16 @@ export default function IntakePage() {
         fr.onerror = () => message.error(`${item.name} 读取失败`)
         fr.readAsDataURL(item._file)
       })
-      pushLog(`已加入 ${accepted.length} 个文件（图片/PDF），等待识别`, 'info')
+      const dupLib = accepted.filter((it) => it.predup && it.predup.kind === 'exact-file').length
+      const dupLoose = accepted.filter((it) => it.predup && it.predup.kind === 'name-size-suspect').length
+      const tail = [
+        dupLib ? `库内已有同一文件 ${dupLib} 张` : '',
+        dupLoose ? `可能重复（按文件名+大小粗判）${dupLoose} 张` : '',
+        hashSkipped ? `${hashSkipped} 张未做文件查重` : '',
+      ].filter(Boolean).join('；')
+      pushLog(`已加入 ${accepted.length} 个文件（图片/PDF），等待识别${tail ? ` —— ${tail}` : ''}`, hashSkipped ? 'warn' : 'info')
     },
-    [message, pushLog],
+    [message, pushLog, reports],
   )
 
   // 整页粘贴截图
@@ -205,23 +252,40 @@ export default function IntakePage() {
   const patchItem = (id, patch) =>
     setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...(typeof patch === 'function' ? patch(it) : patch) } : it)))
 
+  // 移除条目时必须**同键删两个 Map**，否则「移除后再拖回来」会被误判成批内重复（规格 §7.2）
+  const forgetIndex = (item) => {
+    if (!item) return
+    if (item.sha256) batchIdx.current.delete(item.sha256)
+    batchIdxLoose.current.delete(`${item.name}|${item.size}`)
+  }
   const removeItem = (id) => {
+    const target = items.find((it) => it.id === id)
+    forgetIndex(target)
     setItems((prev) => prev.filter((it) => it.id !== id))
     setSelected((prev) => prev.filter((x) => x !== id))
+  }
+  // 批量移除 / 清空勾选（操作栏用）：只删本次未入库的内存条目，不碰库
+  const removeSelected = (ids) => {
+    const set = new Set(ids || [])
+    if (!set.size) { setSelected([]); return }
+    items.forEach((it) => { if (set.has(it.id)) forgetIndex(it) })
+    setItems((prev) => prev.filter((it) => !set.has(it.id)))
+    setSelected((prev) => prev.filter((x) => !set.has(x)))
   }
 
   // ---------- 2. 两张拼一张 ----------
   const toggleSelect = (id) => {
     setSelected((prev) => {
       if (prev.includes(id)) return prev.filter((x) => x !== id)
-      if (prev.length >= 2) return [prev[1], id]
+      if (prev.length >= MAX_SELECT) { message.info(`一次最多选 ${MAX_SELECT} 张；再拼请分批`); return prev }
       return [...prev, id]
     })
   }
 
   const doStitch = async () => {
-    if (selected.length !== 2) {
-      message.warning('请勾选恰好两张图片再拼接')
+    // 闸门在函数里（不靠按钮 disabled）：C-9 多张拼接未放行 ⇒ MAX_STITCH = 2
+    if (selected.length !== MAX_STITCH) {
+      message.warning(`请勾选恰好 ${MAX_STITCH} 张图片再拼接`)
       return
     }
     const [a, b] = selected.map((id) => items.find((it) => it.id === id)).filter(Boolean)
@@ -571,6 +635,11 @@ export default function IntakePage() {
   const pendingCount = items.filter((it) => it.status === 'pending').length
   const failedCount = items.filter((it) => it.status === 'failed').length
   const dupCount = items.filter((it) => it.status === 'dup').length
+  // 导入即查重的两种命中分开计数（规格 §7.4：两种语义不合并）
+  const predupCount = items.filter((it) => it.predup && it.predup.kind === 'name-size-suspect').length
+  const libDupCount = items.filter((it) => it.predup && it.predup.kind === 'exact-file').length
+  const hashSkippedCount = items.filter((it) => it.hashSkipped).length
+  const importableCount = classifyImportable(items).targets.length
 
   const rowColumns = useMemo(
     () => [
@@ -884,17 +953,24 @@ export default function IntakePage() {
         pendingCount={pendingCount}
         failedCount={failedCount}
         dupCount={dupCount}
+        predupCount={predupCount}
+        libDupCount={libDupCount}
+        hashSkippedCount={hashSkippedCount}
+        importableCount={importableCount}
         selected={selected}
-        setSelected={setSelected}
         stitching={stitching}
         addFiles={addFiles}
         recognize={recognize}
         doStitch={doStitch}
         removeItem={removeItem}
         toggleSelect={toggleSelect}
+        removeSelected={removeSelected}
         batch={batch}
         onBatchStop={() => { batchStop.current = true }}
         onRecognizeAll={recognizeAll}
+        onImportAll={importAll}
+        maxSelect={MAX_SELECT}
+        maxStitch={MAX_STITCH}
       />
       </div>
 
