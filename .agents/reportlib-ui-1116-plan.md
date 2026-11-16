@@ -1,0 +1,168 @@
+# 报告库列表 UI 整改 —— 排雷与取舍（v0.2，已按 r1 修订）
+
+> **v0.2 修订说明（逐条对应 `reportlib-ui-1116-review-r1.md`）**
+> - **P0-1（触屏没有可用入口）**：`ellipsis + Tooltip` 依赖鼠标悬停，手机触发不了；
+>   次行已有 `推断`(:269) / `全文`(:303) / `无原件`(:329) 三标记，再加单号会挤成 4 个。
+>   **改法**：**整行可点开详情抽屉**（抽屉里已有完整 `reportType`、医院、单号、全文），
+>   这才是超长类型的真入口；次行**最多 2 个标记**，优先级 `推断 > 无原件 > 全文`，
+>   单号尾号收进抽屉、不在列表次行；ellipsis 仅作视觉兜底，**不再当交互入口**。
+> - **P0-2（日期键会悄悄归到今天）**：审核者实测 `dayjs('')`/`null` → INVALID，
+>   **`dayjs(undefined)` → 今天（2026-11-16）**；`reportSort.js:13` 的 `dateKeyOf` 又会退回 `createdAt`。
+>   **改法**：分组键**绝不复用 `dateKeyOf`**，写死 `String(r.reportDate||'').slice(0,10)`，
+>   空值单独成「日期未识别 · 按入库时间」组；真实库实测 **27 个真实日期组 + 1 未识别组 = 28 组、
+>   未识别组恰 1 条**。断言：无 `Invalid Date` / `1970-01-01` / 今天被当作报告日期。
+> - **P1 四**：① C⑥「桌面一行不动」与 D3「桌面也换图标」矛盾 → 改为
+>   「**列与排序不动，仅操作列形态变**」；② 换 List 后分页与「共 N 份」计数补口径
+>   （仍 `pageSize=20`，按**组**分页还是按**记录**分页写死，见 D2）；
+>   ③ `Segmented` 是两态、不能替代三态循环 → 仍走 `sortReports` + `nextSort` 语义，
+>   并补 golden 对比断言；④ 切到回收站 tab **自动退出管理态**。
+> - **CSS 附问**：不塞 `APP_MOBILE_CSS`（`App.jsx:25-40` 是全局单一 owner）；
+>   沿用 `ReportsPanel.jsx:99-102` 的**页面级 `useEffect + #mb-report-day-mobile + cleanup`**，
+>   选择器加 `rb-day-*` 前缀，与 577c07a 的 `#mb-report-drawer-mobile` 不同 id 不冲突；
+>   断言「375 下 head 里恰有 2 段页面级 style」。
+> - **r1 另核**：`List` 必须 `split={false}` 自绘 section（否则又变一张表）；
+>   `Collapse` 砍掉的理由改为「语义相反 / 动画干扰 375 断言 / 信息密度」，不是「默认态难控」。
+
+> 触发（用户 2026-11-16 10:24 原话）：「关于报告库的 UI，还有几个要整改的地方。第一，移动端要考虑空间占用，
+> 缩进各列距离，做好文字超长处理。显示筛选重要信息，医院和指标项都不关心吧？关心的是检查类型。
+> 操作按钮最好有大小显示，不要用文字按钮。日期显示：一天会有很多份报告。可以改为列表显示，
+> 每一天单独为一个小模块（section）。头部写上日期。这样的话只用写一份时间。
+> 日期显示要详细设计，要考虑用开源框架的什么组件。删除按钮也是同理，删除的场景一般比较小，
+> 可以考虑做成隐藏式的。或者是一个比较小的图标按钮。或者在左右上角加一个管理按钮，
+> 点击之后才显示删除按钮。所有的页面改动做成计划，过计划流程。」
+>
+> 排雷：plan-review 通用层（项目定制层反查：3 个命中都只是正文引用，不是文件头标记 →
+> 按 §7.4「无项目定制层，仅通用排雷」）。§8 独立 AI 审核按命名 `reportlib-ui-1116-review-*`。
+> 状态：**方案，未编码**（与已终审的 `reviewgrid-1116-plan.md` v0.6 是两条线；
+> v0.6 第 1 段只碰 `points.js`+`IntakePage.jsx`，**不碰报告库列表布局**，避免同文件改两遍返工）。
+
+---
+
+## 0. 现状取证（只读复跑过）
+
+| 项 | 现状 | 证据 |
+|---|---|---|
+| 列表形态 | antd `Table`（桌面 8 列 / xs 4 列） | `ReportsPanel.jsx:400-414`；列定义 `:225-352` |
+| xs 现有列 | 日期 92 / 医院 / 指标 76 / 操作 96；类型与单号 `responsive:['md']` 被隐藏 | `:225,245,276,293,319,352` |
+| 操作按钮 | 全是 `type="link"` **文字按钮**：查看 / 编辑（仅桌面）/ 删除；窄屏「编辑」收进抽屉 | `:355-370` |
+| 删除 | `Popconfirm` 包文字「删除」，常驻在每行 | `:360-369` |
+| 日期 | 每行重复写 `reportDate`，xs 只写 `slice(5)`（MM-DD），无时间 | `:225-236` |
+| 一天多份 | 真实库 66 份 / 28 个不同日期，**最多一天 8 份**（2026-10-16） | `node -e` 统计 `data/reports.json` |
+| 医院/指标 | 医院常是「未填」；指标项数为 0 时窄屏写「全文」 | `:245-249,276-291` |
+| 已有窄屏样式 | `APP_MOBILE_CSS`（App.jsx:32）、报告抽屉 `rb-row-card`（577c07a） | 两处均 ≤575px 注入、卸载即移除 |
+| 框架 | antd **6.6.6** + dayjs 1.11.23；`List/Collapse/Badge/Dropdown/FloatButton/Segmented` 均可用 | `node -e "require('antd')"` 实测 |
+| 既有拍板口径 | 「优先用已有组件或框架组件」（报告库 Table 就是当时按此换的）；删 Tag 后副标题 nth-child 会位移 | `.agents/MEMORY.md:196`、`architecture.md` 顶栏陷阱段 |
+
+**用户判断与数据一致**：一天最多 8 份 → 每行重复写日期确属浪费；医院列在真实库里大量「未填」、
+指标项数对医生看列表时不是筛选依据；检查类型才是分组/筛选的关键。
+
+## A. 反向排雷（R1…Rn）
+
+| 编号 | 结论 | 证据 |
+|---|---|---|
+| R1 | 用户 5 条现象全部成立 | 上表逐行 |
+| R2 | 「按天 section」不是新发明：项目里 TimelineTab 已做过 375 行块，抽屉刚修过行块卡片 | `web/src/pages/card/TimelineTab.jsx:102`、`ReportsPanel.jsx` `rb-row-card`（577c07a） |
+| R3 | **语义裂缝：报告日期 ≠ 入库日期** | `reportSort.js:13` `dateKeyOf` 明确「缺失退回 createdAt，绝不写回 reportDate」；xs 现在把「未提供」也塞进日期列。按天分组必须给「日期未识别」单独一组，不能伪造日期 |
+| R4 | **筛选口径会被分组打乱**：现有 `kw` 搜索 hospital/type/barcode/date 全字段 + 受控三态排序（点列头循环） | `ReportsPanel.jsx:230-238,400-412`、`reportSort.js`；换成 List/section 后列头排序消失，必须保留等价入口 |
+| R5 | **回收站是同一组件**：`tab==='trash'` 时操作列多「彻底删除」「恢复」，列宽 210 | `:352,355-370`；按天分组/隐藏删除必须两种 tab 都覆盖，否则回收站无法恢复 |
+| R6 | 过度设计：不需要引入新依赖，也不该用 `Calendar`（月历是「选日期」不是「按天分组列报告」） | antd 6.6.6 已装 `List/Collapse/Badge/Dropdown`；`Calendar` 语义不符 |
+| R7 | 频次：用户主动点名 5 项，且真实库一天最多 8 份 → 已发生问题 | 0 段统计 |
+| R8 | 真值来源：日期真值只能是 `reportDate`（单据事实），`createdAt` 只作缺失兜底且**必须显式标「入库时间」** | `reportSort.js:13`；医疗红线「不编造」 |
+| R9 | **与 v0.6 同改 `ReportsPanel.jsx` 的并发写冲突**：v0.6 第 1 段刚把它改成 import `points.js` | 本次会话刚提交前的 `ReportsPanel.jsx:27`；两条线必须错峰、按文件白名单 |
+
+## B. 正向排雷（F1…Fn）
+
+| 编号 | 雷 | 处置 |
+|---|---|---|
+| F1 | 破坏性：UI 改动不许动库/删数据 | 只改渲染与本地 state；删除仍走现有软删→回收站端点，不新写库逻辑 |
+| F2 | 连带：删掉「医院/指标」列会不会让详情抽屉丢信息 | 抽屉 `Descriptions` 已有医院/指标行/单号（`:444-458`），列表只是**不重复显示**；不删数据 |
+| F3 | 键一致性：`reportDate/barcode/reportType` 参与查重与排序 | 分组只改展示，字段与 `dateKeyOf`/`sortReports` 完全不变 |
+| F4 | 呈现误报：「未提供日期」组不能被写成某一天 | 单独 `未识别日期（按入库时间）` section，头部写「日期未识别」不写假日期 |
+| F5 | 测试污染现场 | 375/1440 真浏览器截图 + 断言；不动真实库，`test:reportdelete` 用副本库机制已有 |
+| F6 | 调用面：列表接口为省负载剥掉 text | 分组只吃列表已有字段；全文仍在详情接口，不新增请求 |
+| F7 | 部署态 | 改 `web/**` 必须显式 `MEDBRIEF_WEB_BASE=/ MEDBRIEF_WEB_OUT=dist-next npm run build:web` + 浏览器硬刷新；不改 lib/server，5174 无需重启但要自验 bundle |
+| F8 | 治理资产 | `.agents/MEMORY.md` 版面段写的是「报告库编辑=antd 弹窗 / 列表=Table」，落地时同步一行；`tests/verify-ui.mjs` 加 375 断言防回潮 |
+| F9 | 并发写冲突 | `ReportsPanel.jsx` 是 **v0.6 与本次 UI 的共同文件** → 本计划终判后一次性改列表段；v0.6 第 1 段只动 import，第 2–4 段只动 `IntakePage.jsx`/`points.js`，**错峰** |
+
+## C. 逐项必要性（留 / 砍 / 延后）
+
+| 候选 | 不做会怎样 | 代价 | 收益 | 更便宜手段 | 判定 |
+|---|---|---|---|---|---|
+| ① xs 改「按天 section 列表」：`antd List` + 每组头部日期（用 `List.Item` 分组渲染，或 `Collapse` 默认展开） | 375 下 4 列仍挤、日期每行重复 | 新增 1 个 `ReportDayList` 子组件 ~120 行 | 直接兑现用户 4 条（空间/日期/筛选/图标） | 继续调 Table 列宽（治标，砍） | **留（MVP）** |
+| ② 日期组件详细选型：**antd `List` + `Badge` + `Divider`/自定义 section 头**，配 `dayjs` 格式化（不用 Calendar/Timeline） | 随便挑组件会语义错配 | 0 新依赖 | 「一天一份时间」+ 相对时间/星期 | `Timeline`（偏时间线叙事，砍）/`Calendar`（月历选日，砍） | **留** |
+| ③ 列表只显示「检查类型 + 关键标记 + 操作」，医院/指标项/单号收进详情抽屉 | 医院常「未填」、指标项数占宽 | 列裁剪 + 超长 `ellipsis` | 用户「关心的是检查类型」 | —— | **留** |
+| ④ 操作按钮改**图标 + 固定尺寸热区**（查看/编辑/原件），删除隐藏 | 文字按钮占宽、删除常驻易误点 | antd `Button` `type="text"` + `icon` + `aria-label` + ≥32px 热区 | 空间与防误删 | 只改文字大小（砍） | **留** |
+| ⑤ 删除入口：右上角「管理」开关（`Segmented` 或图标 Button），点开才显示每行删除；回收站仍保留「恢复/彻底删除」 | 删除场景少却每行常驻 | 1 个 state + 条件渲染 | 用户给的三选一里取「管理按钮」 | 左/右上角隐藏式（等价，但无明确开关，砍） | **留** |
+| ⑥ 桌面 ≥576 保持现有 Table 八列与列头排序，**仅操作列形态变** | 桌面用户已习惯排序箭头 | 0 | 零回归 + 兑现「不用文字按钮」 | —— | **留（r1：列与排序不动，仅操作列形态变）** |
+| ⑦ 排序/搜索在 xs 的等价入口 | 换 List 后列头排序消失 | 顶部 `Segmented`（日期/类型/单号）+ 现有搜索框 | R4 | —— | **留** |
+| ⑧ 超长文字处理：类型/医院/单号统一 `ellipsis` + `Tooltip` 全文，`whiteSpace:nowrap` | 长医院名撑破卡片 | CSS + Tooltip | 用户第一条 | —— | **留** |
+| ⑨ 把桌面也改成按天 section | —— | 中 | 未被点名，桌面 Table 有排序优势 | —— | **砍**（⑥ 已覆盖） |
+| ⑩ 给 section 加折叠/动画/虚拟滚动 | 66 份量级用不上 | 大 | 想象需求 | —— | **砍** |
+| ⑪ 换日期选择器组件（DatePicker）到列表头 | —— | —— | DatePicker 是**输入**不是**分组展示**，语义错配（R6） | —— | **砍** |
+| ⑫ 报告库编辑弹窗/详情抽屉一起重做 | —— | 大 | 抽屉 375 刚修好（577c07a），无已证实痛点 | —— | **延后**：触发条件 = 用户点名抽屉/弹窗具体问题 |
+
+## D. 简化后的方案（只列留下的 ①–⑧）+ 触发条件 + 复跑命令
+
+**D1 组件选型（用户点名「要考虑用开源框架的什么组件」）**
+- 分组容器：**antd `List`**，`split={false}`（r1：否则又是扁平行表），`dataSource=按天分组后的 day 数组`，
+  `renderItem` **自绘 section**（头 + 组内行卡），不是 `List.Item` 平铺；
+  每个 section 头 = `List.Item` 自定义 + `Badge`（当天份数）+ `Divider` 细线；**不用** `Calendar`（选日期）、
+  **不用** `Timeline`（叙事时间线，点原件/编辑的交互不便）、**不用** `Collapse`（多一次点击且默认态难控）。
+- 日期格式化：**dayjs 1.11.23**（已装、全局 `zh-cn`）：头部 `YYYY-MM-DD` + 星期 `ddd`；
+  当天/昨天可加相对标签但**必须同时保留绝对日期**（医疗记录不写「今天」这种会漂移的词）。
+  「未识别日期」单独一组，头部写「日期未识别 · 按入库时间」，组内每行仍显示入库时间（R3/F4）。
+- 图标按钮：**antd `Button type="text"` + `icon`**（`@ant-design/icons` 已在 bundle 里被其它页用），
+  `aria-label` 必带、`size="small"`、热区 ≥32px；删除用 `Popconfirm` 包图标按钮（保留二次确认）。
+- 管理开关：**antd `Segmented`**（`浏览 / 管理`）或单个图标 Button 放列表右上角；
+  仅「管理」态渲染每行删除按钮；回收站 tab 下「恢复/彻底删除」不受该开关影响（R5）。
+
+**D2 xs 列表段（≤575px）**
+- **日期键写死** `String(r.reportDate||'').slice(0,10)`（P0-2：绝不 `dayjs(undefined)`、
+  绝不复用 `dateKeyOf` 的 createdAt 兜底）；空值单独成「日期未识别 · 按入库时间」组，
+  组内每行显示 `入库 MM-DD HH:mm`（真实库的 `createdAt`），**不写假日期**。
+  头部用 dayjs 只对**非空真实日期**格式化 `YYYY-MM-DD + 星期`，并用 `Badge` 写当天份数。
+- 每组头部只写**一次**日期；组内每行：**整行可点开详情抽屉**（P0-1：这是超长 `reportType`
+  在触屏上的真入口，抽屉已有完整类型/医院/单号/全文）；主行 `检查类型`（`ellipsis` 仅视觉兜底，
+  **不依赖 Tooltip 悬停**）；次行**最多 2 个标记**，优先级 `推断 > 无原件 > 全文`，
+  单号尾号收进抽屉；**不重复日期、不显示医院列、不显示「N 项」**。
+- 缩进/间距：section 内 padding 8–12px、行间 6px、图标按钮固定 32×32；长文本一律
+  `text-overflow:ellipsis` + `Tooltip`，禁止 `word-break` 把中文挤成竖排（577c07a 的教训）。
+- 顶部保留搜索框（窄 150px）+ 排序入口：**仍走 `sortReports`/`nextSort` 的三态语义**
+  （r1：`Segmented` 两态只是「切换排序字段」，升/降/取消由点同一字段循环，用图标箭头显示方向，
+  不丢「缺值恒末位 + 中文 localeCompare」）；补 golden 对比断言（同一数据集 Table 与 List 顺序一致）。
+- **分页口径写死**：按**记录**分页（不是按组），沿用 `pageSize=20`、`hideOnSinglePage`、
+  `showTotal:共 N 份`；跨页时同一天的组头在每页各自出现一次（组不跨页拆半），
+  断言「66 份 / 28 组 → 4 页、总数 66」。
+- 「管理」开关决定删除按钮显隐；查看/编辑/原件恒为图标按钮；
+  **切到回收站 tab 自动退出管理态**（r1 P1），回收站的「恢复/彻底删除」不受开关影响。
+
+**D3 桌面 ≥576px**：现有 `Table`、8 列、受控三态排序、列宽**不动**（r1 更正 C⑥ 与 D3 的措辞冲突：
+「列与排序不动，仅操作列形态变」）；只把操作列文字按钮换成同款图标按钮
+（用户「不要用文字按钮」在桌面也成立）+ 删除受「管理」开关控制。
+
+**D4 实施与验收**：终判「可以开工」且用户确认后，与 v0.6 错峰改 `ReportsPanel.jsx` 列表段；
+新 `web/src/pages/intake/ReportDayList.jsx`（只 xs 用）；CSS 用**页面级** `useEffect` 注入
+`#mb-report-day-mobile`（选择器 `rb-day-*` 前缀、卸载 cleanup，r1：不塞全局 `APP_MOBILE_CSS`），
+与 577c07a 的 `#mb-report-drawer-mobile` 不同 id 不冲突。
+断言 `tests/verify-report-lib-ui.mjs`：375 下 de=375；**27 真实日期组 + 1 未识别组 = 28 组、
+未识别组恰 1 条、无 Invalid/1970/今天**；每日期在组头只出现 1 次；医院/指标列 0；
+**整行可点开抽屉且抽屉含完整 reportType**；次行标记 ≤2；图标按钮 `aria-label` + ≥32px；
+管理态前删除 0、管理态后 N、切回收站自动退出管理态、回收站恢复/彻底删除仍在；
+golden 排序（Table vs List 同序、缺值恒末位）；分页 4 页共 66 份；
+**375 下 head 恰有 2 段页面级 style**（`mb-report-day-mobile` + `mb-report-drawer-mobile`）；
+1440 桌面 8 列与排序箭头仍在、仅操作列换图标。
+
+**延后项触发条件**：⑫ 用户点名抽屉/编辑弹窗具体问题。
+
+**我无法自解的前提**：无。用户已给删除入口三选一并说明「可以考虑」→ 按最可控的「管理按钮」裁定；
+组件选型已按语义排除 Calendar/Timeline。
+
+**复跑命令**
+```bash
+cd /Users/scallion/Documents/projects/MedBrief
+sed -n '225,370p' web/src/pages/intake/ReportsPanel.jsx
+node -e "const a=require('antd');console.log(!!a.List,!!a.Badge,!!a.Segmented,!!a.Calendar,!!a.Timeline)"
+node -e "const j=require('./data/reports.json');const b={};for(const r of j.reports){const d=(r.reportDate||'(空)').slice(0,10);b[d]=(b[d]||0)+1}console.log(Object.entries(b).sort().slice(-8))"
+MEDBRIEF_WEB_BASE=/ MEDBRIEF_WEB_OUT=dist-next npm run build:web
+npm run test:ui && npm run test:drawer375 && npm run test:no-web-logic
+```
