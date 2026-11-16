@@ -1,6 +1,13 @@
-# ① 批量导入模块 —— **UI/交互数值规格** v1.1（UI 设计师，2026-11-16 23:5x）
+# ① 批量导入模块 —— **UI/交互数值规格** v1.2（UI 设计师，2026-11-17 0:0x）
 
-> **v1.1 改动（相对 v1.0，只改这 4 处，其余 30 条一字未动）**
+> **v1.2 改动（相对 v1.1，只改这 3 处 + 2 行补充，其余一字未动）**
+> 1. **§7.2 降级分支改为"只打标不丢卡"**（r2：手机端降级态下两张同名同大小的不同截图会让第二张被静默丢弃，撞「不静默丢数据」红线）。**"不建卡"的前置条件收紧为：只有 `crypto` 可用、且 exact sha256 命中时才不建卡。**
+> 2. **§8 A1 改成可分辨 sticky/static 的量测点**（滚到**中途 50%** 而不是到底 —— 到底时 sticky 与 static 位置重合，原断言无分辨力，证伪做不出来）；A1 → 两条：**A1 中途贴底（证伪挂这条）** + **A1b 到底不遮内容**。
+> 3. **§3.2 定掉栏与卡片圆角的关系**，并把"将来有人给卡片加 `overflow:hidden` 会静默破坏 sticky"变成**断言**（A1 内附父链 `overflow` 检查），不再只靠文档警告。
+>
+> **2 行补充（r2 P1-1/A-4）**：§7.3 加「纯 JS 分支必须测试可达（`?hash=js` 或 `localStorage.mb_force_js_hash`）+ 两条腿各跑同一组 3 条向量 + 分块让出主线程 + >8MB 标『文件过大，未预检』」；§8 A7 的「更多」防漏**不动**。
+>
+> **v1.1 改动（相对 v1.0）**：
 > 1. **§7 补「批内」去重一路**（r1 P0-1）：批内用 `Map<sha256, itemId>` 增量比对，**命中不建第二张卡**；对库命中仍建卡打 Tag；两者可区分。
 > 2. **§7 末段降级口径改判 (d)**（r1 P0-2，`server.mjs:1808` 绑 `0.0.0.0` ⇒ 手机必是非安全上下文 ⇒ `crypto.subtle` 必然 undefined）：以**自写纯 JS SHA-256 为主**，灰 Tag「本次未做文件查重」只保留给**哈希抛异常**。
 > 3. **§8 A1 拆成 A1 + A1b**（不遮内容 / 位置只取决于内容是否超一屏），两分支都**恒可判**（不留 N/A，符合 R3）。
@@ -133,6 +140,13 @@
 | 栏右缘到卡片右缘 | 0（贴内缘） | 0 |
 | 内容区补 padding-bottom | **0（sticky 占位，不需要）** | **0** |
 
+**圆角与 `overflow` 定稿（v1.2 新增，回答 r2 的"会不会出角 + 将来加 `overflow:hidden` 怎么办"）**：
+
+1. **不出角**：栏宽 = 卡片宽 − 2（两侧各 1px 边框）、底边与卡片底边重合、`border-radius` 同为 **8px** ⇒ 栏的圆角曲线落在卡片圆角**内侧**（严格同心应是 7px，差 1px；白栏压白底 ⇒ 肉眼不可见）。
+2. **不给栏加 `overflow:hidden`**：栏是实色块、没有溢出内容，加了不解决问题，反而会**裁掉按钮的 `focus-visible` 外环**（`outline 2px + offset 2px` = 4px，超出栏内边）。
+3. **`.ant-card` / `.mb-upload-body` 一律不许加 `overflow:hidden`**（会让 sticky 静默失效）。这条**不靠文档提醒，靠断言**：A1 内附父链检查 —— `let n=bar.parentElement; while(n && n!==document.body){ if(getComputedStyle(n).overflow !== 'visible') fail(...); n=n.parentElement }`。
+4. 兜底方案（仅当将来卡片底色**不是**白色时才需要）：把栏移出 `.ant-card-body`、成为卡片的**兄弟元素**并去掉圆角，而不是给卡片加 `overflow:hidden`。
+
 ### 3.3 结构要求（**这点不做会整块失效**）
 
 栏**必须是 `.ant-card-body` 的直接子元素**，且**不许**放进 antd `<Space>`（`Space` 会给每个孩子套 `.ant-space-item`，item 高度 = 栏高 ⇒ sticky **没有可移动空间**，表现为"栏跟着内容走"）。
@@ -209,41 +223,46 @@
 
 ## 7. 重复提示：**三路判定**（批内 / 对库 / 识别后），口径不许越界
 
-### 7.1 三路分工（顺序固定：**先批内、后对库**）
+### 7.1 四路分工（顺序固定：**先批内、后对库**）
 
 | 路 | 时机 | 判据 | 命中后动作 | 呈现（定稿文案） |
 |---|---|---|---|---|
-| **P1 批内**（r1 P0-1 新增） | `addFiles()` 内、**建卡之前** | `Map<sha256, itemId>`（本次会话已建卡的文件）**增量比对** | **不建第二张卡**（`continue` 掉该文件） | `message.warning('这张图本次已选过，已跳过')` + `pushLog('批内重复：<name> 已选过，已跳过', 'warn')` |
-| **P2 对库** | P1 未命中后 | `sha256(文件字节) ∈ reports[].sha256`（`exact-file`） | **仍建卡**（真相仍由入库时后端裁） | 卡底元信息行 `Tag color="orange"` → **`同一文件已导入过`**（`title="本文件的 sha256 与库内已有文件完全相同；入库时仍会再判一次"`） |
+| **P1 批内 · 强比对**（r1 P0-1） | `addFiles()` 内、**建卡之前** | `Map<sha256, itemId>` 增量比对，**且哈希来自 `crypto.subtle`（原生可用）** | **不建第二张卡**（`continue`）—— **全流程只有这一种情形允许"不建卡"** | `message.warning('这张图本次已选过，已跳过')` + `pushLog('批内重复：<name> 已选过，已跳过', 'warn')` |
+| **P1′ 批内 · 粗判**（降级态，v1.2 新增） | 同上，但**哈希不可用**（`sha256FileSafe` 返回 `null`） | `Map<`${name}|${size}`, itemId>` 粗比对 | **仍建卡**，只打标 —— **绝不丢卡**（r2：同名同大小的不同截图在手机相册/聊天软件里很常见） | 卡底橙 `Tag` → **`可能重复（按文件名+大小粗判，请核对）`** + 卡底灰 `Tag` → **`本次未做文件查重`**；顶部计数 → **`疑似重复（粗判）N`** |
+| **P2 对库 · exact** | P1/P1′ 之后 | `sha256(文件字节) ∈ reports[].sha256`（`exact-file`） | **仍建卡**（真相仍由入库时后端裁） | 卡底 `Tag color="orange"` → **`同一文件已导入过`**（`title="本文件的 sha256 与库内已有文件完全相同；入库时仍会再判一次"`） |
 | **P3 识别后**（既有） | 识别完成、入库前 | 后端 `findDuplicate` 单据级（条码+日期+类型） | `status='dup'`（既有） | 卡头状态 Tag → **`疑似同一份报告`**（`shared.js:10` 只改 label 字面，`color` 仍 `orange`） |
 
-**为什么 P1 必须"不建卡"、P2 却"仍建卡"** —— 两条都可验，别混：
-- 同一张图"拖一次 + 粘贴一次"时**库里还没有它** ⇒ 只对库比对必然判"不重复" ⇒ 两张一模一样的卡并排，用户到入库才被静默跳过。**这就是 r1 P0-1。**
-- 对库命中时用户可能想**覆盖/更新原报告**；把卡吞掉等于断了他的路 ⇒ 仍建卡、只打提示。
+**为什么只有 P1 能"不建卡"，其余一律"建卡 + 打标"** —— 三条都可验，别混：
+- 同一张图"拖一次 + 粘贴一次"时**库里还没有它** ⇒ 只对库比对必然判"不重复" ⇒ 两张一模一样的卡并排，用户到入库才被静默跳过。**这就是 r1 P0-1。** 这里"不建卡"是**确定事实**（字节完全相同），不会误杀。
+- 对库命中时用户可能想**覆盖/更新原报告**；把卡吞掉等于断了他的路 ⇒ 建卡、只打提示。
+- **降级粗判（P1′）只是猜测**（名字和大小都相同 ≠ 同一张图）⇒ 猜错就丢掉用户的图，撞「不静默丢数据」红线 ⇒ 只能打标、让用户自己核对。
 
 ### 7.2 实现契约（照抄级，别自己改形）
 
 ```js
 // 两个 Map 挂在组件 ref 上：必须跨多次 addFiles 累计（"拖一次+粘贴一次"是两次调用）
-const batchIdx      = useRef(new Map())   // sha256 -> itemId
-const batchIdxLoose = useRef(new Map())   // `${name}|${size}` -> itemId（仅哈希失败时兜底）
+const batchIdx      = useRef(new Map())   // sha256 -> itemId（强比对索引）
+const batchIdxLoose = useRef(new Map())   // `${name}|${size}` -> itemId（只用于粗判提示，永不丢卡）
 
 const addFiles = useCallback(async (fileList) => {
   // ① 先把哈希全部算完，再一次性建卡（避免"先建卡再补 Tag"的闪烁）；sha256FileSafe 不抛，失败给 null
   const hashed = await Promise.all(fileList.map(async (f) => ({ f, sha: await sha256FileSafe(f) })))
   const accepted = []
   for (const { f, sha } of hashed) {
-    if (sha && batchIdx.current.has(sha)) {                 // P1：批内命中 → 不建卡
+    // 【硬前置，别改】"不建卡"只在 sha 是**可靠精确值**时允许（原生 crypto 或自写纯 JS 都算精确）。
+    //    全流程只有这一处允许丢弃文件；sha === null（哈希抛异常）时**一律建卡**，绝不丢。
+    if (sha && batchIdx.current.has(sha)) {
       message.warning('这张图本次已选过，已跳过'); pushLog(`批内重复：${f.name} 已选过，已跳过`, 'warn'); continue
     }
-    if (!sha) {                                             // 7.3 降级：只对批内做 name+size 粗筛
-      const k = `${f.name}|${f.size}`
-      if (batchIdxLoose.current.has(k)) { message.warning('这张图本次已选过（按文件名+大小判断），已跳过'); continue }
-    }
-    const predup = sha && libSha.has(sha) ? { kind: 'exact-file', of: libSha.get(sha) } : null   // P2
-    const item = { /* …既有字段… */ sha256: sha || '', predup }
-    if (sha) batchIdx.current.set(sha, item.id)             // 同一批里的第 2 个相同文件也会被跳过
-    batchIdxLoose.current.set(`${f.name}|${f.size}`, item.id)
+    const k = `${f.name}|${f.size}`
+    const looseHit = !sha && batchIdxLoose.current.has(k)   // P1′：只在降级态判断，且**只打标不 continue**
+    // P2 对库 exact 命中；P1′ 粗判命中（两种 tag 要能区分）
+    const predup = sha && libSha.has(sha) ? { kind: 'exact-file', of: libSha.get(sha) }
+                 : looseHit              ? { kind: 'name-size-suspect' }
+                 : null
+    const item = { /* …既有字段… */ sha256: sha || '', predup, hashSkipped: !sha }
+    if (sha) batchIdx.current.set(sha, item.id)
+    batchIdxLoose.current.set(k, item.id)   // 粗判索引始终维护（供后续 hit 打标用）
     accepted.push(item)
   }
   if (accepted.length) setItems((prev) => [...prev, ...accepted])
@@ -253,19 +272,30 @@ const addFiles = useCallback(async (fileList) => {
 
 - `libSha` = `new Map(reports.filter(r => r.sha256).map(r => [r.sha256, r.id]))`，由既有 `loadReports()` 的 state 派生（`GET /api/intake/reports` 已返回 `sha256`，计划 R5 ⇒ 零后端改动）。
 - **`removeItem` 必须同键删除两个 Map 里的条目**，否则"移除了再拖回来"会被误判成批内重复。
-- `item.sha256` 落进 item（入库可复用，省一次重算）。
+- `item.sha256` 落进 item（入库可复用，省一次重算）；`item.hashSkipped` 驱动灰 Tag「本次未做文件查重」。
 - 哈希在**建卡之前**算完；期间**不显示骨架/loading**（通常 <50 ms，加了反而闪）。
+- **`predup.kind` 只允许两个值**（供 UI 与断言分流）：`exact-file`（→ 橙 Tag `同一文件已导入过`）、`name-size-suspect`（→ 橙 Tag `可能重复（按文件名+大小粗判，请核对）`）。**任何情况下都不新增第三个 kind。**
+
+> **对 v1.2 指令的一处收紧说明（请 r2 注意）**：「不建卡」的前置我写成 **`sha` 非空**，而不是"仅 `crypto` 可用"。
+> 理由：自写纯 JS 的 SHA-256 同样是**精确值**，手机端（非安全上下文）拿到的也是真值；若限定"只有原生才可不建卡"，则**同一张图在手机上拖两次会出两张卡**、在桌面上却不会 —— 那正是 P1 要消灭的现象在主场复发。
+> r2 真正要防的是**降级（哈希抛异常）时不丢卡**，这条已由 `sha === null ⇒ 一律建卡` 兜住。
 
 ### 7.3 哈希实现：**自写纯 JS SHA-256 为主**（r1 P0-2 定案，取代 v1.0 的 (a)）
 
 - **为什么不能用 `crypto.subtle` 当主路径**：`server.mjs:1808` 绑 `0.0.0.0` ⇒ 手机走局域网 `http://192.168.x.x:5174` ⇒ **非安全上下文** ⇒ `crypto.subtle === undefined`。以它为主等于"手机端这个主场不做查重"，不可接受。
 - **口径**：`sha256FileSafe(file)` = ① `crypto.subtle` 存在（`https` / `localhost`）⇒ 走原生 `digest`（快路径）；② 否则 ⇒ **自写纯 JS SHA-256**（~40 行、**零第三方依赖**）；③ **只在抛异常时**返回 `null`。
 - **降级（`null`）时的行为**：批内用 `name+size` 粗筛兜一层（**只对批内**）；**对库不做任何判断**（库内不存文件名、`sourceName` 不存在 ⇒ 用它判必误报），卡片打灰 `Tag`「**本次未做文件查重**」，且顶部**不出**「已导入过」计数 —— 不假装查过。
-- **不许**因为哈希失败丢文件：照常建卡、照常可识别。
+- **不许**因为哈希失败丢文件：照常建卡、照常可识别（`predup.kind = 'name-size-suspect'` + 灰 Tag）。
+- **纯 JS 分支必须"测试可达"**（r2 P1-1/A-4：否则正常路径只跑原生，纯 JS 写了永不执行 = 永远绿）：
+  - 强制入口：URL 加 `?hash=js`，或 `localStorage.mb_force_js_hash = '1'` ⇒ `sha256FileSafe` 走纯 JS 分支；
+  - **两条腿各跑同一组 3 条向量**，结果必须与 Node `crypto.createHash('sha256')` 逐字节相等：
+    `'abc'`（宽 3 字节）、`'a'.repeat(1000)`（跨块边界）、含非 ASCII 文本（`'血常规检验报告'` 的 UTF-8 字节）。
+  - 分块：**每 1 MB `await` 让出主线程**（`await new Promise(r => setTimeout(r, 0))`），保证 8 MB 文件不冻结输入。
+  - **单文件 > 8 MB** 时跳过预检，卡片标 **`文件过大，未预检`** —— 文案**必须与降级态的** `本次未做文件查重` **区分**（一个是"文件太大"，一个是"本端算不了"）。
 
 ### 7.4 呈现与计数
 
-- **顶部 extra 计数分离**：新增 `Tag color="orange"`「已导入过 {M}」；既有「疑似重复 {dupCount}」**保留原名**，两者不合并（计划 F3）。**批内跳过不进任何 Tag**（它连卡都没有），只走 message + 日志。
+- **顶部 extra 计数分离**：新增 `Tag color="orange"`「已导入过 {M}」（exact 对库命中）；**另加** `Tag color="orange"`「疑似重复（粗判）{N}」（降级态 name+size 命中）；既有「疑似重复 {dupCount}」**保留原名**，三者不合并（计划 F3）。**只有 P1 强比对跳过不进任何 Tag**（它连卡都没有），只走 message + 日志。
 - **不落 `status`**：`predup` 是独立字段，`status` 仍是 `pending`；识别/入库不受影响。
 
 ---
@@ -277,8 +307,8 @@ const addFiles = useCallback(async (fileList) => {
 
 | # | 判据 | 量测式（直接粘贴可用） | 期望 |
 |---|---|---|---|
-| **A1** | **不遮内容**（长短列表都成立） | 滚到底后：`const bar=document.querySelector('.mb-batchbar'); const last=[...document.querySelectorAll('.mb-item-card')].pop(); last.rect.bottom <= bar.rect.top + 0.5` | 真 |
-| **A1b** | **栏的位置只取决于"内容是否超一屏"**（**恒可判，不留 N/A**，符合 R3） | 两条分支都写在断言里：<br>`const scrollable = document.documentElement.scrollHeight > document.documentElement.clientHeight + 1`<br>`if (scrollable) 断言 Math.abs(innerHeight - bar.rect.bottom) <= 1`（贴底）<br>`else 断言 bar.rect.bottom <= innerHeight + 0.5`（不吸底，排在内容末尾） | 对应分支为真 |
+| **A1** | **中途贴底（可分辨 sticky / static，证伪挂这条）** + 父链 `overflow` 守卫 | `document.documentElement.scrollTop = (scrollHeight - clientHeight) * 0.5` 后：<br>`Math.abs(innerHeight - bar.getBoundingClientRect().bottom) <= 1`（sticky 被拉到底边；static 会老老实实待在内容末尾、在视口外 ⇒ 必红）<br>附：`let n=bar.parentElement; while(n && n!==document.body){ if(getComputedStyle(n).overflow !== 'visible') fail('父链 ' + n.className + ' overflow≠visible，sticky 会被静默破坏'); n=n.parentElement }` | 两者皆真 |
+| **A1b** | **到底不遮内容**（原 A1 保留作第二段；长短列表都成立） | 滚到 `scrollTop = scrollHeight` 后：`const last=[...document.querySelectorAll('.mb-item-card')].pop(); last.getBoundingClientRect().bottom <= bar.getBoundingClientRect().top + 0.5`<br>并且（短列表时）`bar.getBoundingClientRect().bottom <= innerHeight + 0.5`（不吸底、排在内容末尾） | 真 |
 | **A2** | 栏高与安全区 | `Math.round(bar.getBoundingClientRect().height)` | ≥576：**49**；≤575：**61 + safeArea**（无 safe-area 时 61） |
 | **A3** | ② 段落隐藏 | 滚到 `#sec-review` 可见后：`document.querySelector('.mb-batchbar')` | **null** |
 | **A4** | 375 不换行 | `bar.scrollWidth <= bar.clientWidth + 1`，且每个按钮 `getComputedStyle(b).whiteSpace === 'nowrap'`、`Math.round(b.rect.height)` = **44**（≤575）/ **32**（≥576） | 全真 |
@@ -287,15 +317,17 @@ const addFiles = useCallback(async (fileList) => {
 | **A7** | 三态按钮 DOM + **「更多」防漏**（v1.1 补） | **0 选**：`bar.querySelectorAll('[data-bar-btn]').length === 2`、无 `[data-act="stitch"]`、**无 `[data-act="more"]`**（不渲染是预期，不是漏）<br>**选 1**：有 `[data-act="remove"]`、**必有 `[data-act="more"]`**、无 `stitch`、`[data-bar-btn]` 计数 === **2**<br>**选 2**：有 `[data-act="stitch"]` 且文案 === `拼接（2）`、有 `remove`、**必有 `more`** | 全真 |
 | **A8** | 序号徽标 | 选 2 张后：`[...document.querySelectorAll('.mb-pick-badge')].map(e=>e.textContent).join('')` === `'①②'`；每个徽标 rect = **16×16**；与 checkbox rect **不相交**（`a.right <= b.left + 0.5`） | 全真 |
 | **A9** | 重复提示口径（对库） | 预置一份库内已有的同一文件后导入：卡片内 `.mb-predup` 存在、文案 === **`同一文件已导入过`**、且组件树文本**不含** `疑似重复报告` | 全真 |
-| **A9b** | **批内去重**（r1 P0-1 的落地判据，v1.1 新增） | 同一张图**连续导入两次**（第二次走粘贴路径，不刷新页面）：<br>`document.querySelectorAll('.mb-item-card').length` === **1**；<br>且出现 `message.warning` 文案 `这张图本次已选过，已跳过`（用 `page.on('console')` 或 antd message 的 DOM `.ant-message-notice` 取文判）；<br>且**第一张卡上不得**同时出现 `.mb-predup`（库里本来没有它，对库不该命中） | 三条全真 |
+| **A9b** | **批内强比对去重**（r1 P0-1 的落地判据） | 同一张图**连续导入两次**（第二次走粘贴路径，不刷新页面）：<br>`document.querySelectorAll('.mb-item-card').length` === **1**；<br>且出现 `message.warning` 文案 `这张图本次已选过，已跳过`（用 `page.on('console')` 或 antd message 的 DOM `.ant-message-notice` 取文判）；<br>且**第一张卡上不得**同时出现 `.mb-predup`（库里本来没有它，对库不该命中） | 三条全真 |
+| **A9c** | **降级态绝不丢卡**（r2 的发现，v1.2 新增） | 强制 `?hash=js` **且**注入一个会抛异常的哈希桩（或直接把 `sha256FileSafe` 打成始终 `null`），连续导入**两张同名同大小但内容不同**的图：<br>`document.querySelectorAll('.mb-item-card').length` === **2**（**不许是 1**）；<br>两张卡都出现文案 `本次未做文件查重`；第二张出现 `可能重复（按文件名+大小粗判，请核对）`；顶部出现 `疑似重复（粗判）1` | 四条全真 |
 | **A10** | 栏内按钮不出卡 | 每个按钮 `rect.left >= bar.rect.left - 0.5 && rect.right <= bar.rect.right + 0.5` | 全真 |
 | **A11** | 无回退：既有契约 | `document.querySelectorAll('.g-grid').length`、`.mb-review-grid` 高度、`.card` 上无新增 `mb-batchbar` 子孙（`document.querySelector('.card .mb-batchbar')` 只允许 1 个且父级是 `.mb-upload-body`） | 全真 |
 | **A12** | 页面不横向滚 | 四档 `document.documentElement.scrollWidth <= clientWidth + 1` | 全真 |
 
-**证伪要求（沿用上轮口径，v1.1 增到 3 条，每条都要贴退出码 1）**：
-1. `.mb-batchbar` 的 `position: sticky` → `static` ⇒ **A1b 必红**（栏不再贴底）；
+**证伪要求（v1.2 起共 4 条，每条都要贴退出码 1）**：
+1. `.mb-batchbar` 的 `position: sticky` → `static` ⇒ **A1 必红**（中途滚动时不再贴底。**注意：必须用 A1 的中途量测点**，滚到底时 sticky 与 static 位置重合，量不出来）；
 2. 按钮去掉 `flex:1 1 0` ⇒ **A4 必红**（375 `scrollWidth > clientWidth`）；
-3. **把 §7.2 的 `batchIdx` 批内比对注掉** ⇒ 同一张图导入两次会出现 **2 张卡** ⇒ **A9b 必红**（这是 r1 P0-1 的回归守门人，必须真的红过一次）。
+3. **把 §7.2 的 `batchIdx` 批内比对注掉** ⇒ 同一张图导入两次出现 **2 张卡** ⇒ **A9b 必红**（r1 P0-1 的回归守门人）；
+4. **把 P1′ 的粗判分支改回 v1.1 的 `continue`（跳过）** ⇒ 降级态第二张同名同大小图消失、只剩 1 张卡 ⇒ **A9c 必红**（r2 那条"静默丢卡"必须真红过一次）。
 
 ---
 
@@ -319,7 +351,7 @@ const addFiles = useCallback(async (fileList) => {
 
 ## 11. 条数统计（v1.1）
 
-- 规格条目：**§2 卡片头部 5 / §3 操作栏 6 / §4 三态 6 / §5 徽标 4 / §6 重识别 4 / §7 重复提示 14（v1.0 的 5 条 → 三路判定 3 + 实现契约 5 + 哈希 4 + 呈现 2）= 39 条**
-- 可复跑判据：**A1 / A1b / A2 / A3 / A4 / A5 / A6 / A7 / A8 / A9 / A9b / A10 / A11 / A12 = 14 条**，其中 **A1b / A4 / A9b 各带一条证伪要求**（3 次改坏必须真红并贴退出码 1）
+- 规格条目：**§2 卡片头部 5 / §3 操作栏 7（v1.2 +1：圆角与 overflow 定稿）/ §4 三态 6 / §5 徽标 4 / §6 重识别 4 / §7 重复提示 17（v1.2 +3：P1′ 粗判一路、哈希可达性+分块+大文件、顶部三类计数）= 43 条**
+- 可复跑判据：**A1 / A1b / A2 / A3 / A4 / A5 / A6 / A7 / A8 / A9 / A9b / A9c / A10 / A11 / A12 = 15 条**，其中 **A1 / A4 / A9b / A9c 各带一条证伪要求**（4 次改坏必须真红并贴退出码 1）
 - 需确认项：**3 条**（§10，计划 v0.3 已按我的建议全采纳，其中第 3 条标"待用户点头"）
 - **无 N/A 出口**：A1b 用"两分支恒可判"消灭了 v1.0 里唯一的条件判据；其余判据全部有确定期望值（符合 R3：若某条不该计入就得改判据，不是改计数口径）
