@@ -19,6 +19,7 @@ import { jget, jpost } from '../../api.js'
 import { rawJson } from './shared.js'
 import { KIND_OPTIONS } from './shared.js'
 import { toPoints, fromPoints } from './points.js'
+import ReportDayList, { IconBtn, ICONS } from './ReportDayList.jsx'
 import { DEFAULT_SORT, sortReports, nextSort } from './reportSort.js'
 // D2（2026-11-15 用户拍板 + 代诊-Manager 审核放行）：报告库编辑态**直接复用 MedData 的指标行
 // 组件 DataGrid**，不再手写 5 个裸 Input。它与「资料导入」tab 里用的是同一个组件、同一个 bundle
@@ -62,6 +63,38 @@ const REPORT_DRAWER_MOBILE_CSS = `
 .rb-row-card .rb-row-sub code { font-size: 11px; }
 `
 
+// 报告库按天列表 · ≤575px（v0.4 r3 ②：行高 ≤52px、8 份 section ≤480px、
+// 首屏可见 1 个组头 + 前 3 行、任何行不许压成 2 行）。选择器统一 rb-day-* 前缀，
+// 与抽屉的 rb-row-card / rb-detail 不冲突。
+const REPORT_DAY_MOBILE_CSS = `
+@media (max-width: 575px) {
+  .rb-day-wrap { max-width: 100%; overflow: hidden; }
+  .rb-day-section { padding: 0 8px 6px; }
+  .rb-day-head { display: flex; align-items: center; gap: 8px; height: 32px;
+    border-bottom: 1px solid #eef1f4; margin-bottom: 4px; }
+  .rb-day-date { font-size: 13px; font-weight: 600; color: #1f2937; white-space: nowrap; }
+  .rb-day-week { font-size: 11px; color: #6b7280; white-space: nowrap; }
+  .rb-day-row { position: relative; min-height: 52px; max-height: 68px; padding: 5px 104px 5px 4px;
+    border-bottom: 1px solid #f6f7f9; overflow: hidden; }
+  .rb-day-row:last-child { border-bottom: 0; }
+  .rb-day-main { display: block; width: 100%; border: 0; background: none; padding: 0; margin: 0;
+    text-align: left; cursor: pointer; line-height: 22px; min-height: 22px; }
+  .rb-day-type { display: inline-block; max-width: 100%; font-size: 13px; font-weight: 600;
+    color: #111827; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+  .rb-day-inferred { font-size: 10px; color: #d46b08; margin-left: 3px; }
+  .rb-day-sub { display: flex; align-items: center; gap: 6px; height: 20px; overflow: hidden;
+    white-space: nowrap; font-size: 11px; color: #6b7280; }
+  .rb-day-sub .ant-tag { line-height: 16px; padding-inline: 4px; font-size: 10px; margin: 0; }
+  .rb-day-icon { display: inline-flex; color: #9ca3af; }
+  .rb-day-icon svg { width: 13px; height: 13px; }
+  .rb-day-actions { position: absolute; right: 2px; top: 6px; display: flex; align-items: center; gap: 0; }
+  .rb-day-pager { padding: 8px 4px 2px; text-align: right; }
+  .rb-day-pager .ant-pagination-total-text { float: left; font-size: 11px; color: #6b7280; }
+}
+.rb-day-wrap .ant-list-split .ant-list-item { border: 0; }
+.rb-day-wrap .ant-list-item { padding: 0; }
+`
+
 const abnormalOf = (r) => (Array.isArray(r.rows) ? r.rows.filter((x) => ['high', 'low', 'positive'].includes(x.status)).length : 0)
 const fmtWhen = (iso) => {
   const t = String(iso || '')
@@ -74,6 +107,8 @@ export default function ReportsPanel() {
   const [reports, setReports] = useState([])
   const [loading, setLoading] = useState(true)
   const [q, setQ] = useState('')
+  // v0.4：管理态只在 active tab 生效；回收站根本不渲染管理控件
+  const [manage, setManage] = useState(false)
   // 排序状态（受控）：默认「日期 降」，与「医生最想看最近那张」一致；取消排序时回到这个默认
   const [sort, setSort] = useState(DEFAULT_SORT)
   // 人工纠错（2026-11-14）：展开某份报告 → 改医院/日期/指标行 → 保存
@@ -99,6 +134,16 @@ export default function ReportsPanel() {
     const style = document.createElement('style')
     style.id = 'mb-report-drawer-mobile'
     style.textContent = REPORT_DRAWER_MOBILE_CSS
+    document.head.appendChild(style)
+    return () => { style.remove() }
+  }, [])
+  // v0.4 r3 ④：按天列表的窄屏样式**独立 useEffect + 独立 id**。
+  // 严禁合并成一个 <style>、严禁 querySelectorAll('style[id^=...]') 清理（会互删）、
+  // 不加 isXs 依赖（断点抖动会反复注入）；CSS 自带 @media。
+  useEffect(() => {
+    const style = document.createElement('style')
+    style.id = 'mb-report-day-mobile'
+    style.textContent = REPORT_DAY_MOBILE_CSS
     document.head.appendChild(style)
     return () => { style.remove() }
   }, [])
@@ -213,9 +258,19 @@ export default function ReportsPanel() {
   }
 
   const kw = q.trim()
-  const hit = useMemo(() => (kw
-    ? reports.filter((r) => [r.id, r.hospital, r.reportType, r.kind, r.reportDate, r.barcode, r.patientName].filter(Boolean).join(' ').includes(kw))
-    : reports), [reports, kw])
+  const hit = useMemo(() => {
+    if (!kw) return reports
+    return reports.filter((r) => {
+      const fields = { id: r.id, hospital: r.hospital, reportType: r.reportType, kind: r.kind,
+        reportDate: r.reportDate, barcode: r.barcode, patientName: r.patientName }
+      const matched = Object.entries(fields).filter(([, v]) => String(v || '').includes(kw))
+      if (!matched.length) return false
+      // r2 ②：命中「医院」等列表不显示的字段时，次行给出「命中：医院 = X」说明
+      const hidden = matched.find(([k]) => ['hospital', 'patientName', 'barcode'].includes(k))
+      if (hidden) r.inferredText = `命中：${hidden[0] === 'hospital' ? '医院' : hidden[0] === 'barcode' ? '单号' : '姓名'} = ${String(hidden[1]).slice(0, 12)}`
+      return true
+    })
+  }, [reports, kw])
 
   // 受控排序：缺值恒末位 + 中文 localeCompare（见文件头注释）
   const sorted = useMemo(() => {
@@ -321,9 +376,8 @@ export default function ReportsPanel() {
       width: 110,
       responsive: ['sm'],   // 手机上「原件」进详情抽屉
       render: (_, r) => (r.fileBlobId ? (
-        <Button size="small" type="link" style={{ paddingInline: 0 }} onClick={() => window.open(`/api/intake/blob/${encodeURIComponent(r.fileBlobId)}`, '_blank')}>
-          {r.fileBlobType === 'application/pdf' ? 'PDF' : '原件'}
-        </Button>
+        <IconBtn icon={ICONS.file} label={r.fileBlobType === 'application/pdf' ? '查看 PDF 原件' : '查看原件'}
+          onClick={() => window.open(`/api/intake/blob/${encodeURIComponent(r.fileBlobId)}`, '_blank')} />
       ) : (
         <Tooltip title="这份是页面导入的，入库时没有保存原图字节 —— 无法回看/重识别，需要重新导入">
           <Text type="secondary" style={{ fontSize: 12 }}>无原件</Text>
@@ -336,12 +390,12 @@ export default function ReportsPanel() {
       width: isXs ? 96 : (tab === 'trash' ? 210 : 170),   // 回收站多一个「彻底删除」，列宽跟着放宽
       render: (_, r) => (
         <Space size={isXs ? 0 : 2} direction={isXs ? 'vertical' : 'horizontal'} style={{ lineHeight: 1.2 }}>
-          <Button size="small" type="link" style={{ paddingInline: 4 }} onClick={() => openView(r.id)}>查看</Button>
+          <IconBtn icon={ICONS.view} label="查看" onClick={() => openView(r.id)} />
           {tab === 'active' ? (
             <>
               {/* 窄屏把「编辑」收进详情抽屉（抽屉里已有编辑入口），操作列只留查看/删除 */}
-              {!isXs && <Button size="small" type="link" style={{ paddingInline: 4 }} onClick={() => openEdit(r.id)}>编辑</Button>}
-              <Popconfirm
+              {!isXs && <IconBtn icon={ICONS.edit} label="编辑" onClick={() => openEdit(r.id)} />}
+              {(manage && tab === 'active') && <Popconfirm
                 title="删除这份报告？"
                 description="该报告的指标与分类会一并从资料卡移除；删除后可在报告库顶部的『回收站』里恢复。"
                 okText="移入回收站"
@@ -349,8 +403,8 @@ export default function ReportsPanel() {
                 okButtonProps={{ danger: true }}
                 onConfirm={() => doDelete(r.id)}
               >
-                <Button size="small" type="link" danger loading={acting === r.id} style={{ paddingInline: 4 }}>删除</Button>
-              </Popconfirm>
+                <IconBtn icon={ICONS.trash} label="删除" danger loading={acting === r.id} stop={false} />
+              </Popconfirm>}
             </>
           ) : (
             <>
@@ -361,7 +415,7 @@ export default function ReportsPanel() {
                 cancelText="取消"
                 onConfirm={() => doRestore(r.id)}
               >
-                <Button size="small" type="link" loading={acting === r.id} style={{ paddingInline: 4 }}>恢复</Button>
+                <IconBtn icon={ICONS.restore} label="恢复" loading={acting === r.id} stop={false} />
               </Popconfirm>
               <Popconfirm
                 title="彻底删除？原件字节也会一并删除，不可恢复。"
@@ -371,7 +425,7 @@ export default function ReportsPanel() {
                 okButtonProps={{ danger: true }}
                 onConfirm={() => doPurge(r.id)}
               >
-                <Button size="small" type="link" danger loading={acting === r.id} style={{ paddingInline: 4 }}>彻底删除</Button>
+                <IconBtn icon={ICONS.purge} label="彻底删除" danger loading={acting === r.id} stop={false} />
               </Popconfirm>
             </>
           )}
@@ -386,9 +440,16 @@ export default function ReportsPanel() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', maxWidth: '100%' }}>
         <Space direction="vertical" size={0}>
           <Text strong style={{ fontSize: 15 }}>报告库</Text>
+          {/* 375 下副标题原来会折成三行（真截图实测），把首屏组头挤下去。
+              窄屏只留「共 N 份 · 无原件 N」，详细统计收进 Tooltip（信息不丢、不占空间）。 */}
           <Text type="secondary" style={{ fontSize: 12 }}>
-            共 {reports.length} 份 · 指标 {totalRows} 行 · 未结构化 {unstructured} 份（只存原件，不是解析失败）
-            {noOriginal > 0 && ` · 无原件 ${noOriginal} 份`}
+            {isXs ? (
+              <Tooltip title={`指标 ${totalRows} 行 · 未结构化 ${unstructured} 份（只存原件，不是解析失败）${noOriginal > 0 ? ` · 无原件 ${noOriginal} 份` : ''}`}>
+                <span>共 {reports.length} 份{noOriginal > 0 ? ` · 无原件 ${noOriginal}` : ''} ⓘ</span>
+              </Tooltip>
+            ) : (
+              <>共 {reports.length} 份 · 指标 {totalRows} 行 · 未结构化 {unstructured} 份（只存原件，不是解析失败）{noOriginal > 0 && ` · 无原件 ${noOriginal} 份`}</>
+            )}
           </Text>
         </Space>
         <Space wrap size={6} style={{ maxWidth: '100%' }}>
@@ -409,11 +470,25 @@ export default function ReportsPanel() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
+          {tab === 'active' && (
+            <Button size="small" aria-label={manage ? '退出管理' : '管理'} title={manage ? '退出管理' : '管理（显示删除按钮）'}
+              type={manage ? 'primary' : 'default'} onClick={() => setManage((v) => !v)} icon={ICONS.manage} />
+          )}
           <Button size="small" onClick={load} loading={loading}>刷新</Button>
         </Space>
       </div>
 
       <Card size="small" styles={{ body: { padding: 0, maxWidth: '100%', overflowX: isXs ? 'hidden' : 'auto' } }}>
+        {/* key 含 tab/q/sort：搜索或排序变化重建组件 → page 归 1（r3 ①，受控分页自己兜） */}
+        {isXs && (
+          <ReportDayList
+            key={`${tab}|${q}|${sort.key}|${sort.order}`}
+            rows={sorted} tab={tab} manage={manage} acting={acting} q={kw}
+            onOpen={openView} onEdit={openEdit} onBlob={(r) => window.open(`/api/intake/blob/${encodeURIComponent(r.fileBlobId)}`, '_blank')}
+            onDelete={doDelete} onRestore={doRestore} onPurge={doPurge}
+          />
+        )}
+        <div style={isXs ? { display: 'none' } : undefined}>
         <Table
           rowKey="id"
           size="small"
@@ -431,6 +506,7 @@ export default function ReportsPanel() {
           scroll={isXs ? undefined : { x: 'max-content' }}
           locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={kw ? `没有匹配「${kw}」的报告` : (tab === 'trash' ? '回收站是空的' : '还没有入库的报告，先去「资料录入」上传')} /> }}
         />
+        </div>
       </Card>
 
       <Drawer
