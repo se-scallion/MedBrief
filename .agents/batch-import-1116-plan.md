@@ -1,4 +1,4 @@
-# ① 批量导入模块 —— 交互与界面重构（需求整理 + 排雷）**v0.6**
+# ① 批量导入模块 —— 交互与界面重构（需求整理 + 排雷）**v0.7**
 
 > 触发（用户原话，2026-11-16 22:58，附截图 2186×1480）：
 > 「批量导入模块需要重新设计交互和界面。」
@@ -12,8 +12,28 @@
 >
 > 排雷：**无项目定制层**（`grep -rlF '**通用层**：~/.agents/skills/plan-review.md' .` 命中 4 个文件，全是正文引用，不是文件头标记），仅通用层。
 > 状态：**v0.3 方案，未编码**。作者：代诊-Manager。实现方：待定。
-> 审核：代诊-报告 **r1**（只准哪几条）+ **r2**（只准哪几条，另有附录 A 的规格 delta 判词）＋ **r3**（只准哪几条，1 条 P0 = B4 锚点错对象）已出；v0.6 已裁到终态，待送 r4。
+> 审核：代诊-报告 **r1**（只准哪几条）+ **r2**（只准哪几条，另有附录 A 的规格 delta 判词）＋ **r3**（只准哪几条，1 条 P0 = B4 锚点错对象）已出；v0.6 已裁到终态并送 r4。
+> 规格现为 **v1.3**（`1d2d609` 的 v1.2 + r3 的 5 条，工作树未提交）；v0.7 采纳其 P1′ 口径更正（`sha` 非空即可不建卡，含纯 JS），并记录其正文 4 处未落地。
 > UI 规格：`.agents/batch-import-1116-spec.md` **v1.1 已出**（39 条数值 + A1–A12/A1b/A9b 共 14 条判据，提交 `6b16606`；v1.0 `35761dc` 已被其取代），v0.4 已并入。
+
+## 修订说明 ⓪‴（v0.6 → v0.7，逐条对 **规格 v1.3**）
+
+| 规格 v1.3 内容 | 本版落点 |
+|---|---|
+| **P1′ 前置条件更正**：不建卡的条件是 **`sha` 非空**（原生或自写纯 JS 都是精确值），**不是"仅 `crypto` 可用"** —— 否则同一张图在手机拖两次出两张卡、桌面却不会，P1 要消灭的现象在主场复发 | D-1 5.3b 已改：**`sha` 非空即走强比对，命中不建卡**；只有 `sha === null` ⇒ 一律建卡（P1′ 只打标）。这是 UI 的反向订正，我采纳（比我的原写法更准） |
+| 圆角定稿：**不加 `overflow:hidden`**（栏是实色块无溢出内容，加了会裁掉按钮 `focus-visible` 外环 4px）；不出角（栏宽 = 卡宽−2，圆角同 8，曲线落在卡圆角内侧） | 记入 D-1 3.1；**明确禁止**给 `.ant-card` / `.mb-upload-body` 加 `overflow:hidden` |
+| 父链 `overflow` 检查从"文档警告"升级为**断言**（A1 内附 `while` 逐级查 `overflow !== 'visible'` ⇒ fail） | 与 B6 同义，直接沿用规格 A1 的写法（B6 保留作独立可跑项，二者不冲突） |
+| 判据 14 → **15 条**（新增 A9c 降级绝不丢卡）、证伪 3 → **4 条**（A1 / A4 / A9b / **A9c**） | D-4 已改引用 |
+| **⚠️ 正文 4 处未落地** | 见下「规格欠账」，已单独提给 UI 出 v1.4 |
+
+### 规格欠账（v1.3 header 声称已改、但正文表格仍是旧值 —— 提给 UI 出 v1.4）
+
+| # | 规格位置 | 现状 | 应为 |
+|---|---|---|---|
+| 1 | §8 **A1** 量测式 | 仍写 `documentElement.scrollTop = (scrollHeight - clientHeight) * 0.5` | 改 **span 锚点**：`cardBottomDoc = .ant-card-body.bottom + scrollTop`、`span = cardBottomDoc − innerHeight`、`span <= 100 ⇒ fail`、`scrollTop = span*0.5`、`await rAF` |
+| 2 | §8 **A3** | 仍断言 `document.querySelector('.mb-batchbar') === null` | 改几何：`bar.getBoundingClientRect().bottom <= 0` |
+| 3 | §8 **A2** | 仍单一 "49 / 61+safeArea" | 改**三态高度**（含 3.3b 灰字 +16 ⇒ 375 下 77） |
+| 4 | **§4.5（3.3b）** | 正文无此小节（只在 header 提） | 补 12px 灰字「先拼前两张，再继续加」，仅 `2 < N ≤ 4` 出现 |
 
 ## 修订说明 ⓪″（v0.5 → v0.6，逐条对 **r3 判词**）
 
@@ -30,7 +50,7 @@
 
 | r2 条目 | 本版落点 |
 |---|---|
-| **P0-1** 降级 `name+size` 命中会**静默丢卡**（手机端同名同大小不同截图很常见） | D-1 5.5 改：降级命中**只打标不跳过** —— `predup:{kind:'name-size-suspect'}` + 卡底 `Tag`「可能重复（按文件名+大小粗判，请核对）」；**5.3b 的不建卡只适用于 `crypto` 可用时的 exact sha256 命中**（前置条件写死）；降级态顶部给可见计数「疑似重复（粗判）N」 |
+| **P0-1** 降级 `name+size` 命中会**静默丢卡**（手机端同名同大小不同截图很常见） | D-1 5.5 改：降级命中**只打标不跳过** —— `predup:{kind:'name-size-suspect'}` + 卡底 `Tag`「可能重复（按文件名+大小粗判，请核对）」；**不建卡的前置条件 = `sha` 非空（原生与纯 JS 同为精确值；仅 `sha === null` 才一律建卡）**；降级态顶部给可见计数「疑似重复（粗判）N」 |
 | **P0-2** `doStitch >= 2` 是**事实放行**挂起的 C-9 | D-1 #4 改两个常量：`MAX_SELECT = 4`（批量移除用）/ **`MAX_STITCH = 2`**（C-9 未放行）；`doStitch` 判 **`selected.length === MAX_STITCH`**；第 5 次选中提示改「一次最多选 4 张」；`拼接` 在 N>2 时 `disabled + aria-disabled` 双保险 |
 | **P1-1** 纯 JS 哈希分支**永不被跑到** = 写了永远绿 | D-1 5.9 新增：`?hash=js` 强制入口；**三条向量**在原生与纯 JS **两条腿各跑一遍**；纯 JS 分块 + 每 1MB `await` 让出；**单文件 >8MB 标「文件过大，未预检」**。D-4 的 B2 扩为 B2/B2b |
 | **P1-2** 「前 1MB + size」折中 | **否决**，理由抄进 5.9⑥ |
@@ -169,7 +189,7 @@
 1. **卡片头**（规格 §2）：顺序 `[checkbox 16] 4 [序号徽标 16（仅选中时）] 8 [状态 Tag] 6 [文件名 flex:1 min-width:96 nowrap ellipsis] 8 [删除 24（热区 44）]`；行高 **32**；checkbox **放左上**（右上已被删除占用，44+44>56 会重叠）；删除图标 `DeleteOutlined` 视觉 24 / 热区 `::before{inset:-10px}`，常态灰 `#8c8c8c`、hover `#ff4d4f`+`#fff1f0`、**非 danger 常驻**；`aria-label/title="移除此文件"`（① 段全页**不出现"删除"二字**）。选中态 `border-color:#c8102e` + `box-shadow:0 0 0 1px #c8102e inset`，只加 `className="mb-item-card"`，**不动 `.card`**。
 2. **收紧每卡按钮**（规格 §6）：`pending` 无按钮、`ocr` 出 `Spin`+「识别中…」、`done` 出「重新识别」（现状 `:120` 已有）、`failed` 出「重试」（新增）。位置 = **卡底整行右对齐**（角落图标会与删除的 44 热区在 56px 内重叠；与元信息同排不新增行高）；375 下元信息先 `flex-wrap`，按钮 `flex:0 0 auto`。
 3. **下方操作栏**（P0-3 + 规格 §3；机制由 `fixed` 改 **`sticky`**）：
-   - 3.1 `position: sticky; bottom: 0; z-index: 6;`，`margin: 0 -12px -12px`（抵消 `.ant-card-body` 12px padding）、`padding: 8px 12px calc(8px + env(safe-area-inset-bottom,0px))`、`background:#fff; border-top:1px solid #f0f0f0; box-shadow:0 -2px 8px rgba(0,0,0,.06); border-radius:0 0 8px 8px`。栏总高：≥576 **49**（32 按钮+8+8+1）/ ≤575 **61 + safe-area**（44+8+8+1）。
+   - 3.1 `position: sticky; bottom: 0; z-index: 6;`，`margin: 0 -12px -12px`（抵消 `.ant-card-body` 12px padding）、`padding: 8px 12px calc(8px + env(safe-area-inset-bottom,0px))`、`background:#fff; border-top:1px solid #f0f0f0; box-shadow:0 -2px 8px rgba(0,0,0,.06); border-radius:0 0 8px 8px`。栏总高：≥576 **49**（32 按钮+8+8+1）/ ≤575 **61 + safe-area**（44+8+8+1）；`2 < N ≤ 4` 出 3.3b 灰字时 **+16**（375 下 77）。**圆角不出角**（栏宽 = 卡宽 −2、圆角同 8，曲线落在卡圆角内侧）；**禁止**给 `.ant-card`/`.mb-upload-body` 加 `overflow:hidden`（栏无溢出内容，加了会裁按钮 `focus-visible` 外环 4px，且会让 sticky 静默失效）。
    - 3.2 渲染条件只有 `items.length > 0`：**不做按滚动位置的条件渲染**（r3：多余，且 `IntersectionObserver`/scroll 回调里 setState 会引入抖动）。② 段落的"消失"由 sticky 布局自然实现（栏随 ① 卡片滚出视口）。**因此 A3 的判据要同步改成几何**（`bar.getBoundingClientRect().bottom <= 0` / 不相交），不能断言 DOM 为 null（已请规格 v1.2 同步）。sticky 占位 ⇒ **内容区不补 `padding-bottom`**。
 - 3.3 三态（规格 §4，**短文案定稿**）：0 选 → `识别（N）`(primary) + `导入（M）`，**「更多」不渲染**；选 1 → `移除选中`(default+danger 文字) + `更多`(icon-only 44 热区)，主操作**不渲染**；选 ≥2 → `拼接（N）`(primary) + `移除选中` + `更多`；批量中 → `识别中 d/t` + `停止`(danger)。长语义进 `title`（`识别` →「一键识别全部 N 张（串行，可停止）」；`导入` →「只入库已识别且未入库的 M 张；疑似重复会自动跳过」）。
    
@@ -183,7 +203,7 @@
    - 5.1 哈希 `sha256FileSafe(file)`（规格 §7.3 定案）：① `crypto.subtle` 存在（`https`/`localhost`）走原生 `digest`（快路径）；② 否则走 **自写纯 JS SHA-256**（~40 行、**零第三方依赖**）；③ **只有抛异常才返回 `null`**。手机端必然是 ②（`server.mjs:1808` 绑 `0.0.0.0` ⇒ 非安全上下文 ⇒ `crypto.subtle === undefined`）。
    - 5.2 两个 `useRef(Map)` **跨多次 `addFiles` 累计**（"拖一次 + 粘贴一次"是两次调用）：`batchIdx` = `sha256 → itemId`；`batchIdxLoose` = `` `${name}|${size}` → itemId ``（仅哈希失败时兜底）。
      - 5.2a **先 `Promise.all` 把哈希全部算完，再一次性建卡**（不闪烁；**不加骨架/loading**，通常 <50ms）。
-     - 5.2b **P1 批内**命中 ⇒ `continue` 掉该文件（**不建第二张卡**）+ `message.warning('这张图本次已选过，已跳过')` + `pushLog('批内重复：<name> 已选过，已跳过','warn')`。
+     - 5.2b **P1 批内**命中（`sha` 非空即可，**原生与自写纯 JS 都算精确值**）⇒ `continue` 掉该文件（**不建第二张卡**）+ `message.warning('这张图本次已选过，已跳过')` + `pushLog('批内重复：<name> 已选过，已跳过','warn')`。
      - 5.2c **`removeItem` 必须同键删两个 Map 里的条目**（`IntakePage.jsx:208-212` 现在只动 `items`/`selected`）——否则"移除后再拖回来"会被误判成批内重复（D-4 的 B3 守这条）。
    - 5.3 **P2 对库**：`sha256 ∈ loadReports() 里的 sha256 集合` ⇒ **仍建卡**，卡底元信息行打 `Tag color="orange"`「同一文件已导入过」（`title="本文件的 sha256 与库内已有文件完全相同；入库时仍会再判一次"`），落 `predup:{kind:'exact-file', of}`（`libSha` = `Map(sha256→reportId)`，由既有 state 派生，零额外请求）。
    - 5.4 分野理由写死（不许实现方自由发挥）：**P1 不建卡** —— 同一张图拖一次+粘贴一次时库里还没有它，只查库必然"不重复"，两张同卡正是 r1 P0-1；**P2 建卡** —— 用户可能想覆盖/更新原报告，吞卡等于断他的路。
