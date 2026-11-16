@@ -1,4 +1,11 @@
-# ① 批量导入模块 —— **UI/交互数值规格** v1.8（UI 设计师，2026-11-17 1:4x）
+# ① 批量导入模块 —— **UI/交互数值规格** v1.9（UI 设计师，2026-11-17 1:5x）
+
+> **v1.9 改 4 处（实现方按约定回来指名，全部有实测，我核过 3 条、1 条改成可断言规则）**：
+> 1. **§1.1 红线 2 事实错**：`@ant-design/icons` **本项目没装**（`package.json` 无、`node_modules/@ant-design` 不存在，构建直接 `Failed to resolve import`）。项目既有惯例是**内联 SVG**（`ReportDayList.jsx:14` 明写「零新增依赖：图标用内联 SVG」）⇒ 改为走内联 SVG，不引第三方图标包。
+> 2. **§5 取样类名事实错**：antd 6 的 `Badge` **自定义 `count`** 渲染的是 `.ant-scroll-number-custom-component`（`antd/es/badge/ScrollNumber.js:56`），wrapper 还带 `ant-badge-not-a-wrapper`；只有数字型 `count` 才走 `.ant-badge-count` ⇒ 取样写成**两个类名都取**，尺寸 CSS 两边都要覆盖。
+> 3. **§2.4 热区被裁**：`::before{inset:-10px}` 的外扩热区会被祖先 `overflow` 裁掉（实现方 375/414 实测 `elementFromPoint` 三点落空）⇒ 补「祖先链必须 `overflow: visible`」，并**在 A6 加父链断言**（不只信一句注释）。
+> 4. **§8 证伪第 2 条不成立**：0 选态两个按钮文案等长（`识别（3）`/`导入（0）`），去掉 `flex` **既不溢出也不换行** ⇒ A4 仍绿、证伪做不出来。改挂 **A4b**（**选 2** 态断窄屏均分：`拼接（2）` vs `移除选中` 文案不等长，去 flex 立刻 96/88 ⇒ 真红）。另：`flex: 1 1 0` 必须带 **`!important`**（antd Button 自带 flex 简写，普通特异性压不住，实测 computed 仍是 `0 0 auto`）。
+> 其余一字不动。
 
 > **v1.8 只删 1 个词**：§1.1 选型表第 3 行（删除按钮）里的 `danger` —— 它与 §2.4（已去 `danger`）和 A6（`!className.includes("ant-btn-dangerous")` 反向断言）**自相矛盾**，而实现方读的是选型表 ⇒ 留着会直接写回 `danger` 然后 A6 当场红。现在全文档零 `danger` 矛盾。
 
@@ -106,7 +113,8 @@
 
 **红线（写进实现要求）**：
 1. **禁止用原生 `<button>` / `<input>` / `<select>` / `<span>` 重画 antd 已有的控件**；本批只允许两类 CSS 覆盖 —— ① **尺寸/热区**（44px 触摸区、16px 徽标、栏高）；② **布局作用域**（`.mb-*` 容器内的 flex/gap/padding）。**不许重画外观**（边框、背景、圆角、阴影一律用 antd 默认或 §1 token）。
-2. 所有图标走 `@ant-design/icons`（本项目已装），**不引第三方图标**。
+2. **图标走内联 SVG，不引第三方图标包** —— `@ant-design/icons` **本项目没装**（`package.json` 无、`node_modules/@ant-design` 不存在），装了会新增依赖且撞既有惯例。写法照 `web/src/pages/intake/ReportDayList.jsx:14` 的「零新增依赖：图标用内联 SVG」：复用它的 `Svg` 组件 + 路径常量（`ICONS.*`），语义对应即可。
+   **本文档正文里出现的 `DeleteOutlined` / `EllipsisOutlined` / `ReloadOutlined` 一律按此替换为内联 SVG**，不留 antd 图标 import。
 3. 若实现时发现某个 antd 组件表达不了，**回来找我改规格**，不要在页面里堆裸标签（否则下一个人不知道哪些是"故意的例外"）。
 
 ## 2. 卡片头部（D-1 第 1 条）
@@ -156,7 +164,10 @@
 ```
 
 - **常态用 antd `type="text"` 默认色，不覆盖颜色**（`type="text"` 已保证常态无底色、无边框）；hover/active 走 antd 默认高亮。**本按钮不加 `danger`、也不写自定义色值** —— 上一版把「常态灰」和 `danger` 写在一起是事实错（`danger` 常态即红），已改。
-- `aria-label="移除此文件"`、`title="移除此文件"`（**文案不写"删除"**：只移除本次未入库条目，见计划 F2）。
+- **热区依赖 `::before` 外扩 ⇒ 祖先链必须 `overflow: visible`**：实现方 375/414 实测，`elementFromPoint(cx±20)` 四点里**三点落空** —— 外扩的 20px 被卡片头部/extra 的 `overflow` 裁掉了。修法（属 §1.1 红线 1 允许的「布局作用域覆盖」）：
+  `.mb-item-card .ant-card-head, .mb-item-card .ant-card-extra { overflow: visible; }`
+  **并要求 A6 对父链做断言**（不许只信这句注释，见 §8 A6）。
+- `aria-label="移除此文件"`、`title="移除此文件"`（**文案不写「删除」**：只移除本次未入库条目，见计划 F2）。
 - **颜色的唯一硬要求是「常态不得是危险红」**，由 A6 的反向断言守着（`color !== 'rgb(255, 77, 79)'` 且 `className` 不含 `ant-btn-dangerous`）；具体灰度交给 antd 默认，不指定 hex。
 
 ### 2.5 卡片选中态
@@ -238,7 +249,8 @@
 | 414 | 366 | 342 | 2 | **`flex: 1 1 0; min-width: 0`** 均分（各 163px） |
 | 375 | 327 | 303 | 2 | 均分（各 143px）；选中 ≥2 时 3 个按钮各 ≈ 95.7px |
 
-- **窄屏均分、大屏自适应**：`@media (max-width: 767px) { .mb-batchbar > .mb-bar-btn { flex: 1 1 0; min-width: 0; } }`
+- **窄屏均分、大屏自适应**：`@media (max-width: 767px) { .mb-batchbar .mb-bar-btn { flex: 1 1 0 !important; min-width: 0; } }`
+  **`!important` 是必须的**：antd `Button` 自带 flex 简写，普通特异性压不住（实测去掉 `!important` 后 computed 仍是 `0 0 auto` ⇒ 均分失效）。
 - 按钮 `white-space: nowrap`；文字超宽时**缩文案不换行**（见 §4 文案）。
 
 ---
@@ -293,7 +305,10 @@ C-9（>2 张拼接）**本批未放行** ⇒ `拼接` 按钮只在 **N === 2** �
   padding: 0; border-radius: 50%; background: #c8102e; font-size: 11px; box-shadow: none; }
 ```
 - 字符：`① ② ③ ④`（U+2460..U+2463）；**未选中时不渲染 `Badge`**（不是 `count={0}` —— `showZero` 会画个 0）。
-- **断言取样对象 = `.ant-badge-count` 本身，不是 `.ant-badge` wrapper**：antd 的 count 是**绝对定位**，wrapper 常常宽 0（量 wrapper 会得 0，测试会假红/假绿）。wrapper 另加 `.mb-pick-badge{display:inline-flex;align-items:center;width:16px;height:16px}` 占住布局。
+- **断言取样对象 = 自定义节点本身**：`document.querySelector('.mb-pick-badge .ant-scroll-number-custom-component, .mb-pick-badge .ant-badge-count')`。
+  **为什么不是 `.ant-badge-count` 一种**：antd 6 里**自定义 `count`（ReactNode）**渲染 `.ant-scroll-number-custom-component`（`antd/es/badge/ScrollNumber.js:56`），只有数字型 `count` 才走 `.ant-badge-count`；wrapper 还会带 `ant-badge-not-a-wrapper`。
+  **为什么不是 wrapper**：count 是**绝对定位**，wrapper 常常宽 0（量 wrapper 会得 0 ⇒ 假红/假绿）。wrapper 另给 `.mb-pick-badge{display:inline-flex;align-items:center;width:16px;height:16px}` 占住布局。
+  **尺寸 CSS 必须两个类名都写**（`.mb-pick-badge .ant-badge-count, .mb-pick-badge .ant-scroll-number-custom-component { …16×16… }`），否则换一种 `count` 写法就丢尺寸。
 - 不重叠的理由：16px 圆压在 16px 方框上（`left:-4;top:-4`）会让勾标与序号互相遮挡，两处都吃点击热区 ⇒ 误触；并排多占 20px（16+4），375 下预算仍够（§2.3 已算）。
 - 上限 **4**：第 5 次勾选 `message.info('一次最多拼接 4 张；再拼请分批')`，且**不加入** `selected`。
 
@@ -412,8 +427,9 @@ const addFiles = useCallback(async (fileList) => {
 | **A2** | 栏高与安全区 —— **按三态判**（v1.3，与 §4.5 对齐，不许与灰字打架） | `const H = Math.round(bar.getBoundingClientRect().height)`<br>`const hint = document.querySelector('.mb-bar-hint')`<br>① 常态（`N≤2`）：断言 `hint === null` 且 `H` === **49**（≥576）/ **61 + safeArea**（≤575）<br>② 灰字态（`2<N≤4`）：断言 `hint` 存在、`Math.round(hint.getBoundingClientRect().height) <= 16`、`hint.scrollWidth <= hint.clientWidth + 1`（不换行）、且 `H` === **65**（≥576）/ **77 + safeArea**（≤575）<br>③ 把①的 `H` 与②的 `H` 相减，**必须恰好 = 16**（灰字行高；防止有人用 padding 凑 77） | 三态各自成立 |
 | **A3** | ② 段落隐藏 —— **几何判据**（v1.3 按 r3 改：条件渲染删掉后栏仍在 DOM 里） | 滚到 `#sec-review` 顶部可见后：`const r = document.querySelector('.mb-batchbar').getBoundingClientRect()`，断言 `r.bottom <= 0`（整条在视口上方之外）或 `r.bottom <= 0.5 || r.top >= innerHeight`（与视口不相交） | 真（**不再断言 DOM 是 null**） |
 | **A4** | 375 不换行 | `bar.scrollWidth <= bar.clientWidth + 1`，且每个按钮 `getComputedStyle(b).whiteSpace === 'nowrap'`、`Math.round(b.rect.height)` = **44**（≤575）/ **32**（≥576） | 全真 |
+| **A4b** | **窄屏均分（证伪挂这条）** —— 选 2 态文案不等长，去 `flex` 立刻不等宽 | 选 2 张后：`const bs = [...bar.querySelectorAll('.mb-bar-btn')]`（取 `拼接（2）`、`移除选中` 两个**带文字**的按钮，排除 icon-only 的更多）；断言 `Math.abs(bs[0].rect.width - bs[1].rect.width) <= 1`，且各自 `whiteSpace === 'nowrap'`、`bar.scrollWidth <= bar.clientWidth + 1` | 414/375 均分（宽差 ≤1） |
 | **A5** | 头部不挤爆 | 文件名元素：`el.scrollWidth > el.clientWidth`（确认发生截断）时 `Math.round(el.rect.width) >= 96`；且状态 Tag 仍可见（`tag.rect.width > 0`） | 全真 |
-| **A6** | 触摸热区 44 + **常态不是危险红**（v1.7 补：原「常态灰」没有任何判据守着） | 删除按钮：`el.getBoundingClientRect()` 视觉 **24×24**；热区用命中判：`document.elementFromPoint(cx±20, cy)`、`(cx, cy±20)` **都返回该按钮**（`::before` 扩展归宿主）；**并且** `getComputedStyle(el).color !== 'rgb(255, 77, 79)'` 且 `!el.className.includes('ant-btn-dangerous')`（防有人把 `danger` 加回来） | 4 点全命中 + 两条颜色断言为真 |
+| **A6** | 触摸热区 44 + **常态不是危险红**（v1.7 补：原「常态灰」没有任何判据守着） | 删除按钮：`el.getBoundingClientRect()` 视觉 **24×24**；热区用命中判：`document.elementFromPoint(cx±20, cy)`、`(cx, cy±20)` **都返回该按钮**（`::before` 扩展归宿主）；**并且** `getComputedStyle(el).color !== 'rgb(255, 77, 79)'` 且 `!el.className.includes('ant-btn-dangerous')`（防有人把 `danger` 加回来）；**并且**向上遍历到 `.mb-item-card`：`let n = el.parentElement; while (n && !n.classList.contains('mb-item-card')) { if (getComputedStyle(n).overflow !== 'visible') fail('热区被裁：' + n.className + ' overflow≠visible'); n = n.parentElement }` | 4 点全命中 + 两条颜色断言 + 父链全 `visible` |
 | **A7** | 三态按钮 DOM + **「更多」防漏**（`[data-act="more"]` 指 **Dropdown 的 trigger 按钮**，**不是**菜单项 —— 菜单在 `body` 的 portal 里，见 A10） | **0 选**：`bar.querySelectorAll('[data-bar-btn]').length === 2`、无 `[data-act="stitch"]`、**无 `[data-act="more"]`**（不渲染是预期，不是漏）<br>**选 1**：有 `[data-act="remove"]`、**必有 `[data-act="more"]`**、无 `stitch`、`[data-bar-btn]` 计数 === **2**<br>**选 2**：有 `[data-act="stitch"]` 且文案 === `拼接（2）`、有 `remove`、**必有 `more`** | 全真 |
 | **A8** | 序号徽标 | 选 2 张后：`[...document.querySelectorAll('.mb-pick-badge')].map(e=>e.textContent).join('')` === `'①②'`；每个徽标 rect = **16×16**；与 checkbox rect **不相交**（`a.right <= b.left + 0.5`） | 全真 |
 | **A9** | 重复提示口径（对库） | 预置一份库内已有的同一文件后导入：卡片内 `.mb-predup` 存在、文案 === **`同一文件已导入过`**、且组件树文本**不含** `疑似重复报告` | 全真 |
@@ -425,7 +441,7 @@ const addFiles = useCallback(async (fileList) => {
 
 **证伪要求（共 4 条，每条都要贴退出码 1）**：
 1. `.mb-batchbar` 的 `position: sticky` → `static` ⇒ **A1 必红**（中途滚动时不再贴底。**注意：必须用 A1 的中途量测点**，滚到底时 sticky 与 static 位置重合，量不出来）；
-2. 按钮去掉 `flex:1 1 0` ⇒ **A4 必红**（375 `scrollWidth > clientWidth`）；
+2. 按钮去掉 `flex:1 1 0 !important` ⇒ **A4b 必红**（**选 2 态**两个文案等长不了的按钮变成 96/88 不等宽）。⚠️ 旧口径「A4 必红」**不成立**：0 选态两个按钮文案等长（`识别（3）`/`导入（0）`），去 flex 既不溢出也不换行 ⇒ A4 仍绿，证伪做不出来；
 3. **把 §7.2 的 `batchIdx` 批内比对注掉** ⇒ 同一张图导入两次出现 **2 张卡** ⇒ **A9b 必红**（r1 P0-1 的回归守门人）；
 4. **把 P1′ 的粗判分支改回 v1.1 的 `continue`（跳过）** ⇒ 降级态第二张同名同大小图消失、只剩 1 张卡 ⇒ **A9c 必红**（r2 那条"静默丢卡"必须真红过一次）。
 
@@ -453,6 +469,6 @@ const addFiles = useCallback(async (fileList) => {
 ## 11. 条数统计（v1.1）
 
 - 规格条目：**§1.1 组件选型 15 / §2 卡片头部 5 / §3 操作栏 7 / §4 三态 8 / §5 徽标 5（v1.7 +1：断言取样对象） / §6 重识别 4 / §7 重复提示 17 = 61 条**
-- 可复跑判据：**A1 / A1b / A2 / A3 / A4 / A5 / A6 / A7 / A8 / A9 / A9b / A9c / A10 / A11 / A12 = 15 条**（A1 锚点已改 ① 卡片、A2 改三态、A3 改几何判据、A9c 改 Tag 粒度 —— v1.3），其中 **A1 / A4 / A9b / A9c 各带一条证伪要求**（4 次改坏必须真红并贴退出码 1）
+- 可复跑判据：**A1 / A1b / A2 / A3 / A4 / A4b / A5 / A6 / A7 / A8 / A9 / A9b / A9c / A10 / A11 / A12 = 16 条**（v1.9 新增 **A4b 窄屏均分**、A6 加父链 `overflow` 断言），其中 **A1 / A4b / A9b / A9c 各带一条证伪要求**（4 次改坏必须真红并贴退出码 1）
 - 需确认项：**3 条**（§10，计划 v0.3 已按我的建议全采纳，其中第 3 条标"待用户点头"）
 - **无 N/A 出口**：A1b 用"两分支恒可判"消灭了 v1.0 里唯一的条件判据；其余判据全部有确定期望值（符合 R3：若某条不该计入就得改判据，不是改计数口径）
