@@ -1,4 +1,9 @@
-# ① 批量导入模块 —— **UI/交互数值规格** v1.4（UI 设计师，2026-11-17 0:3x）
+# ① 批量导入模块 —— **UI/交互数值规格** v1.5（UI 设计师，2026-11-17 0:5x）
+
+> **v1.5 新增 §1.1「组件选型：antd 优先」**（主理人口径 2026-11-17：「设计要优先使用已有的 antd 框架组件」）。
+> 逐件把本批 UI 映射到 antd 组件（`antd@6.6.6`，`Flex/Dropdown/Badge/Tooltip/Popover/Space/Typography/Checkbox/Tag/Button/Card` 均已确认存在），
+> 并把 v1.4 里**手写实现的地方改回 antd 组件**：删除按钮 → `Button`、更多 → `Dropdown`、灰字 → `Typography.Text`、序号徽标 → `Badge`、栏布局 → `Flex`。
+> 同时新增**红线：禁止用原生标签重画 antd 已有控件**（详见 §1.1 末）。
 
 > **v1.4 只改 §8 A1 的一行判据**（r4 的 P0 原样复发在我这边 → 已认）：
 > 原写法 `if (!(span > 100)) fail('夹具不合格…')` 把 **`span ≤ 0`（内容本就不足一屏）也判红** —— 而那是**正确行为**（本就不该吸底），等于把正确实现判红。
@@ -67,6 +72,30 @@
 
 ---
 
+### 1.1 组件选型：**antd 优先**（本批逐件映射，别手搓）
+
+| 界面件 | **用哪个 antd 组件** | 关键 props / 写法 | 为什么不用"看起来更对"的另一个 |
+|---|---|---|---|
+| 卡片选中 checkbox | `Checkbox` | 受控 `checked` + `onChange`；热区用外层 `span.mb-hit44`（antd 无 hit-area prop） | — |
+| 拼接顺序徽标 `①②③④` | `Badge` | `count={<span className="mb-badge-txt">①</span>}`，`showZero={false}`，尺寸用 CSS 覆盖 `.ant-badge-count{width:16px;height:16px;min-width:16px;line-height:16px;padding:0;font-size:11px}` | 不用 `Avatar`（有背景圈过大）、不用 `Tag`（自带边框与内边距） |
+| 删除（移除未入库条目） | `Button` | `type="text"` `shape="circle"` `icon={<DeleteOutlined />}` `danger` + `aria-label="移除此文件"` `title` 同文；热区靠 `.mb-icon-btn::before{inset:-10px}`（antd 无此 prop） | 不用裸 `<button>`（v1.4 的写法，违反"antd 优先"） |
+| 状态 Tag / 重复 Tag | `Tag` | `color` 语义值（`default/green/red/orange`） | — |
+| 重新识别 / 重试 | `Button` | `size="small"` `icon={<ReloadOutlined />}`（失败态加 `danger`） | — |
+| 「识别中…」文字 | `Typography.Text` | `type="secondary"` `style={{fontSize:12}}` + `Spin size="small"` | 不用裸 `<span>` |
+| 栏按钮组 | `Flex` | `align="center"` `gap={8}` `wrap={false}`；每个按钮 `className="mb-bar-btn"` | 不用 `Space`（`Space` 会给每个孩子包一层 `.ant-space-item`，**栏内也用 Space 会把按钮宽度锁死、窄屏无法均分**） |
+| 「更多」 | `Dropdown` | `menu={{ items: [{ key: 'clear', label: '清空勾选', disabled: !selected.length }] }}` `trigger={['click']}` + `Button type="text" icon={<EllipsisOutlined />}` | 不用 `Popover` 自绘列表、不用 `Menu` 平铺（占宽） |
+| 顶部计数与 `+N` 折叠 | `Tag` + `Popover` | `Popover content={<全量 Tag 列表>}` 包住 `+N` | — |
+| 3.3b 灰字提示 | `Typography.Text` | `type="secondary"` + `.mb-bar-hint`（`fontSize:12; lineHeight:16px; whiteSpace:nowrap`） | — |
+| 卡片 | `Card` | `size="small"`，`styles={{ body: … }}`（antd 6 用 `styles`，不用已废弃的 `bodyStyle`） | — |
+| 批量进度/停止 | `Tag color="processing"` + `Button size="small" danger` | 沿用现状 `UploadPanel.jsx:22-26` | — |
+| 页面级提示 | `App.useApp().message` | 既有用法，不引入 `notification` | — |
+| **底部操作栏容器** | **CSS `position: sticky`（唯一例外，必须手写）** | 见 §3.1 | **antd `Affix` 看着最像，但它是 `position:fixed` + 占位元素 ⇒ 会遮内容、必须给内容补 `padding-bottom`**，正是本批花两轮论证要避开的；故容器走原生 CSS，**内部一律用 antd**（`Flex`/`Button`/`Dropdown`/`Typography`/`Tooltip`） |
+
+**红线（写进实现要求）**：
+1. **禁止用原生 `<button>` / `<input>` / `<select>` / `<span>` 重画 antd 已有的控件**；本批只允许两类 CSS 覆盖 —— ① **尺寸/热区**（44px 触摸区、16px 徽标、栏高）；② **布局作用域**（`.mb-*` 容器内的 flex/gap/padding）。**不许重画外观**（边框、背景、圆角、阴影一律用 antd 默认或 §1 token）。
+2. 所有图标走 `@ant-design/icons`（本项目已装），**不引第三方图标**。
+3. 若实现时发现某个 antd 组件表达不了，**回来找我改规格**，不要在页面里堆裸标签（否则下一个人不知道哪些是"故意的例外"）。
+
 ## 2. 卡片头部（D-1 第 1 条）
 
 ### 2.1 结构与顺序（左 → 右）
@@ -93,22 +122,27 @@
 - **先截断文件名，永不换行**；`title` 与 antd `Tooltip` 双保险（`ellipsis={{ tooltip: item.name }}` 保留）。
 - 375 预算实测：卡内宽 `351−24=327`；固定占用 `16+4+16+8+Tag(≈52)+6+8+24 = 134`（未选中时 `−16`=118）⇒ 文件名 **193px**（选中时 177px），远高于 `min-width:96`，**375 下不会把 Tag 挤掉**（§8 A5 断言守）。
 
-### 2.4 删除图标按钮（D-1 第 1 条）
+### 2.4 删除图标按钮（D-1 第 1 条）—— **用 antd `Button`，只覆盖尺寸与热区**
 
-- 图标：antd `DeleteOutlined`，**`font-size: 14px`**（`line-height:1`）。
-- 视觉盒 **24 × 24**，热区 **44 × 44**：
+```jsx
+<Button
+  type="text" shape="circle" danger size="small"
+  icon={<DeleteOutlined />}                 // 图标 font-size 14（antd 默认）
+  className="mb-icon-btn"
+  aria-label="移除此文件" title="移除此文件"
+/>
+```
 
 ```css
-.mb-icon-btn { position: relative; width: 24px; height: 24px; padding: 0; border: 0;
-  background: transparent; border-radius: 8px; color: #8c8c8c; display: inline-flex;
-  align-items: center; justify-content: center; cursor: pointer; }
-.mb-icon-btn::before { content: ''; position: absolute; inset: -10px; }  /* 24+20 = 44 热区，命中归宿主 */
-.mb-icon-btn:hover { color: #ff4d4f; background: #fff1f0; }
-.mb-icon-btn:active { background: #ffe7e6; }
-.mb-icon-btn:focus-visible { outline: 2px solid #c8102e; outline-offset: 2px; }
+/* 只允许这两件事：① 视觉盒收到 24；② 热区扩到 44（antd 无 hit-area prop）。
+   边框/背景/圆角/危险色一律走 antd（type="text" + danger），这里不重画外观。 */
+.mb-icon-btn.ant-btn { width: 24px; min-width: 24px; height: 24px; padding: 0; position: relative; }
+.mb-icon-btn.ant-btn::before { content: ''; position: absolute; inset: -10px; }  /* 24 + 20 = 44 热区，命中归宿主 */
 ```
+
+- **常态灰、hover 变红**：`type="text"` 已保证常态无底色；`danger` 让 hover/active 走 antd 危险色（`#ff4d4f` / `#fff1f0`），**不写自定义 hover 色值**。
 - `aria-label="移除此文件"`、`title="移除此文件"`（**文案不写"删除"**：只移除本次未入库条目，见计划 F2）。
-- **危险色只在 hover/active 出现**，常态灰 `#8c8c8c` —— 理由是"移除未入库条目"可反悔（重新拖进来即可），不必常态红着脸制造焦虑。
+- 危险色**只在 hover/active 出现**：移除未入库条目可反悔（重新拖进来即可），不必常态红脸。
 
 ### 2.5 卡片选中态
 
@@ -169,7 +203,12 @@
 <Card size="small" title="① 批量导入" extra={…}>
   <div className="mb-upload-body">        {/* display:flex; flex-direction:column */}
     <Space direction="vertical" size={10} style={{ width: '100%' }}> …既有内容… </Space>
-    {items.length > 0 && <div className="mb-batchbar"> …按钮… </div>}   {/* 渲染条件只有这一条，不要加 sec（v1.3/r3） */}
+    {items.length > 0 && (
+      <Flex className="mb-batchbar" align="center" gap={8} wrap={false}>
+        {/* 内部一律 antd：Typography.Text(灰字) / Button / Dropdown，见 §1.1 */}
+      </Flex>
+    )}
+    {/* 渲染条件只有 items.length > 0，不要加 sec（v1.3/r3）；容器必须 sticky（antd Affix 会遮内容，见 §1.1 末行） */}
   </div>
 </Card>
 ```
@@ -203,7 +242,13 @@
 算术依据：`一键识别（3）` 13px ≈ 104px > 375 下单按钮可用 95.7px ⇒ 会换行或溢出；`识别（3）` ≈ 78px < 95.7 ✓。
 长语义靠 `title` 补齐：`识别（N）` → `title="一键识别全部 N 张（串行，可停止）"`、`导入（M）` → `title="只入库已识别且未入库的 M 张；疑似重复会自动跳过"`。
 
-**「更多」菜单内容**：仅 1 项「清空勾选」（`selected` 非空时可点）。后续若要加低频项，只往这里加，**不许再加到栏面**。
+**「更多」= antd `Dropdown`**（`trigger={['click']}` + `Button type="text" icon={<EllipsisOutlined />}`）：
+```jsx
+<Dropdown trigger={['click']} menu={{ items: [{ key: 'clear', label: '清空勾选', disabled: !selected.length }] }}>
+  <Button type="text" className="mb-icon-btn" icon={<EllipsisOutlined />} aria-label="更多操作" />
+</Dropdown>
+```
+仅 1 项「清空勾选」（`selected` 非空时可点）。后续若要加低频项，**只往这个 `menu.items` 里加**，不许再加到栏面。
 
 ### 4.5（= r3 的 3.3b）`2 < N ≤ 4` 的死角提示 —— 仅该区间出现
 
@@ -220,12 +265,20 @@ C-9（>2 张拼接）**本批未放行** ⇒ `拼接` 按钮只在 **N === 2** �
 
 ---
 
-## 5. 多选序号徽标（C-9 / 拼接顺序）
+## 5. 多选序号徽标（C-9 / 拼接顺序）—— **用 antd `Badge` 的 `count` 渲染 ①②③④**
+
+```jsx
+<Badge count={<span className="mb-badge-txt">{'①②③④'[selected.indexOf(item.id)]}</span>} />
+```
 
 - 位置：**checkbox 右侧、与 checkbox 不重叠**，`gap: 4px`；顺序 = 勾选顺序（`selected` 数组下标）。
-- 尺寸 **16 × 16**，圆形 `border-radius: 50%`，底色 `#c8102e`，字色 `#fff`，字号 **11px**，`line-height:16px`，`text-align:center`。
-- 字符：`① ② ③ ④`（U+2460..U+2463）。
-- 不重叠的理由：16px 圆压在 16px 方框上（`left:-4;top:-4`）会让勾标与序号互相遮挡，且两处都吃点击热区 ⇒ 误触；并排多占 20px（16+4），375 下预算仍够（§2.3 已算）。
+- 尺寸 **16 × 16** 圆形，底色 **`#c8102e`**（`colorPrimary`），字色 `#fff`，字号 **11px**：
+```css
+.mb-pick-badge .ant-badge-count { width: 16px; min-width: 16px; height: 16px; line-height: 16px;
+  padding: 0; border-radius: 50%; background: #c8102e; font-size: 11px; box-shadow: none; }
+```
+- 字符：`① ② ③ ④`（U+2460..U+2463）；**未选中时不渲染 `Badge`**（不是 `count={0}` —— `showZero` 会画个 0）。
+- 不重叠的理由：16px 圆压在 16px 方框上（`left:-4;top:-4`）会让勾标与序号互相遮挡，两处都吃点击热区 ⇒ 误触；并排多占 20px（16+4），375 下预算仍够（§2.3 已算）。
 - 上限 **4**：第 5 次勾选 `message.info('一次最多拼接 4 张；再拼请分批')`，且**不加入** `selected`。
 
 ---
@@ -235,7 +288,7 @@ C-9（>2 张拼接）**本批未放行** ⇒ `拼接` 按钮只在 **N === 2** �
 | status | 呈现 | 位置 |
 |---|---|---|
 | `pending` | **无按钮**（用户 N2：只留一键识别） | — |
-| `ocr` | `Spin size="small"` + `识别中…`（12px） | 卡底元信息行 |
+| `ocr` | `Spin size="small"` + `Typography.Text type="secondary"` 文案`识别中…`（12px） | 卡底元信息行 |
 | `done` | 按钮 `重新识别`（`size="small"`，`ReloadOutlined` 前置图标，`font-size:13`） | **卡底整行、右对齐** |
 | `failed` | 按钮 `重试`（同上；`danger` 文字色） | 同上 |
 
@@ -368,6 +421,7 @@ const addFiles = useCallback(async (fileList) => {
 2. **只允许改 3 个文件**：`web/src/pages/intake/UploadPanel.jsx`、`web/src/pages/IntakePage.jsx`（传 `sec` 与多选语义）、`web/src/pages/intake/shared.js`（**只改 `ST.dup.label` 一个字面**）。
 3. **新增 DOM/CSS 一律带 `mb-` 前缀**：`mb-upload-body` / `mb-batchbar` / `mb-item-card` / `mb-file-name` / `mb-icon-btn` / `mb-hit44` / `mb-pick-badge` / `mb-predup` / `mb-bar-btn`。
 4. **不引入**新色值：只用 §1 的颜色表。
+4bis. **控件一律用 antd**（见 §1.1）：禁止原生标签重画已有控件；CSS 只许改尺寸/热区/布局作用域，**不许改外观**。
 5. `selected` 语义从"拼接专用 2 张"扩成通用多选后，`doStitch` 必须改 `>=2 && <=4`，顺序取 `selected` 数组顺序；`toggleSelect` 不再挤掉最早（`IntakePage.jsx:214-221`）。
 
 ---
@@ -382,7 +436,7 @@ const addFiles = useCallback(async (fileList) => {
 
 ## 11. 条数统计（v1.1）
 
-- 规格条目：**§2 卡片头部 5 / §3 操作栏 7（含圆角与 overflow 定稿）/ §4 三态 8（v1.3 +2：§4.5 死角提示的呈现与「不进 DOM」规则）/ §5 徽标 4 / §6 重识别 4 / §7 重复提示 17 = 45 条**
+- 规格条目：**§1.1 组件选型 15（v1.5 新增：逐件 antd 映射 + 3 条红线）/ §2 卡片头部 5 / §3 操作栏 7 / §4 三态 8 / §5 徽标 4 / §6 重识别 4 / §7 重复提示 17 = 60 条**
 - 可复跑判据：**A1 / A1b / A2 / A3 / A4 / A5 / A6 / A7 / A8 / A9 / A9b / A9c / A10 / A11 / A12 = 15 条**（A1 锚点已改 ① 卡片、A2 改三态、A3 改几何判据、A9c 改 Tag 粒度 —— v1.3），其中 **A1 / A4 / A9b / A9c 各带一条证伪要求**（4 次改坏必须真红并贴退出码 1）
 - 需确认项：**3 条**（§10，计划 v0.3 已按我的建议全采纳，其中第 3 条标"待用户点头"）
 - **无 N/A 出口**：A1b 用"两分支恒可判"消灭了 v1.0 里唯一的条件判据；其余判据全部有确定期望值（符合 R3：若某条不该计入就得改判据，不是改计数口径）
