@@ -124,7 +124,8 @@ export default function SourceModal({ open, target, card, onClose, onSaved }) {
       // 四元组回写（见 shared.js buildRowPatch 注释：只写 value 会丢参考区间）
       const row = { name: editing.name, value: editing.value, unit: editing.unit, refRange: editing.refRange }
       const [patch] = buildRowPatch([row])
-      const { body } = await jpost(`/api/intake/reports/${encodeURIComponent(target.reportId)}/patch`, {
+      // 同上：jpost 返回的是 body 本身，不是 { body }（rawJson/postJson 才返回 { httpStatus, body }）
+      const body = await jpost(`/api/intake/reports/${encodeURIComponent(target.reportId)}/patch`, {
         rows: [{ ...patch, index: target.rowIndex }],
       })
       if (!body.ok) throw new Error(body.error || '保存失败')

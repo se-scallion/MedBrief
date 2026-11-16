@@ -277,7 +277,10 @@ export default function ReportsPanel() {
   const doRestore = useCallback(async (id) => {
     setActing(id)
     try {
-      const { body } = await jpost(`/api/intake/reports/${encodeURIComponent(id)}/restore`, {})
+      // jpost 直接返回 body（`web/src/api.js` jfetch 已在 !res.ok / ok:false 时抛错），
+      // 不能写成 `const { body } = await jpost(...)` —— 那样 body 是 undefined，
+      // 下一行 `body.ok` 会抛 "Cannot read properties of undefined (reading 'ok')"（2026-11-16 用户实测）。
+      const body = await jpost(`/api/intake/reports/${encodeURIComponent(id)}/restore`, {})
       if (!body.ok) throw new Error(body.error || '恢复失败')
       message.success('已恢复到报告库原位（字段未改动）')
       load(tab)
@@ -332,7 +335,8 @@ export default function ReportsPanel() {
     setSaving(true)
     try {
       const rows = fromPoints(editing.points)
-      const { body } = await jpost(`/api/intake/reports/${encodeURIComponent(editing.id)}/patch`, {
+      // 同上：jpost 返回的是 body 本身，不是 { body }
+      const body = await jpost(`/api/intake/reports/${encodeURIComponent(editing.id)}/patch`, {
         hospital: editing.hospital,
         reportDate: editing.reportDate,
         reportType: editing.reportType,
