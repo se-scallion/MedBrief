@@ -96,8 +96,11 @@ try {
   else throw new Error(`manage=${m.hasManageBtn} del=${m.delBtns}`)
   if (m.iconBtns === m.actionBtns && m.iconBtns === m.hotZones) ok(`操作按钮全为图标 + aria-label + ≥32px 热区（${m.iconBtns} 个）`)
   else throw new Error(`icon=${m.iconBtns} all=${m.actionBtns} hot=${m.hotZones}`)
-  if (m.styles.length === 2 && m.styles.includes('mb-report-day-mobile') && m.styles.includes('mb-report-drawer-mobile')) {
-    ok(`两段页面级 style 并存（${m.styles.join(' / ')}）`)
+  // 不写死「恰 2 段」：编辑弹窗后来加了第 3 段 mb-report-edit-modal-mobile（各独立 useEffect/id）。
+  // 判据改为「必需的 day/drawer 都在 + id 无重复」，新增页面级样式不该让本断言变红。
+  const unique = new Set(m.styles).size === m.styles.length
+  if (unique && m.styles.includes('mb-report-day-mobile') && m.styles.includes('mb-report-drawer-mobile')) {
+    ok(`页面级 style 并存且 id 唯一（${m.styles.join(' / ')}）`)
   } else throw new Error(`styles=${m.styles.join(',')}`)
   if (/共 \d+ 份 · \d+ 天/.test(m.pagerTotal)) ok(`分页 showTotal 覆盖为「${m.pagerTotal}」`)
   else console.log('SKIP 分页断言：当前组数未超过每页 7 组（无分页器）')

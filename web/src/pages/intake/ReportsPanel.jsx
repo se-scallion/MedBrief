@@ -95,6 +95,31 @@ const REPORT_DAY_MOBILE_CSS = `
 .rb-day-wrap .ant-list-item { padding: 0; }
 `
 
+// 编辑报告弹窗 · ≤575px（2026-11-16 用户实测：顶部约 108px 空余 + 整个遮罩要下滑才见底部按钮）
+// 量到的几何：.ant-modal y=108（antd 默认 top:100）、高 795 > 812 视口、
+// .ant-modal-wrap scrollHeight=903 > clientHeight=812。
+// 修法：贴顶 8px；content 限高 = 视口-16；header/footer 固定、body 自己滚；
+// 顶部冗余「保存修改」隐藏（footer 已有）；长说明收成一行 + Tooltip（信息不丢）。
+// 只作用于本弹窗 className=mb-edit-modal，不碰其它三个 Modal；桌面 ≥576 一条都不匹配。
+const REPORT_EDIT_MODAL_MOBILE_CSS = `
+@media (max-width: 575px) {
+  /* antd 6.6.6 实测：className 挂在 .ant-modal 本身，结构是
+     .ant-modal > .ant-modal-container > header/body/footer（没有 .ant-modal-content）。
+     限高必须同时落在 .ant-modal 与 container 上，body 才真的内部滚。 */
+  .mb-edit-modal.ant-modal { max-width: calc(100vw - 16px) !important; width: calc(100vw - 16px) !important;
+    max-height: calc(100vh - 16px) !important; margin: 0 auto !important; padding: 0 !important; top: 8px !important; }
+  .mb-edit-modal .ant-modal-container { max-height: calc(100vh - 16px) !important;
+    display: flex !important; flex-direction: column !important; overflow: hidden !important; }
+  .mb-edit-modal .ant-modal-header { flex: 0 0 auto !important; padding: 10px 12px !important; margin-bottom: 0 !important; }
+  .mb-edit-modal .ant-modal-title { font-size: 14px !important; line-height: 1.4 !important; }
+  .mb-edit-modal .ant-modal-body { flex: 1 1 auto !important; min-height: 0 !important;
+    overflow-y: auto !important; padding: 8px 12px !important; }
+  .mb-edit-modal .ant-modal-footer { flex: 0 0 auto !important; padding: 8px 12px !important; margin-top: 0 !important; }
+  .mb-edit-modal .rb-edit-top-save { display: none !important; }
+  .mb-edit-modal .rb-edit-grid-wrap { max-height: none !important; overflow: visible !important; }
+}
+`
+
 const abnormalOf = (r) => (Array.isArray(r.rows) ? r.rows.filter((x) => ['high', 'low', 'positive'].includes(x.status)).length : 0)
 const fmtWhen = (iso) => {
   const t = String(iso || '')
@@ -144,6 +169,14 @@ export default function ReportsPanel() {
     const style = document.createElement('style')
     style.id = 'mb-report-day-mobile'
     style.textContent = REPORT_DAY_MOBILE_CSS
+    document.head.appendChild(style)
+    return () => { style.remove() }
+  }, [])
+  // 编辑报告弹窗窄屏样式：第三个独立 useEffect / 独立 id（与 day/drawer 不冲突）
+  useEffect(() => {
+    const style = document.createElement('style')
+    style.id = 'mb-report-edit-modal-mobile'
+    style.textContent = REPORT_EDIT_MODAL_MOBILE_CSS
     document.head.appendChild(style)
     return () => { style.remove() }
   }, [])
@@ -632,6 +665,8 @@ export default function ReportsPanel() {
       <Modal
         open={!!editing}
         title={editing ? `编辑报告 ${editing.id}` : '编辑报告'}
+        className="mb-edit-modal"
+        style={{ top: isXs ? 8 : 100 }}   // antd 默认 top:100 → 375 下顶部空余 108px；窄屏贴顶 8px
         width={900}
         onCancel={() => setEditing(null)}
         onOk={saveEdit}
@@ -646,16 +681,22 @@ export default function ReportsPanel() {
                 报告日期与报告类型已由下方 DataGrid 自带输入框接管（同一份 state，不会两处打架）。 */}
             <Space wrap>
               <span>医院：<Input size="small" style={{ width: 220 }} value={editing.hospital} onChange={(e) => setEditing({ ...editing, hospital: e.target.value })} /></span>
-              <Button size="small" type="primary" loading={saving} onClick={saveEdit}>保存修改</Button>
+              <Button className="rb-edit-top-save" size="small" type="primary" loading={saving} onClick={saveEdit}>保存修改</Button>
             </Space>
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              初值来自清洗后视图；保存只改白名单字段（医院 / 日期 / 类型 / 指标行的名称·数值·单位·参考区间），旧值会自动记入 patchLog。
-              报告日期留空就是「未提供」——不要用它代替导入时间。
-              这次的编辑动作（改了哪格、改了几次、有没有增删行）另存进操作记录表，只用于改进识别，不会改动报告本身。
-            </Text>
+            {isXs ? (
+              <Tooltip title="初值来自清洗后视图；保存只改白名单字段（医院 / 日期 / 类型 / 指标行的名称·数值·单位·参考区间），旧值会自动记入 patchLog。报告日期留空就是「未提供」——不要用它代替导入时间。这次的编辑动作（改了哪格、改了几次、有没有增删行）另存进操作记录表，只用于改进识别，不会改动报告本身。">
+                <Text type="secondary" style={{ fontSize: 12 }}>编辑口径说明 ⓘ（保存只改白名单字段，动作另存操作记录）</Text>
+              </Tooltip>
+            ) : (
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                初值来自清洗后视图；保存只改白名单字段（医院 / 日期 / 类型 / 指标行的名称·数值·单位·参考区间），旧值会自动记入 patchLog。
+                报告日期留空就是「未提供」——不要用它代替导入时间。
+                这次的编辑动作（改了哪格、改了几次、有没有增删行）另存进操作记录表，只用于改进识别，不会改动报告本身。
+              </Text>
+            )}
             {/* 指标行：MedData DataGrid（代码列 / 审计色 / 一键修正 / 粘贴解析）。
                 modal 900px 下它的响应式栅格会走 md 断点，横排区域自动折行。 */}
-            <div style={{ maxHeight: '58vh', overflow: 'auto' }}>
+            <div className="rb-edit-grid-wrap" style={{ maxHeight: '58vh', overflow: 'auto' }}>
               <DataGrid
                 date=""
                 time=""
