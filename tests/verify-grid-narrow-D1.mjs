@@ -80,7 +80,6 @@ async function openModalGrid(width, height) {
         const dashedOk = cs.borderTopStyle === 'dashed' && e.classList.contains('border-dashed')
         return cs.borderTopWidth !== '1px' || (cs.borderTopStyle !== 'solid' && !dashedOk)
       }).length,
-      gctlDashed: gctls.filter((e) => getComputedStyle(e).borderTopStyle === 'dashed').length,
       // ⑥ 真实未识别行的虚线样式（要求集合非空才判；空集 = N/A，不记 PASS）
       dashedReal: [...root.querySelectorAll('.g-ctl.border-dashed')].map((e) => getComputedStyle(e).borderTopStyle),
       // 虚线契约：就地给一个真实 .g-ctl 临时加 border-dashed 读样式（不依赖 _suspicious 夹具）
