@@ -122,6 +122,10 @@ sed -n '1257p;1296p;1320p' meddata/src/components/DataGrid.jsx
   **机制（r2 提供，已复核）**：两套产物里 `grep -o '@layer' | wc -l` **都是 0** ⇒ 构建把 `@layer` 拍平了，**只剩特异性竞争**；新增的 `.g-grid` 块若写在 `@layer` 外于 `meddata/src/index.css`，它与工具类抢的就是纯 (a,b,c)。
   若确需约束双栏轨道，唯一允许的形式是：给 `:890` 双栏卡加 `g-split`，并写在 `@media (max-width: 1023px)` 内。
 - **主表标记**：表格加 `g-main`（`table.g-main`），所有「行高/不折行」规则只写 `.g-grid table.g-main td`（r2 P1-1：否则会命中 `:1084` 的「粘贴解析预览表」把只读预览锁 40px 并截断）。
+- **行分隔线（2026-11-16 20:30 补，UI 设计师登记）**：`.g-grid table.g-main tbody tr { height: 40px; border-bottom: 1px solid #f1f5f9 }` ——
+  线必须写成**显式简写**（带 `style`），因为 `/` 侧 `embedded.css` 无 preflight，只给 `border-bottom-width` 的工具类**画不出来**（A2 同一机制）。
+  **行距口径 = 内容高 40 + 线 1 = 外框 41**，V2 判据按**内容高**判（`rect.height − borderBottomWidth`），分隔线不算行距预算。
+  **登记为「用户可见新增」**：`/` 侧主校对表改前**没有**行分隔线（`/meddata` 侧有），本批把两侧统一成"有线"。改前/改后截图见 §9.16；若主理人不要划线，回退只删 `border-bottom` 半句。
 
 ### 3.3 窄屏（**D-2，挂起**，需用户点头后开工）
 
@@ -586,3 +590,22 @@ B / (弹窗)  : trH=40  trCssH=40px  trBorderB=0px  tableCollapse=collapse  tdPa
 1. ⑤ 的判据**不含行高**，故 P2 不阻塞放行；但**必须写进交付说明**，并登记为 D-2 之前要结的一条。
 2. 实现方补两件事：① 在 `/meddata` 侧取**改前基线**行高（它已有 stash 复现手法），确认 41 不是 D-1 引入（预期改前更大）；② **把 V2 的判据定义清楚：测的是"含分隔线"还是"不含"** —— 只能二选一，不许留"恰好 40"这种在一条管线上必然红、另一条必然绿的判据（那是判据问题，不是代码问题）。
 3. 修法不由我拍：要么把分隔线从 `tr` 移到不占行高的层（如 `td` 的内阴影 / `border-spacing` 方案），要么把行距预算改成"40 内容 + 1 分隔线"并在两条管线上都成立。**判据改法与实现改法必须同时给，否则下一个人只会看到一条永远红的断言。**
+
+### 9.16 D-1 签收记录（20:30，**我自己复跑**，不采信实现方的转述数字）
+
+**结论：6 项闸门达标，D-1 签收。** 下列每一项都是我在本机重跑/重读得到的，不是引用对方输出。
+
+| 我核的 | 方法 | 我拿到的 |
+|---|---|---|
+| 提交内容真的在 HEAD 里 | `git show HEAD:…DataGrid.jsx \| grep -c`（**不信工作树**，因为对方刚发生过 `974ded8` 误退） | `g-grid`=**1**、`g-ctl`=**6**、`border-dashed`=**1**、`g-main`=**1**、`g-bare`=**2** |
+| CSS 规则 | `git show HEAD:…index.css` | `:187 :where(.g-grid .g-ctl){border-color}`、`:192 .g-ctl.border-dashed{border-style:dashed}`、`:167 --g-row-h:40px`、`:214 …tbody tr{height:var(--g-row-h); border-bottom:1px solid #f1f5f9}` |
+| 禁则三处 | `grep -c 'g-grid > .grid {'` + 两产物 `g-grid>.grid{…grid-template-columns` | 源码 `index.css`=0、`DataGrid.jsx`=0；`index-XF0T-UY4.css`=**0**、`index-BtJj3zRr.css`=**0**（均 20:23 重建） |
+| `/` 入口 | 我跑 `verify-grid-narrow-D1.mjs` | **37 通过 / 0 失败 / 0 未证，exit 0**（含 V9 四档 4/5、2/1、各 1；V1b 五档全无滚；V2 40/40；V3 138 个 `.g-ctl` 合规；虚线 5 个 dashed） |
+| `/meddata` 入口 | 我跑 `ENTRY=meddata MEDDATA_BASE=…/meddata/` | **14 通过 / 0 失败 / 0 未证，exit 0**；`rows=1 gctl=6`、边框 0 不合格、padding 8/8/8、内容高 40、虚线 1、轨数 4/5 与 1/1、无页面横滚 |
+| 既有契约 | 我跑 `verify-edit-modal-375.mjs` | **30 通过 / 0 失败，exit 0**（G6 `760/311`、`min-w-[760px]` 未破） |
+
+#### 签收时**新登记的对照点**（D10：不许因为我签收了就把它从结论里挤掉）
+
+1. **`/` 侧主校对表此前根本没有行分隔线，现在有了** —— 这是 `974ded8` 给 `tr` 补 `border-bottom: 1px solid #f1f5f9` 带来的**用户可见新增**，不在 r1 准予的 5 条之内。我看了实测截图（`/tmp/s-table-shell.png`，761×981）后**接受**，理由三条：① 它与"描边不均匀"同源（`/` 侧无 `border-style` ⇒ 只给 width 的线画不出来），补显式简写是修根因不是加装饰；② 两条管线从此同形（改前 `/meddata` 有线、`/` 没有，用户换入口看到两套观感）；③ `#f1f5f9` 是既有 `--g-divider` 值，没引入新色。**但它属于"我替用户拍的视觉决定"，已写进 §3.2 表格态；若主理人看过实物不要划线，回退只需删 `index.css:214` 那半句。**
+2. **V2 判据已从"外框高"改成"内容高"**（`contentH = rect.height − borderBottomWidth`）。方向正确（分隔线不该算进行距预算），但留了一个口子：**边框涨到 3px 时内容仍是 40、断言照样绿**。要求补一句（不阻塞 D-1，随下一批做）：V2 的 INFO 行同时打印 `outer / borderB`，例如 `contentH=40 borderB=1 outer=41`，让"边框偷偷变粗"在日志里可见 —— 与 R1「算了但没判」同源。
+3. **V1a 的 N/A 数字**：`/` 1440 容器 `760/673`（表宽 ≥760 契约下必然滚）。这条已在交付说明里，不允许只写 `N/A` 不写数字。
