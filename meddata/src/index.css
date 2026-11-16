@@ -207,7 +207,11 @@
 /* 行高锁 40px、单行不折行、超长省略（行高在 44/62 之间跳是「间距宽」的主因） */
 /* 只作用于**主校对表**（g-main）。r2 P1-1：原来写成 `table td/tr` 会命中
    :1084 的「粘贴解析预览表」（min-w-[520px]、只读），把预览锁成 40px 行高并截断。 */
-.g-grid table.g-main tbody tr { height: var(--g-row-h); }
+/* 行分隔线必须写简写：`tr` 上是 `border-b border-slate-100`，而 / 侧 .border-b 只给 width、
+   没有 style（同 A2 机制）⇒ 主校对表在 / 里根本不画分隔线，/meddata 里却画。
+   两管线口径不一致正是 P2 行高 40 vs 41 的成因。显式简写后两侧都画，行高口径统一为
+   「内容 40 + 分隔线 1 = 外框 41」。 */
+.g-grid table.g-main tbody tr { height: var(--g-row-h); border-bottom: 1px solid #f1f5f9; }
 .g-grid table.g-main td { padding: 4px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .g-grid table.g-main th { padding: 8px; white-space: nowrap; }
 .g-grid table.g-main td .g-ctl { white-space: nowrap; text-overflow: ellipsis; }

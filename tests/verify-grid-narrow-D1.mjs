@@ -52,7 +52,10 @@ async function openModalGrid(width, height) {
     const de = document.documentElement
     const scroller = root.querySelector('div.overflow-x-auto')
     const trs = [...root.querySelectorAll('tbody tr')]
-    const heights = trs.map((t) => Math.round(t.getBoundingClientRect().height))
+    // V2 口径（UI 定稿）：**内容高** = 外框 − border-bottom。分隔线的高度另计，
+    // 否则 /meddata（有 preflight，线会画）恒为 41、/（无 preflight）恒为 40，成"永远红/永远绿"。
+    const rowContent = (t) => Math.round(t.getBoundingClientRect().height - parseFloat(getComputedStyle(t).borderBottomWidth || 0))
+    const heights = trs.map(rowContent)
     const cells = [...root.querySelectorAll('tbody td')]
     const st = (e) => { const cs = getComputedStyle(e); return { bs: cs.borderTopStyle, bw: cs.borderTopWidth, pl: cs.paddingLeft, h: Math.round(e.getBoundingClientRect().height) } }
     const infoCard = root.querySelector(':scope > .card.grid')
@@ -147,7 +150,85 @@ async function openPageGrid(width, height) {
   return d
 }
 
+/** ⑤ /meddata 入口（UI 定稿配方）：5174 活路由，真产物 dist-meddata，API/静态资源都正常。 */
+async function openMeddataGrid(width, height) {
+  const p = await browser.newPage({ viewport: { width, height } })
+  const errs = []
+  p.on('pageerror', (e) => errs.push(e.message.slice(0, 120)))
+  await p.goto(`${BASE}/meddata/`, { waitUntil: 'domcontentloaded' })
+  await p.waitForTimeout(2500)
+  await p.getByRole('button', { name: /导入资料/ }).first().click({ timeout: 8000 }).catch(() => {})
+  await p.waitForTimeout(900)
+  await p.getByRole('button', { name: /检验报告/ }).first().click({ timeout: 8000 }).catch(() => {})
+  await p.waitForTimeout(1200)
+  const pdf = process.env.FIXTURE_PDF || '/Users/scallion/Documents/projects/ds-bot/home/attachments/v1/files/d6/d648e04bfbfec6df7cb977db4599905ff2c540ce624053db3a77e9d2fd6b9b81/V020089_刘梦圆_新疆_新疆军区总医院_血液科_血液_MaYo骨髓染色体核型分_2026072318053636.pdf'
+  const fi = p.locator('input[type=file]').first()
+  if (await fi.count()) await fi.setInputFiles(pdf).catch(() => {})
+  await p.waitForTimeout(7000)
+  const d = await p.evaluate(() => {
+    const root = document.querySelector('.g-grid')
+    if (!root) return { noRoot: true }
+    const trs = [...root.querySelectorAll('tbody tr')]
+    const rowContent = (t) => Math.round(t.getBoundingClientRect().height - parseFloat(getComputedStyle(t).borderBottomWidth || 0))
+    const hs = trs.map(rowContent)
+    const gctls = [...root.querySelectorAll('.g-ctl')]
+    const st = (e) => { if (!e) return null; const cs = getComputedStyle(e); return { bs: cs.borderTopStyle, bw: cs.borderTopWidth, pl: cs.paddingLeft, h: Math.round(e.getBoundingClientRect().height) } }
+    const infoCard = root.querySelector(':scope > .card.grid')
+    const splitCard = root.querySelector(':scope > .grid:not(.card)')
+    const n = (e) => (e ? getComputedStyle(e).gridTemplateColumns.split(' ').filter(Boolean).length : null)
+    return {
+      rows: trs.length, hMin: hs.length ? Math.min(...hs) : null, hMax: hs.length ? Math.max(...hs) : null,
+      gctlCount: gctls.length,
+      gctlBad: gctls.filter((e) => { const cs = getComputedStyle(e); const dz = cs.borderTopStyle === 'dashed' && e.classList.contains('border-dashed'); return cs.borderTopWidth !== '1px' || (cs.borderTopStyle !== 'solid' && !dz) }).length,
+      val: st(root.querySelector('tbody input.g-ctl[class*="font-mono"]')),
+      code: st(root.querySelector('tbody button.g-ctl')),
+      arrow: st(root.querySelector('tbody select')),
+      dashedReal: [...root.querySelectorAll('.g-ctl.border-dashed')].map((e) => getComputedStyle(e).borderTopStyle),
+      infoTracks: n(infoCard), splitTracks: n(splitCard),
+      deSW: document.documentElement.scrollWidth, deCW: document.documentElement.clientWidth,
+    }
+  })
+  await p.screenshot({ path: `/tmp/grid-meddata-${width}.png` })
+  await p.close()
+  d.pageErrors = errs
+  return d
+}
+
+async function runMeddataEntry() {
+  const cases = [{ w: 1440, h: 1000, info: 4, split: 5 }, { w: 375, h: 812, info: 1, split: 1 }]
+  for (const c of cases) {
+    const m = await openMeddataGrid(c.w, c.h)
+    if (m) measure(`⑤ /meddata ${c.w} 原始`, JSON.stringify({ rows: m.rows, hMin: m.hMin, hMax: m.hMax, gctl: m.gctlCount, gctlBad: m.gctlBad, val: m.val, code: m.code, arrow: m.arrow, tracks: `${m.infoTracks}/${m.splitTracks}` }))
+    if (!m || m.noRoot) { fail(`⑤ /meddata ${c.w} 未渲染出 .g-grid（pageErrors=${JSON.stringify(m && m.pageErrors || [])}）`); continue }
+    if (m.rows >= 1 && m.gctlCount >= 1) ok(`⑤ /meddata ${c.w} 渲染成功：rows=${m.rows} gctl=${m.gctlCount}`)
+    else { fail(`⑤ /meddata ${c.w} 无有效行：rows=${m.rows} gctl=${m.gctlCount}（空态不算通过）`); continue }
+    if (m.gctlBad === 0) ok(`⑤ /meddata ${c.w} .g-ctl 边框合规（${m.gctlCount} 个，1px 且 solid 或 dashed）`)
+    else fail(`⑤ /meddata ${c.w} 有 ${m.gctlBad}/${m.gctlCount} 个 .g-ctl 边框不合规`)
+    const ps = [m.code, m.val, m.arrow].filter(Boolean)
+    if (ps.length && ps.every((x) => x.pl === '8px')) ok(`⑤ /meddata ${c.w} padding-left 全 8px（${ps.length} 个取样）`)
+    else fail(`⑤ /meddata ${c.w} padding-left 不一致：${ps.map((x) => x.pl).join('/')}`)
+    if (m.hMin === 40 && m.hMax === 40) ok(`⑤ /meddata ${c.w} 行内容高恰好 40px（${m.rows} 行）`)
+    else if (m.hMin !== null && m.hMax - m.hMin <= 1) ok(`⑤ /meddata ${c.w} 行内容高 40±1（${m.hMin}~${m.hMax}）`)
+    else fail(`⑤ /meddata ${c.w} 行内容高 ${m.hMin}~${m.hMax}（期望 40）`)
+    if (m.dashedReal.length >= 1 && m.dashedReal.every((x) => x === 'dashed')) ok(`⑤ /meddata ${c.w} 未识别虚线保持 dashed（${m.dashedReal.length} 个）`)
+    else if (m.dashedReal.length === 0) na(`⑤ /meddata ${c.w} 虚线例外（无未识别行）`)
+    else fail(`⑤ /meddata ${c.w} 虚线被压平：${JSON.stringify(m.dashedReal)}`)
+    if (m.infoTracks === c.info && m.splitTracks === c.split) ok(`⑤ /meddata ${c.w} 轨数 ${m.infoTracks}/${m.splitTracks}（期望 ${c.info}/${c.split}）`)
+    else fail(`⑤ /meddata ${c.w} 轨数 ${m.infoTracks}/${m.splitTracks}（期望 ${c.info}/${c.split}）`)
+    if (m.deSW <= m.deCW + 1) ok(`⑤ /meddata ${c.w} 页面无横向滚（${m.deSW}/${m.deCW}）`)
+    else fail(`⑤ /meddata ${c.w} 页面横向滚 ${m.deSW}/${m.deCW}`)
+  }
+}
+
 try {
+  // ================= ⑤ /meddata 入口（ENTRY=meddata，UI 定稿配方）=================
+  if ((process.env.ENTRY || 'shell') === 'meddata') {
+    await runMeddataEntry()
+    console.log(`MEDDATA 校对网格 D-1：${pass} 通过 / ${failed} 失败 / ${nas} 未证`)
+    await browser.close()
+    process.exit(failed ? 1 : (nas > 0 ? 2 : 0))
+  }
+
   // ================= V2 / V3 / V4 / V5' / V6' / V9（桌面 1440 表格态）=================
   const d = await openModalGrid(1440, 900)
   if (!d || d.noRoot) skip('未取到 .g-grid 根（编辑弹窗未开或无数据）')
@@ -156,9 +237,9 @@ try {
   measure('量测值', JSON.stringify(d))
 
   // V2 行高
-  if (d.hMin === 40 && d.hMax === 40) ok(`V2 行高恰好 40px（${d.rowCount} 行，极差 0）`)
-  else if (d.hMin !== null && d.hMax - d.hMin <= 1) ok(`V2 行高 40±1（${d.hMin}~${d.hMax}）`)
-  else fail(`V2 行高不符：min=${d.hMin} max=${d.hMax} 极差=${d.hMax - d.hMin}（期望恰好 40 或极差 ≤1）`)
+  if (d.hMin === 40 && d.hMax === 40) ok(`V2 行内容高恰好 40px（${d.rowCount} 行，极差 0；分隔线另计）`)
+  else if (d.hMin !== null && d.hMax - d.hMin <= 1) ok(`V2 行内容高 40±1（${d.hMin}~${d.hMax}，${d.rowCount} 行）`)
+  else fail(`V2 行内容高不符：min=${d.hMin} max=${d.hMax} 极差=${d.hMax - d.hMin}（期望 40，极差 ≤1）`)
 
   // V3 控件边框（只认 .g-ctl，r2 P1-3）
   if (d.gctlCount > 0 && d.gctlBad === 0) ok(`V3 全部 .g-ctl 边框 solid 1px（${d.gctlCount} 个）`)
