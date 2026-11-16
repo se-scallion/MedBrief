@@ -39,7 +39,13 @@ const realShaBefore = sha256File(REAL_REPORTS)
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mb-del-'))
 const tmpReports = path.join(tmp, 'reports.json')
-fs.copyFileSync(REAL_REPORTS, tmpReports)
+// 测试必须从「空回收站」起步：真实库现在自带 1 条已软删记录（用户实际操作留下的），
+// 整份复制会让「软删 1 条后 trashCount 应为 1」变成 2。
+// 只清 trashed、保留 reports/audit/version，既隔离夹具又不改测试断言语义。
+{
+  const store = JSON.parse(fs.readFileSync(REAL_REPORTS, 'utf8'))
+  fs.writeFileSync(tmpReports, JSON.stringify({ ...store, trashed: [] }, null, 2), 'utf8')
+}
 fs.copyFileSync(REAL_DB, path.join(tmp, 'medbrief.db'))
 
 let child = null

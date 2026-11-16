@@ -36,6 +36,31 @@ const rowCountOf = (r) => (Array.isArray(r.rows) ? r.rows.length : 0)
 // 我们的行长这样：{ name, value, unit, refRange, code, status }
 // DataGrid 的 point 长这样：{ _row, _item_no, standard_code, original_name, value, unit, ref_range, arrow }
 // 两个方向都要映射，而且**保存时只回吐 patch 认的 5 个字段**（否则 patch 段记不到，见方案 F6）。
+// 报告内容抽屉 · ≤575px 窄屏样式（2026-11-16 用户实测：4 列固定宽 Table 在 375 下
+// 把「项目」列压成一列竖排单字、并与「数值」重叠）。只在打开报告库页时注入、卸载即移除：
+//   · 指标行改为「代码 + 值 + 参考」三行块卡片，名称整行两行截断，永不竖排；
+//   · Descriptions 改一列（column={1} 由 isXs 控制，这里只兜住 antd 的 label/内容宽度）；
+//   · Tabs 标签允许横向滚动，不把「改动记录」挤成「改动…」。
+// 桌面 ≥576px 一条都不匹配，Table 与 Descriptions 保持原样。
+const REPORT_DRAWER_MOBILE_CSS = `
+@media (max-width: 575px) {
+  .rb-detail .ant-descriptions-item-label { width: 84px !important; white-space: nowrap; }
+  .rb-detail .ant-descriptions-item-content { word-break: break-all; }
+  .rb-detail .ant-tabs-nav { margin-bottom: 8px; }
+  .rb-detail .ant-tabs-nav-list { flex: 0 0 auto !important; }
+  .rb-detail .ant-tabs-nav-wrap { overflow-x: auto !important; }
+  .rb-detail .ant-tabs-tab { padding-inline: 10px !important; }
+}
+.rb-row-card { border-bottom: 1px solid #f0f0f0; padding: 10px 4px; }
+.rb-row-card:last-child { border-bottom: 0; }
+.rb-row-card .rb-row-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.rb-row-card .rb-row-name { font-size: 13px; font-weight: 600; color: #1f2937; line-height: 1.5;
+  overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.rb-row-card .rb-row-value { font-size: 13px; color: #111827; white-space: nowrap; flex: 0 0 auto; }
+.rb-row-card .rb-row-sub { margin-top: 4px; font-size: 11px; color: #6b7280; display: flex; gap: 10px; flex-wrap: wrap; }
+.rb-row-card .rb-row-sub code { font-size: 11px; }
+`
+
 const toPoints = (rows = []) => (rows || []).map((r, i) => ({
   _row: i,
   _item_no: i + 1,
@@ -85,6 +110,14 @@ export default function ReportsPanel() {
   //       操作列竖排、按钮文案压到最短。
   const screens = Grid.useBreakpoint()
   const isXs = !screens.sm
+  // ≤575px 注入报告抽屉窄屏样式；离开页面即移除（与 CardPage 同款，不污染其它页面）
+  useEffect(() => {
+    const style = document.createElement('style')
+    style.id = 'mb-report-drawer-mobile'
+    style.textContent = REPORT_DRAWER_MOBILE_CSS
+    document.head.appendChild(style)
+    return () => { style.remove() }
+  }, [])
 
   const load = useCallback(async (which = tab) => {
     setLoading(true)
@@ -419,7 +452,7 @@ export default function ReportsPanel() {
       <Drawer
         open={!!viewing}
         onClose={() => setViewing(null)}
-        width={760}
+        width="min(760px, 96vw)"   // 375 下不再硬撑 760px（会把手势区/标题挤出屏）
         destroyOnHidden
         title={viewing ? `报告内容 · ${viewing.id}` : '报告内容'}
         extra={(
@@ -439,8 +472,9 @@ export default function ReportsPanel() {
         {viewing?.loading && <Spin />}
         {viewing?.error && <Alert type="error" showIcon message={`读取失败：${viewing.error}`} />}
         {viewing?.data && (
+          <div className="rb-detail">
           <Space direction="vertical" size={12} style={{ width: '100%' }}>
-            <Descriptions size="small" column={2} bordered items={[
+            <Descriptions size="small" column={isXs ? 1 : 2} bordered items={[
               { key: 'date', label: '报告日期', children: viewing.data.report.reportDate || '未提供（只看入库时间）' },
               { key: 'created', label: '入库时间', children: fmtWhen(viewing.data.report.createdAt) },
               { key: 'hospital', label: '医院', children: viewing.data.report.hospital || '未填' },
@@ -463,7 +497,27 @@ export default function ReportsPanel() {
                 {
                   key: 'rows',
                   label: `指标（${viewing.data.rows.length}）`,
-                  children: viewing.data.rows.length ? (
+                  children: viewing.data.rows.length ? (isXs ? (
+                    // ≤575px：行块卡片。彻底避开「4 列固定宽 → 项目列被压成竖排单字 + 与数值重叠」。
+                    // 名称整行两行截断、值右对齐不换行；代码/单位/参考区间放第二行，信息一个不丢。
+                    <div style={{ maxHeight: '58vh', overflowY: 'auto' }}>
+                      {viewing.data.rows.map((r, i) => (
+                        <div className="rb-row-card" key={i}>
+                          <div className="rb-row-head">
+                            <span className="rb-row-name" title={r.name}>{r.name || '（没认出名字）'}
+                              {r.nameDirty && <Tag color="warning" style={{ marginInlineStart: 4 }}>名称待核</Tag>}
+                              {r.noteRow && <Tag>说明文本·已剔除</Tag>}
+                            </span>
+                            <span className="rb-row-value">{r.value}{r.unit ? ` ${r.unit}` : ''}</span>
+                          </div>
+                          <div className="rb-row-sub">
+                            <span>代码 {r.code ? <code>{r.code}</code> : '—'}</span>
+                            <span>参考 {r.refRange || '—'}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
                     <Table
                       size="small"
                       rowKey={(_, i) => i}
@@ -479,7 +533,7 @@ export default function ReportsPanel() {
                         { title: '参考区间', dataIndex: 'refRange', width: 130, render: (v) => v || '—' },
                       ]}
                     />
-                  ) : <Text type="secondary">这份报告没有指标行（全文型：结论/病理/影像），请看「原文」。</Text>,
+                  )) : <Text type="secondary">这份报告没有指标行（全文型：结论/病理/影像），请看「原文」。</Text>,
                 },
                 {
                   key: 'text',
@@ -511,6 +565,7 @@ export default function ReportsPanel() {
               ]}
             />
           </Space>
+          </div>
         )}
       </Drawer>
 
