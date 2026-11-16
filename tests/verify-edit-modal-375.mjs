@@ -1,4 +1,7 @@
-// 编辑报告弹窗 375 布局断言（2026-11-16 用户实测：顶部约 108px 空余 + 整个遮罩要下滑才见底部按钮）
+// 编辑报告弹窗 375 版面断言（G1–G12，按 .agents/edit-modal-1116-review-r1.md §6）
+//
+// 用户两轮实测：(1) 顶部 108px 空余 + 整页下滑；(2) 两层 padding 叠加 + 版面对不齐。
+// 本文件钉死整改后的几何判据，防止下次会话把 padding 又加回去。
 // 真浏览器、只读、不写库；服务未起时 SKIP 并退出 0。
 import { chromium } from 'playwright'
 
@@ -10,67 +13,152 @@ try { ready = (await fetch(`${BASE}/api/health`, { signal: AbortSignal.timeout(3
 if (!ready) { console.log('SKIP 编辑弹窗 375 断言：5174 未就绪'); process.exit(0) }
 
 const browser = await chromium.launch({ headless: true })
-try {
-  const p = await browser.newPage({ viewport: { width: 375, height: 812 } })
+
+/** 打开报告库 → 编辑弹窗，返回量到的全部几何 */
+async function measure(width, height) {
+  const p = await browser.newPage({ viewport: { width, height } })
   await p.goto(`${BASE}/?tab=reports`, { waitUntil: 'domcontentloaded' })
   await p.waitForTimeout(1500)
   const edit = p.locator('button[aria-label="编辑"]').first()
-  if (!(await edit.count())) { console.log('SKIP 编辑弹窗 375：列表没有编辑按钮'); process.exit(0) }
+  if (!(await edit.count())) { await p.close(); return null }
   await edit.click({ timeout: 8000, force: true })
   await p.waitForTimeout(1300)
   const m = await p.evaluate(() => {
     const w = document.querySelector('.mb-edit-modal')
-    const r = (e) => e ? { y: Math.round(e.getBoundingClientRect().y), h: Math.round(e.getBoundingClientRect().height), sh: e.scrollHeight, ch: e.clientHeight } : null
+    if (!w) return null
+    const body = w.querySelector('.ant-modal-body')
+    const head = w.querySelector('.ant-modal-header')
+    const foot = w.querySelector('.ant-modal-footer')
+    const close = w.querySelector('.ant-modal-close')
+    const title = w.querySelector('.ant-modal-title')
     const wrap = document.querySelector('.ant-modal-wrap')
-    const footerBtns = [...document.querySelectorAll('.mb-edit-modal .ant-modal-footer button')].map((b) => b.textContent.replace(/\s/g, ''))
-    const topSave = document.querySelector('.rb-edit-top-save')
+    const cs = getComputedStyle(body)
+    const mr = w.getBoundingClientRect()
+    const first = body.firstElementChild
+    const grid = w.querySelector('.rb-edit-grid-wrap > div > .grid')
+    const footBtns = [...foot.querySelectorAll('button')]
+    // 真正的横向滚动容器：排除 input/textarea/select（它们 scrollWidth>clientWidth 是文字溢出，
+    // 不是滚动区；判词 G6 的原始过滤式会把十几个输入框算进来，必须在实现里排除表单元素）
+    const scrollers = [...body.querySelectorAll('*')]
+      .filter((e) => !['INPUT', 'TEXTAREA', 'SELECT'].includes(e.tagName))
+      .filter((e) => getComputedStyle(e).overflowX !== 'visible' && e.scrollWidth > e.clientWidth + 1)
+      .map((e) => ({ cls: String(e.className).slice(0, 40), sw: e.scrollWidth, cw: e.clientWidth }))
+    const toolbar = w.querySelector('.rb-edit-grid-wrap .card > .flex.items-center.justify-between')
     return {
-      modal: r(w), container: r(w?.querySelector('.ant-modal-container')),
-      header: r(w?.querySelector('.ant-modal-header')), body: r(w?.querySelector('.ant-modal-body')),
-      footer: r(w?.querySelector('.ant-modal-footer')),
-      wrap: r(wrap), de: document.documentElement.scrollWidth, footerBtns,
-      topSaveVisible: topSave ? topSave.getBoundingClientRect().height > 0 : false,
+      y: Math.round(mr.y), right: Math.round(mr.right), x: Math.round(mr.x), width: Math.round(mr.width),
+      containerPad: getComputedStyle(w.querySelector('.ant-modal-container')).padding,
+      bodyPad: cs.padding,
+      bodySW: body.scrollWidth, bodyCW: body.clientWidth,
+      contentW: body.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight),
+      bodySH: body.scrollHeight, bodyCH: body.clientHeight,
+      titleX: Math.round(title.getBoundingClientRect().x),
+      firstX: Math.round(first?.getBoundingClientRect().x || 0),
+      firstRight: Math.round(first?.getBoundingClientRect().right || 0),
+      footLastRight: Math.round(footBtns[footBtns.length - 1]?.getBoundingClientRect().right || 0),
+      gridW: grid ? Math.round(grid.getBoundingClientRect().width) : null,
+      scrollers,
+      closeBottom: Math.round(close.getBoundingClientRect().bottom),
+      headBottom: Math.round(head.getBoundingClientRect().bottom),
+      footBottom: Math.round(foot.getBoundingClientRect().bottom),
+      footBtns: footBtns.map((b) => b.textContent.replace(/\s/g, '')),
+      wrapSW: wrap.scrollHeight, wrapCH: wrap.clientHeight,
+      toolbarBtns: toolbar ? [...toolbar.querySelectorAll('button')].map((b) => Math.round(b.getBoundingClientRect().height)) : [],
+      toolbarSW: toolbar ? toolbar.scrollWidth : 0, toolbarCW: toolbar ? toolbar.clientWidth : 0,
+      topSaveVisible: (document.querySelector('.rb-edit-top-save')?.getBoundingClientRect().height || 0) > 0,
+      noteText: body.textContent.includes('编辑口径说明'),
+      de: document.documentElement.scrollWidth,
       styles: [...document.querySelectorAll('head > style[id^="mb-report-"]')].map((s) => s.id),
-      noteText: document.querySelector('.mb-edit-modal .ant-modal-body')?.textContent?.includes('编辑口径说明') || false,
     }
   })
-  if (!m.modal) { console.log('SKIP 编辑弹窗 375：弹窗未打开'); process.exit(0) }
-  if (m.modal.y <= 16) ok(`贴顶：弹窗 y=${m.modal.y}（原 108px 空余已消除）`)
-  else throw new Error(`modal.y=${m.modal.y}`)
-  if (m.wrap && m.wrap.sh <= m.wrap.ch + 1) ok(`整页不需下滑：wrap ${m.wrap.sh}/${m.wrap.ch}`)
-  else throw new Error(`wrap ${m.wrap?.sh}/${m.wrap?.ch}`)
-  if (m.body && m.body.sh > m.body.ch) ok(`body 内部滚动（sh=${m.body.sh} / ch=${m.body.ch}），header/footer 固定`)
-  else throw new Error(`body ${m.body?.sh}/${m.body?.ch}`)
-  if (m.footer && m.footer.y + m.footer.h <= 812) ok(`底部按钮始终在视口内（footer bottom=${m.footer.y + m.footer.h}）`)
-  else throw new Error(`footer bottom=${m.footer?.y + m.footer?.h}`)
-  if (m.footerBtns.some((t) => t.includes('保存修改')) && m.footerBtns.some((t) => t.includes('取消'))) ok('footer 有「取消 / 保存修改」')
-  else throw new Error(`footerBtns=${m.footerBtns.join(',')}`)
+  await p.screenshot({ path: `/tmp/edit-modal-${width}-after.png`, fullPage: false })
+  await p.close()
+  return m
+}
+
+try {
+  // ---------------- 375 主档：G1–G10 ----------------
+  const m = await measure(375, 812)
+  if (!m) { console.log('SKIP 编辑弹窗 375：列表没有编辑按钮'); process.exit(0) }
+
+  if (Math.abs(m.y - 8) <= 1) ok(`G1 贴顶：modal.y=${m.y}（原 108px 空余已消除）`)
+  else throw new Error(`G1 modal.y=${m.y}`)
+
+  if (m.bodySW <= m.bodyCW + 1) ok(`G2 body 无横向溢出：${m.bodySW}/${m.bodyCW}`)
+  else throw new Error(`G2 body ${m.bodySW}/${m.bodyCW}`)
+
+  if (m.contentW >= 335) ok(`G3 正文可用宽 ${m.contentW}px ≥335（改前 287）`)
+  else throw new Error(`G3 contentW=${m.contentW}`)
+
+  const gridOk = m.gridW !== null && m.gridW <= m.contentW + 1
+  if (m.titleX === m.firstX && m.titleX === m.x + 12 && gridOk) {
+    ok(`G4 左边界对齐：title.x=body.firstChild.x=${m.titleX}（=modal.x+12），轨道 ${m.gridW}px ≤ 正文 ${m.contentW}px`)
+  } else throw new Error(`G4 titleX=${m.titleX} firstX=${m.firstX} modalX=${m.x} gridW=${m.gridW} contentW=${m.contentW}`)
+
+  if (m.firstRight === m.right - 12 && m.footLastRight === m.right - 12) {
+    ok(`G5 右边界对齐：body 子项 / footer 末位按钮 right=${m.footLastRight}（=modal.right−12）`)
+  } else throw new Error(`G5 firstRight=${m.firstRight} footLastRight=${m.footLastRight} modalRight=${m.right}`)
+
+  // G6：真正的滚动区恰好 1 个（排除 input/textarea，见 measure 里的说明）
+  const only = m.scrollers
+  if (only.length === 1 && /overflow-x-auto/.test(only[0].cls) && only[0].sw >= 760) {
+    ok(`G6 单一横向滚动容器：${only[0].cls} ${only[0].sw}/${only[0].cw}`)
+  } else throw new Error(`G6 scrollers=${JSON.stringify(only.slice(0, 4))} count=${only.length}`)
+
+  if (m.toolbarBtns.length && m.toolbarBtns.every((h) => h <= 40) && m.toolbarSW <= m.toolbarCW + 1) {
+    ok(`G7 工具栏不竖排：按钮高 ${m.toolbarBtns.join('/')} ≤40，且不溢出`)
+  } else throw new Error(`G7 toolbarBtns=${m.toolbarBtns.join('/')} sw/cw=${m.toolbarSW}/${m.toolbarCW}`)
+
+  if (m.closeBottom <= m.headBottom) ok(`G8 关闭按钮不压 body：close.bottom=${m.closeBottom} ≤ header.bottom=${m.headBottom}`)
+  else throw new Error(`G8 close=${m.closeBottom} header=${m.headBottom}`)
+
+  if (m.footBottom <= 812 && m.wrapSW <= m.wrapCH + 1) {
+    ok(`G9 footer 常驻 + 整页不下滑：footer.bottom=${m.footBottom}，wrap ${m.wrapSW}/${m.wrapCH}`)
+  } else throw new Error(`G9 footer=${m.footBottom} wrap=${m.wrapSW}/${m.wrapCH}`)
+
+  if (m.bodySH > m.bodyCH) ok(`G9b body 内部滚动（sh=${m.bodySH} / ch=${m.bodyCH}），header/footer 固定`)
+  else throw new Error(`G9b body ${m.bodySH}/${m.bodyCH}`)
+
+  const uniq = new Set(m.styles).size === m.styles.length
+  if (uniq && m.styles.length === 3 && m.styles.includes('mb-report-edit-modal-mobile')) {
+    ok(`G10 三段页面级 style 并存且 id 唯一（${m.styles.join(' / ')}）`)
+  } else throw new Error(`G10 styles=${m.styles.join(',')}`)
+
+  if (m.footBtns.some((t) => t.includes('保存修改')) && m.footBtns.some((t) => t.includes('取消'))) ok('footer 有「取消 / 保存修改」')
+  else throw new Error(`footBtns=${m.footBtns.join(',')}`)
   if (!m.topSaveVisible) ok('顶部冗余「保存修改」已隐藏（footer 是唯一写库入口）')
   else throw new Error('顶部仍有重复保存按钮')
   if (m.noteText) ok('长说明收成一行 + Tooltip（信息不丢）')
   else throw new Error('编辑口径说明缺失')
-  if (m.styles.includes('mb-report-edit-modal-mobile')) ok('页面级 #mb-report-edit-modal-mobile 已注入（独立 id）')
-  else throw new Error(`styles=${m.styles.join(',')}`)
-  if (m.de === 375) ok('375 无横向溢出'); else throw new Error(`de=${m.de}`)
+  if (m.de === 375) ok('375 无横向溢出（de=375）'); else throw new Error(`de=${m.de}`)
 
-  // 1440 桌面：完全不变（top=100、无内部滚动）
-  const d = await browser.newPage({ viewport: { width: 1440, height: 900 } })
-  await d.goto(`${BASE}/?tab=reports`, { waitUntil: 'domcontentloaded' })
-  await d.waitForTimeout(1300)
-  const e2 = d.locator('button[aria-label="编辑"]').first()
-  if (await e2.count()) {
-    await e2.click({ timeout: 8000, force: true })
-    await d.waitForTimeout(1200)
-    const desk = await d.evaluate(() => {
-      const w = document.querySelector('.mb-edit-modal')
-      const body = w?.querySelector('.ant-modal-body')
-      return { y: Math.round(w?.getBoundingClientRect().y || 0), sh: body?.scrollHeight, ch: body?.clientHeight,
-        topSave: (document.querySelector('.rb-edit-top-save')?.getBoundingClientRect().height || 0) > 0 }
-    })
-    if (desk.y === 100 && desk.topSave) ok(`1440 桌面零回归（y=${desk.y}、顶部保存按钮仍显示）`)
-    else throw new Error(JSON.stringify(desk))
-  } else console.log('SKIP 1440 断言：列表没有编辑按钮')
+  // ---------------- G11 桌面 1440 零回归 ----------------
+  const d = await measure(1440, 900)
+  if (d) {
+    if (d.y === 100 && d.width === 900) ok(`G11a 桌面位置零回归：y=${d.y}、width=${d.width}`)
+    else throw new Error(`G11a y=${d.y} w=${d.width}`)
+    if (d.containerPad === '20px 24px') ok('G11b 桌面 container padding 仍为 antd 默认 20px 24px')
+    else throw new Error(`G11b containerPad=${d.containerPad}`)
+    if (d.bodySW === d.bodyCW && d.topSaveVisible) ok(`G11c 桌面 body 无内部横向滚（${d.bodySW}/${d.bodyCW}）+ 顶部保存按钮仍显示`)
+    else throw new Error(`G11c body ${d.bodySW}/${d.bodyCW} topSave=${d.topSaveVisible}`)
+    if (d.de === 1440) ok('G11d 1440 无横向溢出'); else throw new Error(`de=${d.de}`)
+  } else console.log('SKIP G11：1440 列表没有编辑按钮')
+
+  // ---------------- G12 320 / 414 复跑 ----------------
+  for (const [w, h, minW] of [[320, 700, 280], [414, 896, 374]]) {
+    const s = await measure(w, h)
+    if (!s) { console.log(`SKIP G12 ${w}：没有编辑按钮`); continue }
+    const problems = []
+    if (Math.abs(s.y - 8) > 1) problems.push(`y=${s.y}`)
+    if (s.bodySW > s.bodyCW + 1) problems.push(`body溢出 ${s.bodySW}/${s.bodyCW}`)
+    if (s.contentW < minW) problems.push(`正文宽 ${s.contentW}<${minW}`)
+    if (s.titleX !== s.firstX) problems.push(`左边界 ${s.titleX}/${s.firstX}`)
+    if (s.footLastRight !== s.right - 12) problems.push(`右边界 ${s.footLastRight}/${s.right - 12}`)
+    if (s.closeBottom > s.headBottom) problems.push(`X压body ${s.closeBottom}>${s.headBottom}`)
+    if (s.wrapSW > s.wrapCH + 1) problems.push(`整页下滑 ${s.wrapSW}/${s.wrapCH}`)
+    if (problems.length === 0) ok(`G12 ${w}px 复跑通过：正文 ${s.contentW}px、轨道 ${s.gridW}px、对齐 ${s.titleX}/${s.footLastRight}、单一横滚 ${s.scrollers.length}`)
+    else throw new Error(`G12 ${w}px: ${problems.join('; ')}`)
+  }
 } finally {
   await browser.close()
 }
-console.log(`\n编辑弹窗 375 布局：${pass} 通过 / 0 失败`)
+console.log(`\n编辑弹窗 375 版面：${pass} 通过 / 0 失败`)

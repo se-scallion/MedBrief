@@ -95,12 +95,24 @@ const REPORT_DAY_MOBILE_CSS = `
 .rb-day-wrap .ant-list-item { padding: 0; }
 `
 
-// 编辑报告弹窗 · ≤575px（2026-11-16 用户实测：顶部约 108px 空余 + 整个遮罩要下滑才见底部按钮）
-// 量到的几何：.ant-modal y=108（antd 默认 top:100）、高 795 > 812 视口、
-// .ant-modal-wrap scrollHeight=903 > clientHeight=812。
-// 修法：贴顶 8px；content 限高 = 视口-16；header/footer 固定、body 自己滚；
-// 顶部冗余「保存修改」隐藏（footer 已有）；长说明收成一行 + Tooltip（信息不丢）。
-// 只作用于本弹窗 className=mb-edit-modal，不碰其它三个 Modal；桌面 ≥576 一条都不匹配。
+// 编辑报告弹窗 · ≤575px
+// 2026-11-16 用户两轮实测：(1) 顶部约 108px 空余 + 整个遮罩要下滑才见底部按钮；
+// (2) 「移动端空间不够还留那么多 Padding，container 和 body 都有 padding，版面还对不齐」。
+// 第一轮只修了贴顶/内部滚动；第二轮按 .agents/edit-modal-1116-review-r1.md 的 A（P0）+ B（P1）整段重写：
+//
+//   根因一「padding 叠加」：container `20px 24px` + body `8px 12px` = 左右各 36px，正文可用宽 359→287。
+//     落法（A1）：container 归零，唯一水平栅格交给 body 的 12px；header/footer 复制同一个 12
+//     （header 右 44 让开关闭按钮）→ 正文可用宽 287→335，左边界 44→20、右边界 331→355，三处对齐。
+//   根因二「对不齐」：真因不是 padding，而是 DataGrid 的 `.grid.gap-4.lg:grid-cols-5` 隐式 auto 轨道
+//     被子项 min-width:auto + 内含 table.min-w-[760px] 撑到 784px，body 被拖成 796/311 双滚动。
+//     落法（A5）：轨道 `minmax(0,1fr)` + 子项 `min-width:0`，让表格自带的 .overflow-x-auto
+//     成为唯一横滚容器 → 轨道 784→335、body 359/359、横滚容器恰 1 个（760/311）。
+//     注意：不能给 .rb-edit-grid-wrap 加 overflow-x（会把工具栏、智能补项一起滚走）。
+//   连带必改：工具栏在 335 下折行（B2，否则按钮组 445px、中文竖排）；关闭按钮 top:8（A3，
+//     header 压薄后会探出 2.4px 压 body 首行）。
+//
+// 作用域：全部以 .mb-edit-modal 开头、只在 ≤575px；桌面 ≥576 一条都不匹配（1440 零回归）。
+// 三段页面级 style 各自独立 id/useEffect，互不覆盖。
 const REPORT_EDIT_MODAL_MOBILE_CSS = `
 @media (max-width: 575px) {
   /* antd 6.6.6 实测：className 挂在 .ant-modal 本身，结构是
@@ -108,15 +120,32 @@ const REPORT_EDIT_MODAL_MOBILE_CSS = `
      限高必须同时落在 .ant-modal 与 container 上，body 才真的内部滚。 */
   .mb-edit-modal.ant-modal { max-width: calc(100vw - 16px) !important; width: calc(100vw - 16px) !important;
     max-height: calc(100vh - 16px) !important; margin: 0 auto !important; padding: 0 !important; top: 8px !important; }
-  .mb-edit-modal .ant-modal-container { max-height: calc(100vh - 16px) !important;
+  .mb-edit-modal .ant-modal-container { max-height: calc(100vh - 16px) !important; padding: 0 !important;
     display: flex !important; flex-direction: column !important; overflow: hidden !important; }
-  .mb-edit-modal .ant-modal-header { flex: 0 0 auto !important; padding: 10px 12px !important; margin-bottom: 0 !important; }
+  /* A2 header：纵向 12/10，右侧 44 给开关闭按钮（32 触控 + 12 间隙），标题永不被 X 压 */
+  .mb-edit-modal .ant-modal-header { flex: 0 0 auto !important; padding: 12px 44px 10px 12px !important; margin-bottom: 0 !important; }
   .mb-edit-modal .ant-modal-title { font-size: 14px !important; line-height: 1.4 !important; }
+  /* A3 关闭按钮上提，否则探出压薄后的 header、压到 body 首行 */
+  .mb-edit-modal .ant-modal-close { top: 8px !important; }
+  /* A4 body：侧边只留 12（唯一水平栅格），纵向 8→6，底部叠 iOS 安全区；横向交给表格自己 */
   .mb-edit-modal .ant-modal-body { flex: 1 1 auto !important; min-height: 0 !important;
-    overflow-y: auto !important; padding: 8px 12px !important; }
-  .mb-edit-modal .ant-modal-footer { flex: 0 0 auto !important; padding: 8px 12px !important; margin-top: 0 !important; }
+    overflow-y: auto !important; overflow-x: hidden !important;
+    padding: 6px 12px calc(8px + env(safe-area-inset-bottom)) !important; }
+  .mb-edit-modal .ant-modal-footer { flex: 0 0 auto !important; margin-top: 0 !important;
+    padding: 6px 12px calc(6px + env(safe-area-inset-bottom)) !important; }
   .mb-edit-modal .rb-edit-top-save { display: none !important; }
+  /* 桌面靠 inline maxHeight:58vh 滚动；窄屏交给 body 统一滚，避免双滚动条 */
   .mb-edit-modal .rb-edit-grid-wrap { max-height: none !important; overflow: visible !important; }
+  /* A5 单一横向滚动容器：把被表格撑到 784px 的隐式轨道压回可用宽 */
+  .mb-edit-modal .rb-edit-grid-wrap > div > .grid { grid-template-columns: minmax(0, 1fr) !important; }
+  .mb-edit-modal .rb-edit-grid-wrap .grid > * { min-width: 0 !important; }
+  /* B1 卡片内边距 16/12 → 12（只收自带 padding 的卡，不动 pad-0 的原图卡） */
+  .mb-edit-modal .rb-edit-grid-wrap .card.p-3,
+  .mb-edit-modal .rb-edit-grid-wrap .card.p-4 { padding: 12px !important; }
+  /* B2 335px 里工具栏必须折行，否则按钮组 445px、中文竖排 */
+  .mb-edit-modal .rb-edit-grid-wrap .card > .flex.items-center.justify-between { flex-wrap: wrap !important; row-gap: 6px !important; }
+  .mb-edit-modal .rb-edit-grid-wrap .card > .flex.items-center.justify-between > div { flex-wrap: wrap !important; row-gap: 6px !important; }
+  .mb-edit-modal .rb-edit-grid-wrap button { white-space: nowrap !important; }
 }
 `
 
