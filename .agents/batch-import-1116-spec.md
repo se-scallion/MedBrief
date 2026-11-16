@@ -1,4 +1,10 @@
-# ① 批量导入模块 —— **UI/交互数值规格** v1.6（UI 设计师，2026-11-17 1:0x）
+# ① 批量导入模块 —— **UI/交互数值规格** v1.7（UI 设计师，2026-11-17 1:2x）
+
+> **v1.7 改 3 处（都是 §1.1「antd 优先」带出来的，我认）**：
+> 1. **§2.4 事实错：`danger` 常态就是红** —— 原文写「`danger` 让 hover/active 走危险色、常态灰」是错的（`.ant-btn-dangerous` 的 `color` 常态即 `#ff4d4f`）。**取 A：去掉 `danger`**，常态用 antd `type="text"` 默认色、**不覆盖任何颜色**；并在 A6 补**反向断言**（常态不得出现 `rgb(255, 77, 79)`、`className` 不含 `ant-btn-dangerous`），否则「常态灰」这句就是没有判据守着的空话。
+> 2. **§5 徽标取样对象**：`.ant-badge` wrapper 常宽 0（count 是绝对定位）⇒ A8 若量 wrapper 会得 0；**断言取样改为 `.ant-badge-count` 自身**，wrapper 给 `display:inline-flex`。
+> 3. **§8 A7 / A10 补半句**：`Dropdown` 菜单在 `body` 的 portal 里，**不在栏内** ⇒ A10「按钮不出卡」只覆盖栏内元素，A7 的 `[data-act="more"]` 指 **trigger 按钮**；另加断言「栏内不得出现 `.ant-dropdown`」。
+> 其余一字不动。
 
 > **v1.6 只改 §8 A1 的 2 行**（r5 挑出，我认 —— 两条都是「判决写法静默失效」）：
 > 1. **锚点改用 `bar.parentElement`**，不再 `querySelector('.ant-card-body')`：每张 item 卡也各带一个 `.ant-card-body`，靠 DOM 顺序碰巧命中外层，**加一层包裹就指错**，且错时会伪装成「夹具不合格」。
@@ -131,11 +137,13 @@
 
 ```jsx
 <Button
-  type="text" shape="circle" danger size="small"
+  type="text" shape="circle" size="small"
   icon={<DeleteOutlined />}                 // 图标 font-size 14（antd 默认）
   className="mb-icon-btn"
   aria-label="移除此文件" title="移除此文件"
 />
+{/* 不要加 danger：antd 的 .ant-btn-dangerous 常态就是 #ff4d4f，
+    而本按钮语义是「移除未入库条目」（可反悔、重新拖进来即可），不该常态红脸。 */}
 ```
 
 ```css
@@ -145,9 +153,9 @@
 .mb-icon-btn.ant-btn::before { content: ''; position: absolute; inset: -10px; }  /* 24 + 20 = 44 热区，命中归宿主 */
 ```
 
-- **常态灰、hover 变红**：`type="text"` 已保证常态无底色；`danger` 让 hover/active 走 antd 危险色（`#ff4d4f` / `#fff1f0`），**不写自定义 hover 色值**。
+- **常态用 antd `type="text"` 默认色，不覆盖颜色**（`type="text"` 已保证常态无底色、无边框）；hover/active 走 antd 默认高亮。**本按钮不加 `danger`、也不写自定义色值** —— 上一版把「常态灰」和 `danger` 写在一起是事实错（`danger` 常态即红），已改。
 - `aria-label="移除此文件"`、`title="移除此文件"`（**文案不写"删除"**：只移除本次未入库条目，见计划 F2）。
-- 危险色**只在 hover/active 出现**：移除未入库条目可反悔（重新拖进来即可），不必常态红脸。
+- **颜色的唯一硬要求是「常态不得是危险红」**，由 A6 的反向断言守着（`color !== 'rgb(255, 77, 79)'` 且 `className` 不含 `ant-btn-dangerous`）；具体灰度交给 antd 默认，不指定 hex。
 
 ### 2.5 卡片选中态
 
@@ -283,6 +291,7 @@ C-9（>2 张拼接）**本批未放行** ⇒ `拼接` 按钮只在 **N === 2** �
   padding: 0; border-radius: 50%; background: #c8102e; font-size: 11px; box-shadow: none; }
 ```
 - 字符：`① ② ③ ④`（U+2460..U+2463）；**未选中时不渲染 `Badge`**（不是 `count={0}` —— `showZero` 会画个 0）。
+- **断言取样对象 = `.ant-badge-count` 本身，不是 `.ant-badge` wrapper**：antd 的 count 是**绝对定位**，wrapper 常常宽 0（量 wrapper 会得 0，测试会假红/假绿）。wrapper 另加 `.mb-pick-badge{display:inline-flex;align-items:center;width:16px;height:16px}` 占住布局。
 - 不重叠的理由：16px 圆压在 16px 方框上（`left:-4;top:-4`）会让勾标与序号互相遮挡，两处都吃点击热区 ⇒ 误触；并排多占 20px（16+4），375 下预算仍够（§2.3 已算）。
 - 上限 **4**：第 5 次勾选 `message.info('一次最多拼接 4 张；再拼请分批')`，且**不加入** `selected`。
 
@@ -402,13 +411,13 @@ const addFiles = useCallback(async (fileList) => {
 | **A3** | ② 段落隐藏 —— **几何判据**（v1.3 按 r3 改：条件渲染删掉后栏仍在 DOM 里） | 滚到 `#sec-review` 顶部可见后：`const r = document.querySelector('.mb-batchbar').getBoundingClientRect()`，断言 `r.bottom <= 0`（整条在视口上方之外）或 `r.bottom <= 0.5 || r.top >= innerHeight`（与视口不相交） | 真（**不再断言 DOM 是 null**） |
 | **A4** | 375 不换行 | `bar.scrollWidth <= bar.clientWidth + 1`，且每个按钮 `getComputedStyle(b).whiteSpace === 'nowrap'`、`Math.round(b.rect.height)` = **44**（≤575）/ **32**（≥576） | 全真 |
 | **A5** | 头部不挤爆 | 文件名元素：`el.scrollWidth > el.clientWidth`（确认发生截断）时 `Math.round(el.rect.width) >= 96`；且状态 Tag 仍可见（`tag.rect.width > 0`） | 全真 |
-| **A6** | 触摸热区 44 | 删除按钮：`el.getBoundingClientRect()` 视觉 **24×24**；热区用命中判：以按钮中心为原点，`document.elementFromPoint(cx+20, cy)`、`(cx-20, cy)`、`(cx, cy+20)`、`(cx, cy-20)` **都返回该按钮**（`::before` 扩展归宿主） | 4 点全命中 |
-| **A7** | 三态按钮 DOM + **「更多」防漏**（v1.1 补） | **0 选**：`bar.querySelectorAll('[data-bar-btn]').length === 2`、无 `[data-act="stitch"]`、**无 `[data-act="more"]`**（不渲染是预期，不是漏）<br>**选 1**：有 `[data-act="remove"]`、**必有 `[data-act="more"]`**、无 `stitch`、`[data-bar-btn]` 计数 === **2**<br>**选 2**：有 `[data-act="stitch"]` 且文案 === `拼接（2）`、有 `remove`、**必有 `more`** | 全真 |
+| **A6** | 触摸热区 44 + **常态不是危险红**（v1.7 补：原「常态灰」没有任何判据守着） | 删除按钮：`el.getBoundingClientRect()` 视觉 **24×24**；热区用命中判：`document.elementFromPoint(cx±20, cy)`、`(cx, cy±20)` **都返回该按钮**（`::before` 扩展归宿主）；**并且** `getComputedStyle(el).color !== 'rgb(255, 77, 79)'` 且 `!el.className.includes('ant-btn-dangerous')`（防有人把 `danger` 加回来） | 4 点全命中 + 两条颜色断言为真 |
+| **A7** | 三态按钮 DOM + **「更多」防漏**（`[data-act="more"]` 指 **Dropdown 的 trigger 按钮**，**不是**菜单项 —— 菜单在 `body` 的 portal 里，见 A10） | **0 选**：`bar.querySelectorAll('[data-bar-btn]').length === 2`、无 `[data-act="stitch"]`、**无 `[data-act="more"]`**（不渲染是预期，不是漏）<br>**选 1**：有 `[data-act="remove"]`、**必有 `[data-act="more"]`**、无 `stitch`、`[data-bar-btn]` 计数 === **2**<br>**选 2**：有 `[data-act="stitch"]` 且文案 === `拼接（2）`、有 `remove`、**必有 `more`** | 全真 |
 | **A8** | 序号徽标 | 选 2 张后：`[...document.querySelectorAll('.mb-pick-badge')].map(e=>e.textContent).join('')` === `'①②'`；每个徽标 rect = **16×16**；与 checkbox rect **不相交**（`a.right <= b.left + 0.5`） | 全真 |
 | **A9** | 重复提示口径（对库） | 预置一份库内已有的同一文件后导入：卡片内 `.mb-predup` 存在、文案 === **`同一文件已导入过`**、且组件树文本**不含** `疑似重复报告` | 全真 |
 | **A9b** | **批内强比对去重**（r1 P0-1 的落地判据） | 同一张图**连续导入两次**（第二次走粘贴路径，不刷新页面）：<br>`document.querySelectorAll('.mb-item-card').length` === **1**；<br>且出现 `message.warning` 文案 `这张图本次已选过，已跳过`（用 `page.on('console')` 或 antd message 的 DOM `.ant-message-notice` 取文判）；<br>且**第一张卡上不得**同时出现 `.mb-predup`（库里本来没有它，对库不该命中） | 三条全真 |
 | **A9c** | **降级态绝不丢卡**（r2 的发现；v1.3 按 Tag 粒度改） | 强制 `?hash=js` **且**注入一个会抛异常的哈希桩（或直接把 `sha256FileSafe` 打成始终 `null`），连续导入**两张同名同大小但内容不同**的图：<br>`document.querySelectorAll('.mb-item-card').length` === **2**（**不许是 1**）；<br>第二张出现橙 Tag `可能重复（按文件名+大小粗判，请核对）`、**第一张不得有该橙 Tag**；顶部汇总出现 `疑似重复（粗判）1` **且** `本批未做文件查重`；并且**卡片上不得出现** `本次未做文件查重`（批级状态不逐卡，v1.3 粒度） | 四条全真 |
-| **A10** | 栏内按钮不出卡 | 每个按钮 `rect.left >= bar.rect.left - 0.5 && rect.right <= bar.rect.right + 0.5` | 全真 |
+| **A10** | 栏内按钮不出卡 —— **范围只含栏内元素**（`Dropdown` 菜单在 `body` portal 里，不受本条约束） | 栏内每个按钮（含 Dropdown 的 trigger）：`rect.left >= bar.rect.left - 0.5 && rect.right <= bar.rect.right + 0.5`；**另加** `document.querySelector('.mb-batchbar .ant-dropdown') === null`（菜单项不许被塞进栏里） | 全真 |
 | **A11** | 无回退：既有契约 | `document.querySelectorAll('.g-grid').length`、`.mb-review-grid` 高度、`.card` 上无新增 `mb-batchbar` 子孙（`document.querySelector('.card .mb-batchbar')` 只允许 1 个且父级是 `.mb-upload-body`） | 全真 |
 | **A12** | 页面不横向滚 | 四档 `document.documentElement.scrollWidth <= clientWidth + 1` | 全真 |
 
@@ -441,7 +450,7 @@ const addFiles = useCallback(async (fileList) => {
 
 ## 11. 条数统计（v1.1）
 
-- 规格条目：**§1.1 组件选型 15（v1.5 新增：逐件 antd 映射 + 3 条红线）/ §2 卡片头部 5 / §3 操作栏 7 / §4 三态 8 / §5 徽标 4 / §6 重识别 4 / §7 重复提示 17 = 60 条**
+- 规格条目：**§1.1 组件选型 15 / §2 卡片头部 5 / §3 操作栏 7 / §4 三态 8 / §5 徽标 5（v1.7 +1：断言取样对象） / §6 重识别 4 / §7 重复提示 17 = 61 条**
 - 可复跑判据：**A1 / A1b / A2 / A3 / A4 / A5 / A6 / A7 / A8 / A9 / A9b / A9c / A10 / A11 / A12 = 15 条**（A1 锚点已改 ① 卡片、A2 改三态、A3 改几何判据、A9c 改 Tag 粒度 —— v1.3），其中 **A1 / A4 / A9b / A9c 各带一条证伪要求**（4 次改坏必须真红并贴退出码 1）
 - 需确认项：**3 条**（§10，计划 v0.3 已按我的建议全采纳，其中第 3 条标"待用户点头"）
 - **无 N/A 出口**：A1b 用"两分支恒可判"消灭了 v1.0 里唯一的条件判据；其余判据全部有确定期望值（符合 R3：若某条不该计入就得改判据，不是改计数口径）
