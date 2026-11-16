@@ -1,4 +1,4 @@
-# ① 批量导入模块 —— 交互与界面重构（需求整理 + 排雷）**v0.5**
+# ① 批量导入模块 —— 交互与界面重构（需求整理 + 排雷）**v0.6**
 
 > 触发（用户原话，2026-11-16 22:58，附截图 2186×1480）：
 > 「批量导入模块需要重新设计交互和界面。」
@@ -12,8 +12,19 @@
 >
 > 排雷：**无项目定制层**（`grep -rlF '**通用层**：~/.agents/skills/plan-review.md' .` 命中 4 个文件，全是正文引用，不是文件头标记），仅通用层。
 > 状态：**v0.3 方案，未编码**。作者：代诊-Manager。实现方：待定。
-> 审核：代诊-报告 **r1**（只准哪几条）+ **r2**（只准哪几条，另有附录 A 的规格 delta 判词）已出；v0.5 已把 r2 的 2 条 P0 + 5 条 P1 + 附录 A 的 A-1…A-6 全部裁到终态，待送 r3。
+> 审核：代诊-报告 **r1**（只准哪几条）+ **r2**（只准哪几条，另有附录 A 的规格 delta 判词）＋ **r3**（只准哪几条，1 条 P0 = B4 锚点错对象）已出；v0.6 已裁到终态，待送 r4。
 > UI 规格：`.agents/batch-import-1116-spec.md` **v1.1 已出**（39 条数值 + A1–A12/A1b/A9b 共 14 条判据，提交 `6b16606`；v1.0 `35761dc` 已被其取代），v0.4 已并入。
+
+## 修订说明 ⓪″（v0.5 → v0.6，逐条对 **r3 判词**）
+
+| r3 条目 | 本版落点 |
+|---|---|
+| **P0（唯一）B4 锚点错对象**：`documentElement.scrollHeight` 把 ② 校对区也算进去，而 sticky 的 containing block 是 `.ant-card-body` ⇒ `0.5 × 全文档 maxScroll` 很可能已滚过 ① 卡片 ⇒ 正确实现被判红 | D-4 的 **B4 改为几何锚点**：`cardBottomDoc = body.getBoundingClientRect().bottom + scrollTop`；`span = cardBottomDoc - innerHeight`；**`span <= 100` ⇒ `fail`（夹具不合格，不是 N/A）**；`scrollTop = span * 0.5`；`await requestAnimationFrame` 等一帧；断言 `|innerHeight − bar.bottom| <= 1`（static ⇒ `innerHeight + span/2`，恒红）。短列表（`span ≤ 0`）不进 B4，走 A1b 的 else 分支 |
+| 攻击点① 用 `span > 100px` 而不是"几屏" | 已采纳（不同视口/字体下"屏数"不等价） |
+| 攻击点② 选 3–4 张时「拼接」灰着**需要可见解释**（触屏无 hover） | D-1 3.3 新增：**仅 `2 < N ≤ 4` 时**栏上方出一行 12px 灰字「先拼前两张，再继续加」，**不常驻** |
+| 攻击点③ **A12 与 B5 会打架**（A12 绝对判据必红 vs B5 相对判据绿） | D-4 写明**优先级：A12 是用户可感知硬判据，不许被 B5 稀释**；改前已超 ⇒ 只有两条路：本批修掉，或 **A12 降为记录项 + 用户书面接受**；B5 交付必须写"改前/改后"数值对 |
+| 攻击点④ 降级态两个 Tag 是**粒度混淆**不是逻辑矛盾 | D-1 5.5 改：橙 Tag（这一张的判定）留卡片；**灰 Tag（本批能力状态）并进顶部汇总一行，不逐卡刷 N 遍** |
+| 顺带：3.2 的条件渲染多余（sticky 随卡片滚出自然消失）；若保留须用 `IntersectionObserver`，**不许在 scroll 回调里 setState** | D-1 3.2 改：**渲染条件只有 `items.length > 0`**，删掉按滚动设状态的条件渲染；② 段落的"消失"由 sticky 布局自然实现；**A3 判据同步改为几何**（`bar.getBoundingClientRect().bottom <= 0`，DOM 仍在），已请规格 v1.2 同步 |
 
 ## 修订说明 ⓪′（v0.4 → v0.5，逐条对 **r2 判词 + 附录 A**）
 
@@ -159,9 +170,11 @@
 2. **收紧每卡按钮**（规格 §6）：`pending` 无按钮、`ocr` 出 `Spin`+「识别中…」、`done` 出「重新识别」（现状 `:120` 已有）、`failed` 出「重试」（新增）。位置 = **卡底整行右对齐**（角落图标会与删除的 44 热区在 56px 内重叠；与元信息同排不新增行高）；375 下元信息先 `flex-wrap`，按钮 `flex:0 0 auto`。
 3. **下方操作栏**（P0-3 + 规格 §3；机制由 `fixed` 改 **`sticky`**）：
    - 3.1 `position: sticky; bottom: 0; z-index: 6;`，`margin: 0 -12px -12px`（抵消 `.ant-card-body` 12px padding）、`padding: 8px 12px calc(8px + env(safe-area-inset-bottom,0px))`、`background:#fff; border-top:1px solid #f0f0f0; box-shadow:0 -2px 8px rgba(0,0,0,.06); border-radius:0 0 8px 8px`。栏总高：≥576 **49**（32 按钮+8+8+1）/ ≤575 **61 + safe-area**（44+8+8+1）。
-   - 3.2 出现条件写死：`items.length > 0 && #sec-upload.getBoundingClientRect().bottom > 0`（几何单调量）。**不用 `sec`**：`sec` 由 `intersectionRatio` 最大值决定（`IntakePage.jsx:126-140`），①/② 交界处会在阈值上抖 ⇒ 栏反复显隐；几何量单调、天然无抖动（r2 P1-4）。sticky 占位 ⇒ **内容区不补 `padding-bottom`**。
-   - 3.3 三态（规格 §4，**短文案定稿**）：0 选 → `识别（N）`(primary) + `导入（M）`，**「更多」不渲染**；选 1 → `移除选中`(default+danger 文字) + `更多`(icon-only 44 热区)，主操作**不渲染**；选 ≥2 → `拼接（N）`(primary) + `移除选中` + `更多`；批量中 → `识别中 d/t` + `停止`(danger)。长语义进 `title`（`识别` →「一键识别全部 N 张（串行，可停止）」；`导入` →「只入库已识别且未入库的 M 张；疑似重复会自动跳过」）。
-   - 3.4 **同批删除顶部两处冗余**：`UploadPanel.jsx:29-33`（一键识别全部）与 `:56-63`（勾选文案 + 拼接 + 清空勾选）整行移除；顶部只保留计数 Tag（`共 N / 待识别 / 未识别 / 疑似重复 / 已导入过 M`）。
+   - 3.2 渲染条件只有 `items.length > 0`：**不做按滚动位置的条件渲染**（r3：多余，且 `IntersectionObserver`/scroll 回调里 setState 会引入抖动）。② 段落的"消失"由 sticky 布局自然实现（栏随 ① 卡片滚出视口）。**因此 A3 的判据要同步改成几何**（`bar.getBoundingClientRect().bottom <= 0` / 不相交），不能断言 DOM 为 null（已请规格 v1.2 同步）。sticky 占位 ⇒ **内容区不补 `padding-bottom`**。
+- 3.3 三态（规格 §4，**短文案定稿**）：0 选 → `识别（N）`(primary) + `导入（M）`，**「更多」不渲染**；选 1 → `移除选中`(default+danger 文字) + `更多`(icon-only 44 热区)，主操作**不渲染**；选 ≥2 → `拼接（N）`(primary) + `移除选中` + `更多`；批量中 → `识别中 d/t` + `停止`(danger)。长语义进 `title`（`识别` →「一键识别全部 N 张（串行，可停止）」；`导入` →「只入库已识别且未入库的 M 张；疑似重复会自动跳过」）。
+   
+   - 3.3b **`2 < N ≤ 4` 时**（C-9 未放行、拼接被禁用）栏内上方出一行 **12px 灰字「先拼前两张，再继续加」**；仅该区间出现，**不常驻**（手机无 hover，`title` 等于不存在 —— r3 攻击点②）。
+- 3.4 **同批删除顶部两处冗余**：`UploadPanel.jsx:29-33`（一键识别全部）与 `:56-63`（勾选文案 + 拼接 + 清空勾选）整行移除；顶部只保留计数 Tag（`共 N / 待识别 / 未识别 / 疑似重复 / 已导入过 M`）。
    - 3.5 栏**必须是 `.ant-card-body` 直接子元素**且**不许放进 antd `<Space>`**（`.ant-space-item` 高度=栏高 ⇒ sticky 退化成"跟内容走"，整块失效）；结构照规格 §3.3 的 `mb-upload-body` 包一层。
    - 3.6 窄屏（≤767）栏内按钮 `flex:1 1 0; min-width:0` 均分（375 三按钮各 ≈95.7px），`white-space:nowrap`；大屏左对齐、右侧 `已选 N` 用 `margin-left:auto`。
 4. **多选语义 + 两个上限常量**（规格 §5/§9-5 + r2 P0-2）：`selected` 改通用多选，**`MAX_SELECT = 4`**（第 5 次选中 `message.info('一次最多选 4 张；再拼请分批')` 且不加入）；顺序 = 勾选顺序；徽标 **16 圆 `#c8102e` + `①②③④`**，与 checkbox **并排不重叠**（`gap:4`）；`toggleSelect` 不再挤掉最早，按 `MAX_SELECT` 截断。
@@ -174,7 +187,7 @@
      - 5.2c **`removeItem` 必须同键删两个 Map 里的条目**（`IntakePage.jsx:208-212` 现在只动 `items`/`selected`）——否则"移除后再拖回来"会被误判成批内重复（D-4 的 B3 守这条）。
    - 5.3 **P2 对库**：`sha256 ∈ loadReports() 里的 sha256 集合` ⇒ **仍建卡**，卡底元信息行打 `Tag color="orange"`「同一文件已导入过」（`title="本文件的 sha256 与库内已有文件完全相同；入库时仍会再判一次"`），落 `predup:{kind:'exact-file', of}`（`libSha` = `Map(sha256→reportId)`，由既有 state 派生，零额外请求）。
    - 5.4 分野理由写死（不许实现方自由发挥）：**P1 不建卡** —— 同一张图拖一次+粘贴一次时库里还没有它，只查库必然"不重复"，两张同卡正是 r1 P0-1；**P2 建卡** —— 用户可能想覆盖/更新原报告，吞卡等于断他的路。
-   - 5.5 降级（哈希为 `null`，r2 P0-1 必改）：**批内**用 `name+size` 粗筛，命中**只打标不跳过** —— `predup:{kind:'name-size-suspect'}` + 卡底 `Tag`「可能重复（按文件名+大小粗判，请核对）」；**对库不做任何判断**（库不存文件名、`sourceName` 不存在）；卡另打灰 `Tag`「本次未做文件查重」，**顶部给可见计数**「疑似重复（粗判）N」。**不建卡只适用于 `crypto` 可用时的 exact sha256 命中**；**哈希失败不许丢文件**：照常建卡、照常可识别。
+   - 5.5 降级（哈希为 `null`，r2 P0-1 + r3 攻击点④）：**批内**用 `name+size` 粗筛，命中**只打标不跳过** —— 卡片上只留**橙 Tag**「可能重复（按文件名+大小粗判，请核对）」（这是"这一张的判定"）；**"本次未做文件查重"属于"本批的能力状态"，并进顶部汇总一行**（不要逐卡刷 N 遍）；**对库不做任何判断**；**不建卡只适用于 `crypto` 可用时的 exact sha256 命中**；**哈希失败不许丢文件**：照常建卡、照常可识别。
    - 5.6 `item.sha256` 落进 item（入库复用，省一次重算）；拼接图（`IntakePage.jsx:236-249`，无 `_file`/`size:null`）**不做预检**，卡标「拼接图（不查重）」。
    - 5.7 **批内跳过不进任何 Tag**（它连卡都没有），只走 `message` + 日志；顶部计数只有「已导入过 M」（P2）与「疑似重复 dupCount」（P3）两个，不合并。
    - 5.8 判定真相仍归服务端 `findDuplicate`（`server.mjs:1683`）；前端只提示，不改入库结果。
@@ -213,9 +226,25 @@
 | **B2** | 纯 JS 哈希对拍（原生腿） | `sha256Hex('abc')`（原生路径） | === `ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad` |
 | **B2b** | 纯 JS 哈希对拍（**强制 js 腿**，防空过） | `?hash=js` 下三条向量：`'abc'` / `'a'.repeat(1000)` / `Uint8Array([0,255,128,…])`，逐条与 node `crypto` 比 | 全部相等（**两条腿都要跑**；只跑原生 = r2 P1-1 的"写了永不执行"） |
 | **B3** | `removeItem` 同键删两个 Map | 导入 1 张 → 点「移除」→ **再次导入同一文件** | 建卡成功且**不出现**「这次已选过」提示（误判为批内重复即红） |
-| **B4** | **中途贴底**（分辨 sticky vs static 的唯一判据） | `documentElement.scrollTop = (scrollHeight - clientHeight) * 0.5` 后 `Math.abs(innerHeight - bar.getBoundingClientRect().bottom)` | **≤ 1**（`static` 时栏在视口外 ⇒ 必红） |
-| **B5** | 375 横滚**改前基线**（不许冒领） | 5194 + 副本库 + `?tab=intake`，改前先量 `documentElement.scrollWidth / clientWidth` | 改后 **≤ 改前**；**若改前已超，本条只能记"不得变差"，不许写成"修好横滚"** |
+| **B4** | **中途贴底**（分辨 sticky vs static 的唯一判据；**锚点必须是 ① 卡片，不是全文档** —— r3 P0） | 见下表后的代码块（几何锚点 `span`，`span <= 100` ⇒ `fail` 夹具不合格） | `\|innerHeight − bar.bottom\| ≤ 1`（`static` ⇒ `innerHeight + span/2`，恒红）；短列表 `span ≤ 0` 不进 B4，走 A1b 的 else 分支 |
+| **B5** | 375 横滚**改前基线**（不许冒领） | 5194 + 副本库 + `?tab=intake`，改前先量 `documentElement.scrollWidth / clientWidth` | 改后 **≤ 改前**，且交付必须写**改前/改后数值对**。**优先级：A12（绝对判据）高于 B5（相对判据），不许被 B5 稀释** —— 改前已超时只有两条路：本批修掉，或 **A12 降为记录项 + 用户书面接受** |
 | **B6** | sticky 前提：`overflow` 链无 hidden | 从 `#sec-upload` 逐级向上到 `body`，`getComputedStyle(el).overflow` 与 `overflowY` | 均 **!== 'hidden'**（将来给卡片加 `overflow:hidden` 会静默破坏贴底） |
+
+**B4 的可复制实现（四档各跑一次）**：
+
+```js
+const bar  = document.querySelector('.mb-batchbar')
+const body = document.querySelector('.ant-card-body')          // sticky 的 containing block
+const doc  = document.documentElement
+const cardBottomDoc = body.getBoundingClientRect().bottom + doc.scrollTop
+const span = cardBottomDoc - innerHeight                       // 卡片底部到视口底的可见跨度
+if (!(span > 100)) fail(`B4 夹具不合格：span=${span}px（① 段内容太短，改用 A1b 的 else 分支）`)  // fail，不是 N/A
+doc.scrollTop = span * 0.5                                     // 只滚到「卡片仍在视口下方」的区间
+await new Promise((r) => requestAnimationFrame(r))              // sticky 要等一帧
+const gap = Math.abs(innerHeight - bar.getBoundingClientRect().bottom)
+if (gap <= 1) ok(`B4 ${w} 中途贴底：|innerHeight − bar.bottom| = ${gap} ≤ 1`)
+else fail(`B4 ${w} 中途未贴底：gap=${gap}（static 时会等于 span/2 = ${(span / 2).toFixed(1)}）`)
+```
 
 ### D-5 实现边界（规格 §9 照抄为硬约束）
 
