@@ -1,6 +1,12 @@
-# ① 批量导入模块 —— **UI/交互数值规格** v1.0（UI 设计师，2026-11-16 23:2x）
+# ① 批量导入模块 —— **UI/交互数值规格** v1.1（UI 设计师，2026-11-16 23:5x）
 
-> 输入：`.agents/batch-import-1116-plan.md` v0.1 的 **D-1 七条（MVP）** + D-3 的 4 个前提问题。
+> **v1.1 改动（相对 v1.0，只改这 4 处，其余 30 条一字未动）**
+> 1. **§7 补「批内」去重一路**（r1 P0-1）：批内用 `Map<sha256, itemId>` 增量比对，**命中不建第二张卡**；对库命中仍建卡打 Tag；两者可区分。
+> 2. **§7 末段降级口径改判 (d)**（r1 P0-2，`server.mjs:1808` 绑 `0.0.0.0` ⇒ 手机必是非安全上下文 ⇒ `crypto.subtle` 必然 undefined）：以**自写纯 JS SHA-256 为主**，灰 Tag「本次未做文件查重」只保留给**哈希抛异常**。
+> 3. **§8 A1 拆成 A1 + A1b**（不遮内容 / 位置只取决于内容是否超一屏），两分支都**恒可判**（不留 N/A，符合 R3）。
+> 4. **§8 A7 补「更多」防漏**（0 选不渲染 ⇒ 选 1 / ≥2 时必须存在）。
+>
+> 输入：`.agents/batch-import-1116-plan.md` v0.1 的 **D-1 七条（MVP）** + D-3 的 4 个前提问题（计划侧已升 v0.3 采纳本规格）。
 > 本文件只给**数值与实现写法**，不改计划文件、不写业务代码。
 > 所有 px 都是**可直接写进 CSS 的值**；所有判据都附**可复跑量测式**（§8）。
 > 既有契约（**本批一个都不动**）：`.card`、`rb-edit-grid-wrap`、DataGrid 的 `.g-ctl` 全套、`g-main`、`.mb-review-grid`。
@@ -36,6 +42,7 @@
 | 颜色 | 白 `#fff`；分隔线 `#f0f0f0`；阴影 `rgba(0,0,0,.06)`；次文字 `#8c8c8c`；危险 `#ff4d4f` / 危险底 `#fff1f0`；主色 `#c8102e`（`colorPrimary`）；选中描边 `#c8102e` | 项目既有 + antd 官方值 |
 | 阴影 | 固定栏 `0 -2px 8px rgba(0,0,0,.06)` | 新增（唯一新增视觉元素） |
 | z-index | 固定栏 **6**（高于分段条 5、低于 antd Modal/Drawer 1000） | 推导 |
+| 依赖 | **新增第三方依赖 0 个**：SHA-256 用**自写纯 JS**（~40 行），`crypto.subtle` 可用时仍走原生加速 | 见 §7.3 |
 
 > **一致性硬要求**：本批不出现 7/14/18px 这类散值；新增文本一律 11/12/13。
 
@@ -200,16 +207,66 @@
 
 ---
 
-## 7. 重复提示两处（D-1 第 5/6 条，口径不许越界）
+## 7. 重复提示：**三路判定**（批内 / 对库 / 识别后），口径不许越界
 
-| 时机 | 判据（**只这一条**） | 呈现位置 | 文案（**定稿，不许改写成"疑似重复报告"**） |
-|---|---|---|---|
-| **导入时**（新） | `sha256(文件字节) === reports[].sha256`（`exact-file`） | **卡底元信息行**追加 `Tag color="orange"` | **`同一文件已导入过`**（`title="本文件的 sha256 与库内已有文件完全相同；入库时仍会再判一次"`） |
-| **识别后**（既有） | 后端 `findDuplicate` 单据级（条码+日期+类型） | 卡头状态 Tag（`ST.dup`，既有） | **`疑似同一份报告`**（把 `shared.js:10` 的 label 从「疑似重复」改成这一句，只改 label 字面，不动 color/default） |
+### 7.1 三路分工（顺序固定：**先批内、后对库**）
 
-- **顶部 extra 计数分离**：新增 `Tag color="orange"`「已导入过 {M}」；既有「疑似重复 {dupCount}」**保留原名**，两者不合并（计划 F3）。
-- **不落 `status`**：预检结果存独立字段 `predup: { kind: 'exact-file', of: <reportId> }`，`status` 仍是 `pending`；识别/入库不受影响（真相仍由后端裁定）。
-- **算不了哈希时**（非安全上下文，`window.isSecureContext === false` 或缺 `crypto.subtle`）：卡片打灰色 `Tag`「**本次未做文件查重**」，且**顶部不出「已导入过」计数** —— 不假装查过（计划 R10 建议 a）。
+| 路 | 时机 | 判据 | 命中后动作 | 呈现（定稿文案） |
+|---|---|---|---|---|
+| **P1 批内**（r1 P0-1 新增） | `addFiles()` 内、**建卡之前** | `Map<sha256, itemId>`（本次会话已建卡的文件）**增量比对** | **不建第二张卡**（`continue` 掉该文件） | `message.warning('这张图本次已选过，已跳过')` + `pushLog('批内重复：<name> 已选过，已跳过', 'warn')` |
+| **P2 对库** | P1 未命中后 | `sha256(文件字节) ∈ reports[].sha256`（`exact-file`） | **仍建卡**（真相仍由入库时后端裁） | 卡底元信息行 `Tag color="orange"` → **`同一文件已导入过`**（`title="本文件的 sha256 与库内已有文件完全相同；入库时仍会再判一次"`） |
+| **P3 识别后**（既有） | 识别完成、入库前 | 后端 `findDuplicate` 单据级（条码+日期+类型） | `status='dup'`（既有） | 卡头状态 Tag → **`疑似同一份报告`**（`shared.js:10` 只改 label 字面，`color` 仍 `orange`） |
+
+**为什么 P1 必须"不建卡"、P2 却"仍建卡"** —— 两条都可验，别混：
+- 同一张图"拖一次 + 粘贴一次"时**库里还没有它** ⇒ 只对库比对必然判"不重复" ⇒ 两张一模一样的卡并排，用户到入库才被静默跳过。**这就是 r1 P0-1。**
+- 对库命中时用户可能想**覆盖/更新原报告**；把卡吞掉等于断了他的路 ⇒ 仍建卡、只打提示。
+
+### 7.2 实现契约（照抄级，别自己改形）
+
+```js
+// 两个 Map 挂在组件 ref 上：必须跨多次 addFiles 累计（"拖一次+粘贴一次"是两次调用）
+const batchIdx      = useRef(new Map())   // sha256 -> itemId
+const batchIdxLoose = useRef(new Map())   // `${name}|${size}` -> itemId（仅哈希失败时兜底）
+
+const addFiles = useCallback(async (fileList) => {
+  // ① 先把哈希全部算完，再一次性建卡（避免"先建卡再补 Tag"的闪烁）；sha256FileSafe 不抛，失败给 null
+  const hashed = await Promise.all(fileList.map(async (f) => ({ f, sha: await sha256FileSafe(f) })))
+  const accepted = []
+  for (const { f, sha } of hashed) {
+    if (sha && batchIdx.current.has(sha)) {                 // P1：批内命中 → 不建卡
+      message.warning('这张图本次已选过，已跳过'); pushLog(`批内重复：${f.name} 已选过，已跳过`, 'warn'); continue
+    }
+    if (!sha) {                                             // 7.3 降级：只对批内做 name+size 粗筛
+      const k = `${f.name}|${f.size}`
+      if (batchIdxLoose.current.has(k)) { message.warning('这张图本次已选过（按文件名+大小判断），已跳过'); continue }
+    }
+    const predup = sha && libSha.has(sha) ? { kind: 'exact-file', of: libSha.get(sha) } : null   // P2
+    const item = { /* …既有字段… */ sha256: sha || '', predup }
+    if (sha) batchIdx.current.set(sha, item.id)             // 同一批里的第 2 个相同文件也会被跳过
+    batchIdxLoose.current.set(`${f.name}|${f.size}`, item.id)
+    accepted.push(item)
+  }
+  if (accepted.length) setItems((prev) => [...prev, ...accepted])
+  // …后续 FileReader 转 dataUrl 逻辑不变（按 accepted 逐个走）
+}, […])
+```
+
+- `libSha` = `new Map(reports.filter(r => r.sha256).map(r => [r.sha256, r.id]))`，由既有 `loadReports()` 的 state 派生（`GET /api/intake/reports` 已返回 `sha256`，计划 R5 ⇒ 零后端改动）。
+- **`removeItem` 必须同键删除两个 Map 里的条目**，否则"移除了再拖回来"会被误判成批内重复。
+- `item.sha256` 落进 item（入库可复用，省一次重算）。
+- 哈希在**建卡之前**算完；期间**不显示骨架/loading**（通常 <50 ms，加了反而闪）。
+
+### 7.3 哈希实现：**自写纯 JS SHA-256 为主**（r1 P0-2 定案，取代 v1.0 的 (a)）
+
+- **为什么不能用 `crypto.subtle` 当主路径**：`server.mjs:1808` 绑 `0.0.0.0` ⇒ 手机走局域网 `http://192.168.x.x:5174` ⇒ **非安全上下文** ⇒ `crypto.subtle === undefined`。以它为主等于"手机端这个主场不做查重"，不可接受。
+- **口径**：`sha256FileSafe(file)` = ① `crypto.subtle` 存在（`https` / `localhost`）⇒ 走原生 `digest`（快路径）；② 否则 ⇒ **自写纯 JS SHA-256**（~40 行、**零第三方依赖**）；③ **只在抛异常时**返回 `null`。
+- **降级（`null`）时的行为**：批内用 `name+size` 粗筛兜一层（**只对批内**）；**对库不做任何判断**（库内不存文件名、`sourceName` 不存在 ⇒ 用它判必误报），卡片打灰 `Tag`「**本次未做文件查重**」，且顶部**不出**「已导入过」计数 —— 不假装查过。
+- **不许**因为哈希失败丢文件：照常建卡、照常可识别。
+
+### 7.4 呈现与计数
+
+- **顶部 extra 计数分离**：新增 `Tag color="orange"`「已导入过 {M}」；既有「疑似重复 {dupCount}」**保留原名**，两者不合并（计划 F3）。**批内跳过不进任何 Tag**（它连卡都没有），只走 message + 日志。
+- **不落 `status`**：`predup` 是独立字段，`status` 仍是 `pending`；识别/入库不受影响。
 
 ---
 
@@ -220,20 +277,25 @@
 
 | # | 判据 | 量测式（直接粘贴可用） | 期望 |
 |---|---|---|---|
-| **A1** | 栏贴底且不遮内容 | 滚到底后：`const bar=document.querySelector('.mb-batchbar'); const cards=[...document.querySelectorAll('.mb-item-card')]; Math.abs(innerHeight - bar.getBoundingClientRect().bottom) <= 1 && 最后一张卡.rect.bottom <= bar.rect.top + 0.5` | 两者皆真 |
+| **A1** | **不遮内容**（长短列表都成立） | 滚到底后：`const bar=document.querySelector('.mb-batchbar'); const last=[...document.querySelectorAll('.mb-item-card')].pop(); last.rect.bottom <= bar.rect.top + 0.5` | 真 |
+| **A1b** | **栏的位置只取决于"内容是否超一屏"**（**恒可判，不留 N/A**，符合 R3） | 两条分支都写在断言里：<br>`const scrollable = document.documentElement.scrollHeight > document.documentElement.clientHeight + 1`<br>`if (scrollable) 断言 Math.abs(innerHeight - bar.rect.bottom) <= 1`（贴底）<br>`else 断言 bar.rect.bottom <= innerHeight + 0.5`（不吸底，排在内容末尾） | 对应分支为真 |
 | **A2** | 栏高与安全区 | `Math.round(bar.getBoundingClientRect().height)` | ≥576：**49**；≤575：**61 + safeArea**（无 safe-area 时 61） |
 | **A3** | ② 段落隐藏 | 滚到 `#sec-review` 可见后：`document.querySelector('.mb-batchbar')` | **null** |
 | **A4** | 375 不换行 | `bar.scrollWidth <= bar.clientWidth + 1`，且每个按钮 `getComputedStyle(b).whiteSpace === 'nowrap'`、`Math.round(b.rect.height)` = **44**（≤575）/ **32**（≥576） | 全真 |
 | **A5** | 头部不挤爆 | 文件名元素：`el.scrollWidth > el.clientWidth`（确认发生截断）时 `Math.round(el.rect.width) >= 96`；且状态 Tag 仍可见（`tag.rect.width > 0`） | 全真 |
 | **A6** | 触摸热区 44 | 删除按钮：`el.getBoundingClientRect()` 视觉 **24×24**；热区用命中判：以按钮中心为原点，`document.elementFromPoint(cx+20, cy)`、`(cx-20, cy)`、`(cx, cy+20)`、`(cx, cy-20)` **都返回该按钮**（`::before` 扩展归宿主） | 4 点全命中 |
-| **A7** | 三态按钮 DOM 存在性 | 0 选：`bar.querySelectorAll('[data-bar-btn]').length === 2` 且无 `[data-act="stitch"]`；选 1：有 `[data-act="remove"]`、无 `stitch`；选 2：`[data-act="stitch"]` 文案 === `拼接（2）` | 全真 |
+| **A7** | 三态按钮 DOM + **「更多」防漏**（v1.1 补） | **0 选**：`bar.querySelectorAll('[data-bar-btn]').length === 2`、无 `[data-act="stitch"]`、**无 `[data-act="more"]`**（不渲染是预期，不是漏）<br>**选 1**：有 `[data-act="remove"]`、**必有 `[data-act="more"]`**、无 `stitch`、`[data-bar-btn]` 计数 === **2**<br>**选 2**：有 `[data-act="stitch"]` 且文案 === `拼接（2）`、有 `remove`、**必有 `more`** | 全真 |
 | **A8** | 序号徽标 | 选 2 张后：`[...document.querySelectorAll('.mb-pick-badge')].map(e=>e.textContent).join('')` === `'①②'`；每个徽标 rect = **16×16**；与 checkbox rect **不相交**（`a.right <= b.left + 0.5`） | 全真 |
-| **A9** | 重复提示口径 | 预置一份库内已有的同一文件后导入：卡片内 `.mb-predup` 存在、文案 === **`同一文件已导入过`**、且组件树文本**不含** `疑似重复报告` | 全真 |
+| **A9** | 重复提示口径（对库） | 预置一份库内已有的同一文件后导入：卡片内 `.mb-predup` 存在、文案 === **`同一文件已导入过`**、且组件树文本**不含** `疑似重复报告` | 全真 |
+| **A9b** | **批内去重**（r1 P0-1 的落地判据，v1.1 新增） | 同一张图**连续导入两次**（第二次走粘贴路径，不刷新页面）：<br>`document.querySelectorAll('.mb-item-card').length` === **1**；<br>且出现 `message.warning` 文案 `这张图本次已选过，已跳过`（用 `page.on('console')` 或 antd message 的 DOM `.ant-message-notice` 取文判）；<br>且**第一张卡上不得**同时出现 `.mb-predup`（库里本来没有它，对库不该命中） | 三条全真 |
 | **A10** | 栏内按钮不出卡 | 每个按钮 `rect.left >= bar.rect.left - 0.5 && rect.right <= bar.rect.right + 0.5` | 全真 |
 | **A11** | 无回退：既有契约 | `document.querySelectorAll('.g-grid').length`、`.mb-review-grid` 高度、`.card` 上无新增 `mb-batchbar` 子孙（`document.querySelector('.card .mb-batchbar')` 只允许 1 个且父级是 `.mb-upload-body`） | 全真 |
 | **A12** | 页面不横向滚 | 四档 `document.documentElement.scrollWidth <= clientWidth + 1` | 全真 |
 
-**证伪要求（沿用上轮口径）**：至少做一次"改坏再修"：把 `.mb-batchbar` 的 `position: sticky` 改成 `static` ⇒ **A1 必红**（栏不再贴底）；把按钮宽 `flex:1 1 0` 去掉 ⇒ **A4 必红**（375 `scrollWidth > clientWidth`）。两次都要贴退出码 **1**。
+**证伪要求（沿用上轮口径，v1.1 增到 3 条，每条都要贴退出码 1）**：
+1. `.mb-batchbar` 的 `position: sticky` → `static` ⇒ **A1b 必红**（栏不再贴底）；
+2. 按钮去掉 `flex:1 1 0` ⇒ **A4 必红**（375 `scrollWidth > clientWidth`）；
+3. **把 §7.2 的 `batchIdx` 批内比对注掉** ⇒ 同一张图导入两次会出现 **2 张卡** ⇒ **A9b 必红**（这是 r1 P0-1 的回归守门人，必须真的红过一次）。
 
 ---
 
@@ -255,8 +317,9 @@
 
 ---
 
-## 11. 条数统计
+## 11. 条数统计（v1.1）
 
-- 规格条目：**§2 卡片头部 5 条 / §3 操作栏 6 条 / §4 三态 6 条 / §5 徽标 4 条 / §6 重识别 4 条 / §7 重复提示 5 条 = 30 条**
-- 可复跑判据：**A1–A12 共 12 条**（其中 A1/A4 各带一条证伪要求）
-- 需确认项：**3 条**（§10）
+- 规格条目：**§2 卡片头部 5 / §3 操作栏 6 / §4 三态 6 / §5 徽标 4 / §6 重识别 4 / §7 重复提示 14（v1.0 的 5 条 → 三路判定 3 + 实现契约 5 + 哈希 4 + 呈现 2）= 39 条**
+- 可复跑判据：**A1 / A1b / A2 / A3 / A4 / A5 / A6 / A7 / A8 / A9 / A9b / A10 / A11 / A12 = 14 条**，其中 **A1b / A4 / A9b 各带一条证伪要求**（3 次改坏必须真红并贴退出码 1）
+- 需确认项：**3 条**（§10，计划 v0.3 已按我的建议全采纳，其中第 3 条标"待用户点头"）
+- **无 N/A 出口**：A1b 用"两分支恒可判"消灭了 v1.0 里唯一的条件判据；其余判据全部有确定期望值（符合 R3：若某条不该计入就得改判据，不是改计数口径）
