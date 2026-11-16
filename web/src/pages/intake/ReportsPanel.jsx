@@ -18,6 +18,7 @@ import { Alert, App as AntApp, Button, Card, Descriptions, Drawer, Empty, Grid, 
 import { jget, jpost } from '../../api.js'
 import { rawJson } from './shared.js'
 import { KIND_OPTIONS } from './shared.js'
+import { toPoints, fromPoints } from './points.js'
 import { DEFAULT_SORT, sortReports, nextSort } from './reportSort.js'
 // D2（2026-11-15 用户拍板 + 代诊-Manager 审核放行）：报告库编辑态**直接复用 MedData 的指标行
 // 组件 DataGrid**，不再手写 5 个裸 Input。它与「资料导入」tab 里用的是同一个组件、同一个 bundle
@@ -61,23 +62,6 @@ const REPORT_DRAWER_MOBILE_CSS = `
 .rb-row-card .rb-row-sub code { font-size: 11px; }
 `
 
-const toPoints = (rows = []) => (rows || []).map((r, i) => ({
-  _row: i,
-  _item_no: i + 1,
-  standard_code: r.code || '',
-  original_name: r.name || '',
-  value: r.value ?? '',
-  unit: r.unit || '',
-  ref_range: r.refRange || '',
-  arrow: r.flag === 'high' ? '↑' : r.flag === 'low' ? '↓' : '',
-}))
-const fromPoints = (points = []) => (points || []).map((p) => ({
-  name: p.original_name || p.name || '',
-  value: p.value ?? '',
-  unit: p.unit || '',
-  refRange: p.ref_range || '',
-  code: p.standard_code || '',
-}))
 const abnormalOf = (r) => (Array.isArray(r.rows) ? r.rows.filter((x) => ['high', 'low', 'positive'].includes(x.status)).length : 0)
 const fmtWhen = (iso) => {
   const t = String(iso || '')

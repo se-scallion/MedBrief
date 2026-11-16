@@ -36,7 +36,8 @@
     "test:realdoc": "node tests/verify-realdoc.mjs",
     "test:hits": "node tests/verify-recognition-hits.mjs",
     "test:no-web-logic": "node tests/verify-no-server-logic-in-web.mjs",
-    "test:drawer375": "node tests/verify-report-drawer-375.mjs"
+    "test:drawer375": "node tests/verify-report-drawer-375.mjs",
+    "test:import-hint": "node tests/verify-import-hint.mjs"
   },
   "keywords": [
     "guahao",

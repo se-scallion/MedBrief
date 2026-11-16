@@ -408,10 +408,38 @@ export default function IntakePage() {
     message[r.failed ? 'warning' : 'success'](`识别完成：成功 ${r.ok} 张${r.failed ? `，异常 ${r.failed} 张` : ''}`)
   }
 
-  // ---------- 一键导入全部（只导入已解析出指标行的） ----------
+  // ---------- 一键导入全部 ----------
+  // v0.6：四态分类，替代原来「targets=[] 一律『没有可入库的条目』」的死提示。
+  // 用户实测：识别成功并导入 → 再点一键导入 → 勾选条目 / 重新识别都仍是同一句提示。
+  // 根因是 saved:true 后 targets 恒空，而勾选只用于两张拼接、重新识别不清 saved。
+  const classifyImportable = (list = []) => {
+    const saved = list.filter((it) => it.saved)
+    const dup = list.filter((it) => !it.saved && it.status === 'dup')
+    const failed = list.filter((it) => !it.saved && it.status !== 'dup' && it.status === 'failed')
+    const unrecognized = list.filter((it) => !it.saved && it.status !== 'dup' && it.status !== 'failed'
+      && !String(it.text || '').trim() && !(Array.isArray(it.rows) && it.rows.length))
+    // 0 行但有文本的全文型报告：单张可入库，批量也应可入库（但须 status!=='failed'）。
+    const textual = list.filter((it) => !it.saved && it.status !== 'dup' && it.status !== 'failed'
+      && String(it.text || '').trim() && !(Array.isArray(it.rows) && it.rows.length))
+    const lab = list.filter((it) => !it.saved && it.status !== 'dup' && it.status !== 'failed'
+      && Array.isArray(it.rows) && it.rows.length > 0)
+    return { targets: [...lab, ...textual], saved, dup, failed, unrecognized, textual, lab }
+  }
+  const importHint = (c) => {
+    if (!c.targets.length && c.saved.length && !c.dup.length && !c.failed.length && !c.unrecognized.length) {
+      return `这 ${c.saved.length} 张已入库（${c.saved.slice(0, 2).map((x) => x.reportId || x.id).join('、')}${c.saved.length > 2 ? '…' : ''}）。要改内容请点该张「重新识别」生成待校对副本，再选「更新原报告」或「另存为新报告」。`
+    }
+    const parts = []
+    if (c.saved.length) parts.push(`${c.saved.length} 张已入库`)
+    if (c.dup.length) parts.push(`${c.dup.length} 张疑似重复已跳过（要强导请单独点该张「入库」并确认）`)
+    if (c.failed.length) parts.push(`${c.failed.length} 张识别失败（请先「一键识别全部」或粘贴文本重新解析）`)
+    if (c.unrecognized.length) parts.push(`${c.unrecognized.length} 张还没有识别结果（先识别）`)
+    return parts.length ? `${parts.join('；')}。` : '还没有图片，先在 ① 导入。'
+  }
   const importAll = async () => {
-    const targets = items.filter((it) => !it.saved && Array.isArray(it.rows) && it.rows.length > 0)
-    if (!targets.length) { message.info('没有可入库的条目（先识别，或识别后补上指标行）'); return }
+    const c = classifyImportable(items)
+    const targets = c.targets
+    if (!targets.length) { message.info(importHint(c)); return }
     batchStop.current = false
     setBatch({ mode: 'import', done: 0, total: targets.length })
     pushLog(`开始一键导入：共 ${targets.length} 张（疑似重复的会自动跳过并记日志）`, 'info')
