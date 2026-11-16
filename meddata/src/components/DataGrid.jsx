@@ -28,7 +28,7 @@ function EditedMark({ edited, title = '已修改，将作为反馈改进识别�
     <span className="relative block w-full">
       {children}
       {edited && (
-        <span className="pointer-events-none absolute left-1 right-1 -bottom-[3px] h-[2px] rounded-full bg-brand-500" title={title} />
+        <span className="pointer-events-none absolute left-0 right-0 bottom-0 h-[2px] rounded-full bg-brand-500" title={title} />
       )}
     </span>
   )
@@ -125,7 +125,7 @@ function CodeSelectCell({ value, reportType, onChange, userAliases = {} }) {
         <button
           type="button"
           onClick={openBox}
-          className={`w-full rounded-md border px-1.5 py-1.5 text-left text-xs focus:outline-none focus:ring-2 focus:ring-brand-500/40 ${
+          className={`g-ctl w-full rounded-md border px-1.5 py-1.5 text-left text-xs focus:outline-none focus:ring-2 focus:ring-brand-500/40 ${
             cur ? 'border-slate-300 bg-white' : 'border-dashed border-slate-300 text-slate-400'
           }`}
         >
@@ -135,7 +135,7 @@ function CodeSelectCell({ value, reportType, onChange, userAliases = {} }) {
               {cur.code}
             </span>
           ) : (
-            '未识别（点此搜索选择）'
+            <span className="truncate" title="未识别：点此搜索选择标准代码">未识别</span>
           )}
         </button>
       </div>
@@ -795,7 +795,7 @@ export default function DataGrid({
     0
 
   return (
-    <div className="space-y-4">
+    <div className="g-grid space-y-4">
       {/* 记录信息栏 */}
       <div className="card p-4 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <div>
@@ -922,7 +922,7 @@ export default function DataGrid({
                 </span>
               )}
             </h3>
-            <div className="flex items-center gap-2 text-xs">
+            <div className="flex flex-wrap items-center gap-2 text-xs">
               <button
                 className="btn-primary text-xs px-2 py-1"
                 title={
@@ -1123,11 +1123,11 @@ export default function DataGrid({
             </div>
           )}
 
-          <div ref={gridScrollRef} className="overflow-x-auto" style={{ maxHeight: 420 }}>
-            <table className="w-full text-sm border-collapse min-w-[760px]">
+          <div ref={gridScrollRef} className="overflow-x-auto" style={{ maxHeight: 'clamp(320px, calc(100vh - 320px), 560px)' }}>
+            <table className="g-main w-full text-sm border-collapse min-w-[760px]">
               <thead>
                 <tr className="text-left text-xs text-slate-500 border-b border-slate-200">
-                  <th className="py-2 pr-2 font-medium w-14">
+                  <th className="py-2 pr-2 font-medium w-[68px]">
                     <button
                       className="inline-flex items-center gap-1 select-none hover:text-brand-700"
                       title={
@@ -1254,7 +1254,7 @@ export default function DataGrid({
                                 ? `序号 ${p._item_no}：手动编辑。点击可修改`
                                 : `序号 ${p._item_no ?? '—'}：报告未带，自动按序填充（推理）。点击可修改`
                           }
-                          className={`w-10 bg-transparent text-center font-mono text-xs outline-none focus:ring-1 focus:ring-brand-400 focus:rounded-sm ${
+                          className={`g-bare w-10 bg-transparent text-center font-mono text-xs outline-none focus:ring-1 focus:ring-brand-400 focus:rounded-sm ${
                             p._item_no_src === 'detected'
                               ? 'font-semibold text-slate-700'
                               : p._item_no_src === 'manual'
@@ -1278,7 +1278,7 @@ export default function DataGrid({
                       <EditedMark edited={!!p._editSrc?.original_name}>
                         <div className="relative min-w-[150px]">
                           <input
-                            className={`w-full rounded-md border px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500/40 ${
+                            className={`g-ctl w-full rounded-md border px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500/40 ${
                               p._audit?.codeReversed ? 'border-teal-400 bg-teal-50/40' : 'border-slate-300'
                             } ${nameMismatch ? 'pr-8' : ''}`}
                             value={p.original_name}
@@ -1293,7 +1293,7 @@ export default function DataGrid({
                           {nameMismatch && (
                             <button
                               type="button"
-                              className="absolute right-1 top-1/2 -translate-y-1/2 inline-flex h-5 w-5 items-center justify-center rounded border border-brand-200 bg-brand-100 text-[11px] leading-none text-brand-700 hover:bg-brand-200"
+                              className="g-bare absolute right-1 top-1/2 -translate-y-1/2 inline-flex h-5 w-5 items-center justify-center rounded bg-brand-100 text-[11px] leading-none text-brand-700 hover:bg-brand-200"
                               title={`当前名称与所选代码「${p.standard_code}」的标准名不一致；点击替换为「${nameField.name}」`}
                               onClick={() => updatePoint(i, { original_name: nameField.name })}
                             >
@@ -1304,10 +1304,10 @@ export default function DataGrid({
                       </EditedMark>
                     </td>
                     <td className="py-1.5 pr-2">
-                      <div className="flex items-center gap-1.5">
+                      <div className="relative flex items-center gap-1.5">
                         <EditedMark edited={!!p._editSrc?.value}>
                           <input
-                            className={`w-full rounded-md border px-2 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-brand-500/40 ${
+                            className={`g-ctl w-full rounded-md border px-2 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-brand-500/40 ${
                               p._suspicious ? 'border-red-300 bg-red-50/40' : 'border-slate-300'
                             }`}
                             value={p.value}
@@ -1317,7 +1317,7 @@ export default function DataGrid({
                         </EditedMark>
                         {p._suspicious && (
                           <span
-                            className="hidden shrink-0 items-center justify-center h-4 w-4 rounded-full bg-red-500 text-white text-[10px] font-bold leading-none cursor-help group-hover:inline-flex"
+                            className="hidden absolute -right-1 top-1/2 -translate-y-1/2 items-center justify-center h-4 w-4 rounded-full bg-red-500 text-white text-[10px] font-bold leading-none cursor-help group-hover:flex"
                             title={`🚨 疑似错位\n${p._fix?.reason || ''}\n${
                               p._fix?.candidates?.length
                                 ? `修正候选：${p._fix.candidates.map((c) => `${c.factor} → ${c.fixed}`).join('、')}`
@@ -1332,7 +1332,7 @@ export default function DataGrid({
                     <td className="py-1.5 pr-2">
                       <EditedMark edited={!!p._editSrc?.unit}>
                         <input
-                          className={`w-full rounded-md border px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500/40 ${
+                          className={`g-ctl w-full rounded-md border px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500/40 ${
                             uAudit === 'mismatch' ? 'border-orange-400 bg-orange-50/40' : 'border-slate-300'
                           }`}
                           value={p.unit}
@@ -1344,7 +1344,7 @@ export default function DataGrid({
                     <td className="py-1.5 pr-2">
                       <EditedMark edited={!!p._editSrc?.ref_range}>
                         <input
-                          className={`w-full rounded-md border px-2 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-brand-500/40 ${
+                          className={`g-ctl w-full rounded-md border px-2 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-brand-500/40 ${
                             rAudit === 'mismatch'
                               ? 'border-orange-400 bg-orange-50/40'
                               : rAudit === 'near'
@@ -1361,7 +1361,7 @@ export default function DataGrid({
                     <td className="py-1.5 pr-2">
                       <EditedMark edited={!!p._editSrc?.arrow}>
                         <select
-                          className="w-full rounded-md border border-slate-300 px-1.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500/40"
+                          className="g-ctl w-full rounded-md border border-slate-300 px-1.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500/40"
                           value={p.arrow}
                           onChange={(e) => updatePoint(i, { arrow: e.target.value })}
                         >
