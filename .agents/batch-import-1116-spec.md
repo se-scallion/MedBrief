@@ -150,7 +150,7 @@
 
 ```css
 /* 只允许这两件事：① 视觉盒收到 24；② 热区扩到 44（antd 无 hit-area prop）。
-   边框/背景/圆角/危险色一律走 antd（type="text" + danger），这里不重画外观。 */
+   边框/背景/圆角/颜色一律走 antd（type="text" 默认色；**不加 danger**），这里不重画外观。 */
 .mb-icon-btn.ant-btn { width: 24px; min-width: 24px; height: 24px; padding: 0; position: relative; }
 .mb-icon-btn.ant-btn::before { content: ''; position: absolute; inset: -10px; }  /* 24 + 20 = 44 热区，命中归宿主 */
 ```
