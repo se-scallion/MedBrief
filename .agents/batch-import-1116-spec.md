@@ -1,4 +1,6 @@
-# ① 批量导入模块 —— **UI/交互数值规格** v1.7（UI 设计师，2026-11-17 1:2x）
+# ① 批量导入模块 —— **UI/交互数值规格** v1.8（UI 设计师，2026-11-17 1:4x）
+
+> **v1.8 只删 1 个词**：§1.1 选型表第 3 行（删除按钮）里的 `danger` —— 它与 §2.4（已去 `danger`）和 A6（`!className.includes("ant-btn-dangerous")` 反向断言）**自相矛盾**，而实现方读的是选型表 ⇒ 留着会直接写回 `danger` 然后 A6 当场红。现在全文档零 `danger` 矛盾。
 
 > **v1.7 改 3 处（都是 §1.1「antd 优先」带出来的，我认）**：
 > 1. **§2.4 事实错：`danger` 常态就是红** —— 原文写「`danger` 让 hover/active 走危险色、常态灰」是错的（`.ant-btn-dangerous` 的 `color` 常态即 `#ff4d4f`）。**取 A：去掉 `danger`**，常态用 antd `type="text"` 默认色、**不覆盖任何颜色**；并在 A6 补**反向断言**（常态不得出现 `rgb(255, 77, 79)`、`className` 不含 `ant-btn-dangerous`），否则「常态灰」这句就是没有判据守着的空话。
@@ -89,7 +91,7 @@
 |---|---|---|---|
 | 卡片选中 checkbox | `Checkbox` | 受控 `checked` + `onChange`；热区用外层 `span.mb-hit44`（antd 无 hit-area prop） | — |
 | 拼接顺序徽标 `①②③④` | `Badge` | `count={<span className="mb-badge-txt">①</span>}`，`showZero={false}`，尺寸用 CSS 覆盖 `.ant-badge-count{width:16px;height:16px;min-width:16px;line-height:16px;padding:0;font-size:11px}` | 不用 `Avatar`（有背景圈过大）、不用 `Tag`（自带边框与内边距） |
-| 删除（移除未入库条目） | `Button` | `type="text"` `shape="circle"` `icon={<DeleteOutlined />}` `danger` + `aria-label="移除此文件"` `title` 同文；热区靠 `.mb-icon-btn::before{inset:-10px}`（antd 无此 prop） | 不用裸 `<button>`（v1.4 的写法，违反"antd 优先"） |
+| 删除（移除未入库条目） | `Button` | `type="text"` `shape="circle"` `icon={<DeleteOutlined />}` + `aria-label="移除此文件"` `title` 同文；**不加 `danger`**（antd 的 `.ant-btn-dangerous` 常态即 `#ff4d4f`，与 §2.4 / A6 一致）；热区靠 `.mb-icon-btn::before{inset:-10px}`（antd 无此 prop） | 不用裸 `<button>`（v1.4 的写法，违反"antd 优先"） |
 | 状态 Tag / 重复 Tag | `Tag` | `color` 语义值（`default/green/red/orange`） | — |
 | 重新识别 / 重试 | `Button` | `size="small"` `icon={<ReloadOutlined />}`（失败态加 `danger`） | — |
 | 「识别中…」文字 | `Typography.Text` | `type="secondary"` `style={{fontSize:12}}` + `Spin size="small"` | 不用裸 `<span>` |
