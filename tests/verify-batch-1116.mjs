@@ -226,7 +226,10 @@ try {
       ok(`A4b ${w} 窄屏均分：${a4b.labels.join('/')} = ${a4b.widths.join('=')}`)
     } else fail(`A4b ${w} 窄屏未均分：${a4b.labels.join('/')} = ${a4b.widths.join('/')}（sw/cw=${a4b.sw}/${a4b.cw}）`)
 
-    // ---- A2 灰字态（选 3 张：2 < N ≤ 4 ⇒ 灰字 + 栏高 +16）----
+    // ---- A2 选 3 张态（2026-11-17 C-9 放行后 MAX_STITCH=4）----
+    // 灰字「先拼前两张」的触发条件是 selCount > MAX_STITCH；MAX_STITCH=4 且 MAX_SELECT=4 ⇒ 不可能触发
+    // ⇒ 这里断"无灰字 + 栏高维持常态 + 拼接（3）可用"。若将来 MAX_SELECT 提到 >4，灰字态断言再启用
+    // （规格 A2 的"两态相减 = 16"保留在代码里，由 hint 存在时生效，见下方分支）。
     await page.locator('.mb-item-card .ant-checkbox-input').nth(2).check()
     await page.waitForTimeout(200)
     const a2b = await page.evaluate(() => {
@@ -237,16 +240,20 @@ try {
         H: Math.round(bar.getBoundingClientRect().height),
         hintText: hint ? hint.textContent.trim() : null,
         hintH: hint ? Math.round(hint.getBoundingClientRect().height) : null,
-        hintSW: hint ? hint.scrollWidth : null, hintCW: hint ? hint.clientWidth : null,
         stitchDisabled: stitch ? stitch.disabled : null,
+        stitchText: stitch ? stitch.textContent.trim() : null,
       }
     })
-    const expectHint = w >= 576 ? 65 : 77
-    if (a2b.hintText && a2b.H === expectHint && a2b.hintH <= 16 && a2b.hintSW <= a2b.hintCW + 1 && a2b.stitchDisabled) {
-      ok(`A2 ${w} 灰字态「${a2b.hintText}」栏高 ${a2b.H}=${expectHint}（差 ${a2b.H - expect0}=16），拼接已禁用`)
-    } else fail(`A2 ${w} 灰字态异常：hint=${a2b.hintText} H=${a2b.H}（期望 ${expectHint}）hintH=${a2b.hintH} 换行=${a2b.hintSW > a2b.hintCW} disabled=${a2b.stitchDisabled}`)
-    if (a2b.H - expect0 === 16) ok(`A2 ${w} 两态相减恰好 16（${expect0} → ${a2b.H}）`)
-    else fail(`A2 ${w} 两态相减 ${a2b.H - expect0} ≠ 16`)
+    if (a2b.hintText) {
+      // 灰字态（仅在 selCount > MAX_STITCH 时出现）：栏高必须恰好 +16
+      const expectHint = w >= 576 ? 65 : 77
+      if (a2b.H === expectHint && a2b.hintH <= 16) ok(`A2 ${w} 灰字态「${a2b.hintText}」栏高 ${a2b.H}=${expectHint}（差 ${a2b.H - expect0}=16）`)
+      else fail(`A2 ${w} 灰字态异常：H=${a2b.H}（期望 ${expectHint}）hintH=${a2b.hintH}`)
+    } else if (a2b.H === expect0 && /拼接（3）/.test(a2b.stitchText || '') && a2b.stitchDisabled === false) {
+      ok(`A2 ${w} 选 3 张：无灰字、栏高 ${a2b.H}=${expect0}、${a2b.stitchText} 可用（MAX_STITCH=4 已放行）`)
+    } else {
+      fail(`A2 ${w} 选 3 张异常：H=${a2b.H}（期望 ${expect0}）hint=${a2b.hintText} stitch=${a2b.stitchText} disabled=${a2b.stitchDisabled}`)
+    }
 
     // ---- A10 栏内按钮不出卡 + 栏内无 Dropdown 菜单 ----
     const a10 = await page.evaluate(() => {
@@ -343,6 +350,69 @@ try {
 
     if (pageErrors.length === 0) ok(`Z ${w} 全程 pageerror=0`)
     else fail(`Z ${w} pageerror ${pageErrors.length} 条：${pageErrors[0]}`)
+    await page.close()
+  }
+
+  // ---- C-9 多张拼接端到端（用户 2026-11-17 两次点名「现在就要拼三段」）----
+  {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+    const errs = []
+    page.on('pageerror', (e) => errs.push(String(e.message || e)))
+    await page.goto(`${BASE}/?tab=intake`, { waitUntil: 'domcontentloaded' })
+    await page.waitForSelector('.mb-upload-body')
+    await upload(page, [fxA, fxB, fxC])
+    if (await cardCount(page) !== 3) fail('C-9 前置：3 张夹具未建卡'); 
+    for (let i = 0; i < 3; i++) await page.locator('.mb-item-card .ant-checkbox-input').nth(i).check()
+    await page.waitForTimeout(200)
+    const st = await page.evaluate(() => {
+      const b = document.querySelector('[data-act="stitch"]')
+      return { text: b ? b.textContent.trim() : null, disabled: b ? b.disabled : null }
+    })
+    if (!/拼接（3）/.test(st.text || '') || st.disabled) fail(`C-9 三选态按钮异常：${st.text} disabled=${st.disabled}`)
+    else ok(`C-9 选 3 张：按钮「${st.text}」可用`)
+    await page.locator('[data-act="stitch"]').click()
+    // 等拼接完成：3 张卡 → 1 张拼接卡
+    let merged = 0
+    for (let i = 0; i < 40; i++) {
+      await page.waitForTimeout(300)
+      merged = await page.locator('.mb-item-card', { hasText: '拼接-' }).count()
+      const total = await cardCount(page)
+      if (merged === 1 && total === 1) break
+    }
+    const total = await cardCount(page)
+    const mergedName = (await page.locator('.mb-item-card .mb-file-name').first().textContent().catch(() => '')) || ''
+    if (merged === 1 && total === 1 && /拼接-/.test(mergedName) && errs.length === 0) {
+      ok(`C-9 三段拼接成功：3 张 → 1 张（${mergedName.slice(0, 48)}…），pageerror=0`)
+    } else {
+      fail(`C-9 三段拼接失败：merged=${merged} total=${total} name=${JSON.stringify(mergedName)} err=${errs[0] || ''}`)
+    }
+
+    // 服务端护栏：5 张必须被拒（前端常量 4 只是第一道）
+    const fiveImgs = [1, 2, 3, 4, 5].map((i) => `data:image/png;base64,${Buffer.concat([PNG1X1, Buffer.from(`G${i}`)]).toString('base64')}`)
+    const r5 = await (await fetch(`${BASE}/api/intake/stitch`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ images: fiveImgs }),
+    })).json()
+    if (r5.ok === false && /最多拼 4 张/.test(String(r5.error || ''))) ok(`C-9 服务端护栏：5 张被拒（${r5.error}）`)
+    else fail(`C-9 服务端护栏失效：${JSON.stringify(r5).slice(0, 160)}`)
+
+    // 放行条件实测：4 张 4000px 高的图 —— 返回字节数与耗时（手机 OOM 风险的可测代理）
+    const { createCanvas } = await import('@napi-rs/canvas')
+    const bigs = [1, 2, 3, 4].map((i) => {
+      const c = createCanvas(1200, 4000)
+      const ctx = c.getContext('2d')
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 1200, 4000)
+      ctx.fillStyle = '#000'; ctx.font = '48px sans-serif'; ctx.fillText(`页 ${i}`, 60, 200 + i * 40)
+      return `data:image/png;base64,${c.toBuffer('image/png').toString('base64')}`
+    })
+    const t0 = Date.now()
+    const big = await (await fetch(`${BASE}/api/intake/stitch`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ images: bigs }),
+    })).json()
+    const ms = Date.now() - t0
+    const bytes = big.ok ? Math.round((String(big.dataUrl).length - String(big.dataUrl).indexOf(',')) * 0.75) : -1
+    if (big.ok && bytes <= 8 * 1024 * 1024 && ms <= 5000) {
+      ok(`C-9 4×4000px 实测：${big.width}×${big.height}，≈${(bytes / 1024 / 1024).toFixed(1)}MB，${ms}ms（阈：≤8MB / ≤5s）`)
+    } else fail(`C-9 4×4000px 实测超阈：ok=${big.ok} bytes=${bytes} ms=${ms} err=${big.error || ''}`)
     await page.close()
   }
 

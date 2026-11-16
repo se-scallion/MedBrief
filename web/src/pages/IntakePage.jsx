@@ -89,7 +89,9 @@ export default function IntakePage() {
   //   MAX_SELECT = 一次能勾几张；MAX_STITCH = 一次能拼几张（C-9 未放行 ⇒ 常量锁 2，
   //   闸门在 doStitch 函数里，不靠按钮 disabled —— disabled 只是第二道保险）。
   const MAX_SELECT = 4
-  const MAX_STITCH = 2
+  // 2026-11-17 用户两次点名「现在就要拼三段」⇒ C-9 放行：一次最多拼 4 张。
+  // 服务端护栏见 lib/reportIntake.mjs 的 MAX_STITCH_IMAGES / MAX_STITCH_HEIGHT（不许只靠前端）。
+  const MAX_STITCH = 4
   // 批内查重索引：必须跨多次 addFiles 累计（"拖一次 + 粘贴一次"是两次调用）
   const batchIdx = useRef(new Map())      // sha256 -> itemId
   const batchIdxLoose = useRef(new Map()) // `${name}|${size}` -> itemId（仅 sha 为 null 时兜底）
@@ -283,41 +285,45 @@ export default function IntakePage() {
   }
 
   const doStitch = async () => {
-    // 闸门在函数里（不靠按钮 disabled）：C-9 多张拼接未放行 ⇒ MAX_STITCH = 2
-    if (selected.length !== MAX_STITCH) {
-      message.warning(`请勾选恰好 ${MAX_STITCH} 张图片再拼接`)
+    // 闸门在函数里（不靠按钮 disabled）：2..MAX_STITCH 张可拼，顺序 = 勾选顺序
+    if (selected.length < 2 || selected.length > MAX_STITCH) {
+      message.warning(`请勾选 2~${MAX_STITCH} 张图片再拼接（当前 ${selected.length} 张）`)
       return
     }
-    const [a, b] = selected.map((id) => items.find((it) => it.id === id)).filter(Boolean)
-    if (!a || !b || !a.dataUrl || !b.dataUrl || a.isPdf || b.isPdf) {
-      if (a?.isPdf || b?.isPdf) message.warning('PDF 不能拼接，请直接识别（PDF 内部多页会自动按页处理）')
-      else message.warning('请选择两张已读取完成的图片')
+    const picked = selected.map((id) => items.find((it) => it.id === id)).filter(Boolean)
+    if (picked.length !== selected.length) { message.warning('有图片已不在列表里，请重新勾选'); return }
+    if (picked.some((it) => it.isPdf)) {
+      message.warning('PDF 不能拼接，请直接识别（PDF 内部多页会自动按页处理）')
+      return
+    }
+    if (picked.some((it) => !it.dataUrl)) {
       message.warning('图片还没读取完成，稍后再试')
       return
     }
     setStitching(true)
     try {
-      const { body } = await postJson('/api/intake/stitch', { images: [a.dataUrl, b.dataUrl] })
+      const { body } = await postJson('/api/intake/stitch', { images: picked.map((it) => it.dataUrl) })
       if (!body.ok) throw new Error(body.error || '拼接失败')
       const merged = {
         id: uid(),
-        name: `拼接-${a.name}+${b.name}`,
+        name: `拼接-${picked.map((it) => it.name).join('+')}`,
         size: null,
         status: 'pending',
         source: 'stitch',
         stitchRole: 'merged',
-        fromIds: [a.id, b.id],
+        fromIds: picked.map((it) => it.id),
         dataUrl: body.dataUrl,
         text: '',
         rows: [],
         parsed: null,
-        meta: { kind: a.meta.kind || b.meta.kind || '', reportDate: '', hospital: '' },
+        meta: { kind: picked.map((it) => it.meta.kind).find(Boolean) || '', reportDate: '', hospital: '' },
       }
-      // 用返回图替换这两张（并保留 stitching 的来源链，方便回查原图）
-      setItems((prev) => [...prev.filter((it) => it.id !== a.id && it.id !== b.id), merged])
+      // 用返回图替换这几张（并保留来源链，方便回查原图）
+      const drop = new Set(picked.map((it) => it.id))
+      setItems((prev) => [...prev.filter((it) => !drop.has(it.id)), merged])
       setSelected([])
-      pushLog(`已把「${a.name}」与「${b.name}」纵向拼接为一张（${body.width}×${body.height}）`, 'ok')
-      message.success('拼接完成，已替换为一张')
+      pushLog(`已把 ${picked.length} 张纵向拼接为一张：${picked.map((it) => it.name).join(' + ')}（${body.width}×${body.height}）`, 'ok')
+      message.success(`拼接完成（${picked.length} 张 → 1 张）`)
     } catch (e) {
       message.error(e.message)
       pushLog(`拼接失败：${e.message}`, 'err')
