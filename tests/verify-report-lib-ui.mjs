@@ -67,7 +67,10 @@ try {
   // 翻到最后一页：未识别组必须在（且恒末位）
   // 桌面 Table 的分页器虽被 display:none 包住，DOM 里仍有一份副本；
   // 必须只点**可见**的按天分页器，否则会点到隐藏副本、页面没翻。
-  const lastPage = p.locator('.ant-pagination-item:visible[title="4"]').first()
+  // 页号必须**算出来**，不能写死 "4"：真实库从 66→95 份后组数变了，
+  // 写死页号会点到中间页、误判"未识别组不在末页"（2026-11-16 实测踩坑）。
+  const lastPageNo = String(Math.ceil(expectedGroups / 7))
+  const lastPage = p.locator(`.ant-pagination-item:visible[title="${lastPageNo}"]`).first()
   if (await lastPage.count()) {
     await lastPage.click({ timeout: 5000 })
     await p.waitForTimeout(500)

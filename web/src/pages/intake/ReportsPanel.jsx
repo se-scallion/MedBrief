@@ -13,7 +13,7 @@
 //   ⚠️ antd 的 `sorter` 会把比较结果乘以方向（降序时缺值会翻到最前），所以这里用
 //   **受控排序**：列头只负责显示箭头（`sorter: true` + `sortOrder`），真正的排序在本文件里做，
 //   这样「缺值恒末位」这条才守得住。
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, App as AntApp, Button, Card, Descriptions, Drawer, Empty, Grid, Input, Modal, Popconfirm, Segmented, Space, Spin, Table, Tabs, Tag, Tooltip, Typography } from 'antd'
 import { jget, jpost } from '../../api.js'
 import { rawJson } from './shared.js'
@@ -226,20 +226,42 @@ export default function ReportsPanel() {
     return () => { style.remove() }
   }, [])
 
-  const load = useCallback(async (which = tab) => {
-    setLoading(true)
+  // 最近一次成功取清单的时间：focus 静默刷新用它做节流（避免每次切窗口都拉 440KB）
+  const lastLoadRef = useRef(0)
+  const load = useCallback(async (which = tab, { quiet = false } = {}) => {
+    if (!quiet) setLoading(true)
     try {
       const j = await jget(`/api/intake/reports${which === 'trash' ? '?trash=1' : ''}`)
       setReports(j.reports || []) // 排序交给表格（受控），这里不再预排
       setTrashCount(Number(j.trashCount || 0))
+      lastLoadRef.current = Date.now()
     } catch (e) {
-      message.error(`报告清单读取失败：${e.message}`)
+      if (!quiet) message.error(`报告清单读取失败：${e.message}`)
     } finally {
-      setLoading(false)
+      if (!quiet) setLoading(false)
     }
   }, [message, tab])
 
   useEffect(() => { load(tab) }, [load, tab])
+
+  // 2026-11-16 用户实测：在 A 页面导入后，B 页面搜索不到，要手动刷新。
+  // 根因：搜索/排序/分页全是**本地内存**（useMemo 过滤 + sortReports + Table 分页），
+  // 而 load() 只在挂载与切 tab 时跑 ⇒ B 页面拿的是它自己挂载那一刻的快照。
+  // 修法：窗口重新获得焦点 / 页面重新可见时**静默重取**（quiet，不闪全表 loading），
+  // 3 秒节流避免频繁切窗口反复拉全量清单。
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState !== 'visible') return
+      if (Date.now() - lastLoadRef.current < 3000) return
+      load(tab, { quiet: true })
+    }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [load, tab])
 
   // 软删除 → 可在回收站恢复；彻底删除只在回收站里提供（服务端也会拒活报告直接 purge）
   const doDelete = useCallback(async (id) => {
@@ -766,13 +788,6 @@ export default function ReportsPanel() {
           </Space>
         )}
       </Modal>
-
-      <Alert
-        type="info"
-        showIcon
-        message="原件在哪看？"
-        description="资料卡（打印件）不承载任何跳转——纸上点不了，另存转发后链接也是死链。回看原图/PDF 请在这里点「原件」。标注「无原件」的是页面导入且入库时未保存原图字节，只能重新导入。"
-      />
     </Space>
   )
 }

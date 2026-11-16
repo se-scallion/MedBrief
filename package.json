@@ -40,7 +40,8 @@
     "test:import-hint": "node tests/verify-import-hint.mjs",
     "test:reportlib-ui": "node tests/verify-report-lib-ui.mjs",
     "test:reviewgrid-v06": "node tests/verify-reviewgrid-v06.mjs",
-    "test:edit-modal": "node tests/verify-edit-modal-375.mjs"
+    "test:edit-modal": "node tests/verify-edit-modal-375.mjs",
+    "test:reports-refresh": "node tests/verify-reports-refresh.mjs"
   },
   "keywords": [
     "guahao",

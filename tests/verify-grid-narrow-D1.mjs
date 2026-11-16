@@ -278,6 +278,12 @@ try {
   if (!d || d.noRoot) skip('未取到 .g-grid 根（编辑弹窗未开或无数据）')
   if (!d.gctlCount) skip('表格里没有 .g-ctl（很可能打开了「全文型（无指标行）」→ 空态，量测无意义）')
   if (d.v2Triple) measure('V2 三件', `contentH=${d.v2Triple.contentH} borderB=${d.v2Triple.borderB} outer=${d.v2Triple.outer}`)
+  // R1：borderB 只印不判等于没判 —— §3.2 已把「行分隔线 1px」写成规格值，规格值就该被断言（用 === 1，不用 <=1 兜）
+  if (d.v2Triple && d.v2Triple.borderB === 1) {
+    ok(`V2 分隔线 borderB=1px（outer=${d.v2Triple.outer} = 内容 ${d.v2Triple.contentH} + 1）`)
+  } else {
+    fail(`V2 分隔线 borderB=${d.v2Triple ? d.v2Triple.borderB : 'null'}（期望恰好 1px；口径 = 内容 40 + 线 1 = 外框 41）`)
+  }
   console.log(`\n=== ${LABEL} @1440（弹窗内）===`)
   measure('量测值', JSON.stringify(d))
 
