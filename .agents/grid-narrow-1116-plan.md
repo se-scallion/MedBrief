@@ -630,3 +630,8 @@ B / (弹窗)  : trH=40  trCssH=40px  trBorderB=0px  tableCollapse=collapse  tdPa
 **③ 台账更正：`head` 不是 `cdd7a91`**。实现方交付说明写「`head = cdd7a91 = git HEAD`」，实测**已过期**：
 `git log --oneline -1` = **`db0a751`**（我的两笔文档提交 `b6e1561`、`db0a751`），最后一笔**代码/测试**提交是 **`c016239`**（它自己删 `gctlDashed` 死字段那笔）。
 判据口径：交付说明里的 `head` 必须写**当前 HEAD + 最后一笔代码提交**两个值，否则复核的人会以为产物对应的是 `cdd7a91`。
+
+**④ SKIP 非 0 我自己验过（这是"假绿"最后一个已知出口）**：`MEDBRIEF_BASE=http://127.0.0.1:59999 node tests/verify-grid-narrow-D1.mjs`
+→ 打印 `SKIP 服务未就绪` + `SKIP 不算通过（要显式跳过请设 ALLOW_SKIP=1）`，**`EXIT=1`**。
+全脚本唯一的 `exit 0` 在 `:20` 的 `ALLOW_SKIP === '1'` 分支内 ⇒ **默认路径不会把"没跑"报成"通过"**。
+配套口径：任何交付若声称绿，必须同时说明**没有**用 `ALLOW_SKIP=1` 跑过同一命令。
