@@ -98,6 +98,44 @@
 - 再触发条件：用户说「按 forms-component-plan 执行」（或等价确认）；届时按该文档 §5 三项改动 +
   `build:web` / `test:ui` / `tools/e2e-real-pdf.mjs` / `test:card` / `test:library` 全绿验收。
 
+## Bug 11 【护栏·2026-11-16】端到端类型判定 4 条错判（`test:library` 只量了「标题」这一段路）
+
+- 症状：`npm run test:library` 11 通过 / 1 失败，失败文案是「标题覆盖太低（35/95），类型识别对真实数据不可用」。
+  **这句文案把它自己说的范围说大了**：`:133-140` 用的是 `classifyByTitle(r.text)`，量的是**第一段路径**；
+  真实机制是三段（标题 → 项目集反推 → 正文兜底，`lib/reportTypeDetect.mjs:200 detectReportType`）。
+  ⇒ 之前两次把「标题覆盖 35/95」当成「60 份认不出类型」（`grid-narrow-1116-plan.md` §9.24/§9.25 已自纠）。
+- **端到端实测（只读，`tools/type-coverage-report.mjs`，2026-11-16，真库 95 份）**：
+
+  | 路径 | 覆盖 | 不符 | 未认出 |
+  |---|---|---|---|
+  | A 标题 `classifyByTitle` | 35/95 | 0 | 60 |
+  | B 标题∪项目集（全 95 口径） | 82/95 | 0 | 13 |
+  | B′ 标题∪项目集（仅 57 份有指标行 = `verify-library:147` 口径） | 50/57 | 0 | 7 |
+  | **C 端到端（含正文兜底）** | **95/95** | **4** | **0** |
+
+- **4 条错判明细**（`证据=body-keyword`，全部发生在正文兜底这一段）：
+
+  | id | 库内标注 | 端到端判出 | 疑似成因（`文件:行`） |
+  |---|---|---|---|
+  | `rep_mwean71gtdu` | 戊肝抗体 | 化验其他 | 标题词表有 `[/戊型\|戊肝\|HEV/, '戊肝抗体']`（`reportTypeDetect.mjs:84`），正文兜底的 `LAB_PANELS`（`reportClassify.mjs:39-51`）**无此小类** ⇒ 该项目名不命中任何板块，落「化验其他」(`:145`)；该报告有 2 条指标行、标题路径 `null` |
+  | `rep_mwean71oh37` | 甲肝 IgM | 化验其他 | 同上：`reportTypeDetect.mjs:83` 有 `甲肝 IgM`，`LAB_PANELS` 没有；该报告有 1 条指标行、标题路径 `null` |
+  | `rep_mwean7qjqxu` | CT-血管增强 | CT-胸部 | `CT_PARTS`（`reportClassify.mjs:62-67`）**「CT-胸部」排在「CT-血管增强」之前**，CTA 正文里的「肺动脉干 / 胸主动脉」先命中「胸部\|肺」 |
+  | `rep_mwefj3rjmjz` | 融合基因 | 流式免疫分型 | 正文兜底把「流式」排在「基因」之前（`reportClassify.mjs:94-102`，为防「结论模板引用融合基因」反咬而设计），该 31KB PDF 正文含流式关键词 ⇒ 需拿原件核「库标注侧」还是「序侧」 |
+
+- **可复跑命令（只读，自带 sha256 自证）**：
+  ```
+  node tools/type-coverage-report.mjs                                   # C 有不符 exit 1；库读不到 exit 2；只读，末尾自证 sha256 前后一致
+  MEDBRIEF_REPORTS_FILE=<副本库> node tools/type-coverage-report.mjs     # 拿副本库比对时用（真库零写入）
+  ```
+- **口径（2026-11-16 UI设计师 裁定，不许放宽）**：
+  1. **不设「泛类降级豁免」** —— 允许「降级到化验其他不算错」等于把所有指标类降成化验其他就全绿（空过家族）。
+  2. 端到端断言与标题断言**并存**：`bad === 0`（不豁免）+ `unknown <= BASELINE_UNKNOWN`（未认出不算不符但不许增长）+ 打印 `覆盖/不符/未认出` 三个数。
+  3. **40% 阈值不许下调**；`unknown` 优先于硬猜（对应「绝不硬猜」铁律）。
+  4. 另建议：`reportTypeDetect` 与 `reportClassify` 的 reportType 词表应引用**同一份导出常量**（或加差集断言），防两套词表漂移再次发生。
+- 归属：**报告类型识别一线**（`lib/reportTypeDetect.mjs` / `lib/reportClassify.mjs`），不进 D-1 绿、不进 UI/交互范围；与 D-2 并行、由主理人分派。
+- 再触发条件：主理人分派后开工；或 `node tools/type-coverage-report.mjs` 的 `C 不符` 数不再是 4。
+- 防改崩：本台账**只立账，不动词表**（改 `LAB_PANELS` 顺序/补小类会影响入库 `reportType` 与历史 95 份的筛选口径，须先过计划流程）；`data/reports.json` 是 gitignore 的，改前备份到 `data/backups/`。
+
 ## 收尾终态（2026-11-15，session-wrap-up Step 3）
 
 以下 6 项在本次收尾时逐项裁到终态，**不再挂账给用户**；每条都有证据与再触发条件，
