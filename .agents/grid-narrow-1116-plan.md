@@ -604,6 +604,8 @@ B / (弹窗)  : trH=40  trCssH=40px  trBorderB=0px  tableCollapse=collapse  tdPa
 | `/meddata` 入口 | 我跑 `ENTRY=meddata MEDDATA_BASE=…/meddata/` | **14 通过 / 0 失败 / 0 未证，exit 0**；`rows=1 gctl=6`、边框 0 不合格、padding 8/8/8、内容高 40、虚线 1、轨数 4/5 与 1/1、无页面横滚 |
 | 既有契约 | 我跑 `verify-edit-modal-375.mjs` | **30 通过 / 0 失败，exit 0**（G6 `760/311`、`min-w-[760px]` 未破） |
 
+**复跑锚点**：上表数字在两入口上各跑了两次 —— 一次在 `cdd7a91`，一次在 `c016239`（实现方按 R1 删掉"只算不判"的 `gctlDashed` 死字段）之后的 HEAD，**两次都是 37/0/0 与 14/0/0、exit 0**。删掉死计数器不影响判据，因为真实虚线判据由 `dashedReal`（`querySelectorAll('.g-ctl.border-dashed')` 的 computed style）承担，仍在 `:255/:360` 消费。
+
 #### 签收时**新登记的对照点**（D10：不许因为我签收了就把它从结论里挤掉）
 
 1. **`/` 侧主校对表此前根本没有行分隔线，现在有了** —— 这是 `974ded8` 给 `tr` 补 `border-bottom: 1px solid #f1f5f9` 带来的**用户可见新增**，不在 r1 准予的 5 条之内。我看了实测截图（`/tmp/s-table-shell.png`，761×981）后**接受**，理由三条：① 它与"描边不均匀"同源（`/` 侧无 `border-style` ⇒ 只给 width 的线画不出来），补显式简写是修根因不是加装饰；② 两条管线从此同形（改前 `/meddata` 有线、`/` 没有，用户换入口看到两套观感）；③ `#f1f5f9` 是既有 `--g-divider` 值，没引入新色。**但它属于"我替用户拍的视觉决定"，已写进 §3.2 表格态；若主理人看过实物不要划线，回退只需删 `index.css:214` 那半句。**
