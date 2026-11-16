@@ -1,4 +1,4 @@
-# ① 批量导入模块 —— 交互与界面重构（需求整理 + 排雷）**v0.2**
+# ① 批量导入模块 —— 交互与界面重构（需求整理 + 排雷）**v0.3**
 
 > 触发（用户原话，2026-11-16 22:58，附截图 2186×1480）：
 > 「批量导入模块需要重新设计交互和界面。」
@@ -11,7 +11,23 @@
 > 「如果再进一步优化，是不是可以隐藏其他无关按钮？」
 >
 > 排雷：**无项目定制层**（`grep -rlF '**通用层**：~/.agents/skills/plan-review.md' .` 命中 4 个文件，全是正文引用，不是文件头标记），仅通用层。
-> 状态：**v0.2 方案，未编码**。作者：代诊-Manager。实现方：待定。审核：代诊-报告 r1 已出（**总判「只准哪几条」**：C-1/C-2/C-3/C-4/C-8/C-13 准予；C-5、C-7 准予附 1 条必改；**C-9 挂起**）。UI设计师 数值规格待回（`.agents/batch-import-1116-spec.md`）。
+> 状态：**v0.3 方案，未编码**。作者：代诊-Manager。实现方：待定。
+> 审核：代诊-报告 r1 已出（总判「只准哪几条」：C-1/C-2/C-3/C-4/C-8/C-13 准予；C-5、C-7 准予附 1 条必改；C-9 挂起）；r2 已送，规格 delta 另以 addendum 交审。
+> UI 规格：`.agents/batch-import-1116-spec.md` **v1.0 已出**（30 条数值 + A1–A12 判据，提交 `35761dc`），v0.3 已并入。
+
+## 修订说明 ①（v0.2 → v0.3，逐条对 UI 规格 `35761dc`）
+
+| 规格条目 | 本版落点 |
+|---|---|
+| §3.1 机制定案 **`position: sticky; bottom: 0`**（不用 `fixed` + observer） | D-1 3.1/3.5 改：sticky 在文档流占位 ⇒ **不遮内容、内容区不补 `padding-bottom`**；`sec !== 'upload'` 不渲染作保险（自动消失为主、条件渲染为辅）；**D-4 的全部 fixed 类断言作废，改用规格 A1–A12** |
+| §4 短文案 `识别（N）/导入（M）/拼接（N）/移除选中` | D-1 3.3 照抄（375 单按钮可用 95.7px，`一键识别（3）`≈104px 会溢出）；长语义进 `title` |
+| §4「更多」0 选不渲染 | D-1 3.3 + C-13 改（唯一项"清空勾选"0 选时无意义，命中 N7） |
+| §10-3 短列表不吸底（sticky 自然行为） | D-3 新增第 5 条（产品口径，需用户点头；备选 `min-height: calc(100dvh - var(--mb-sec-top))` + `ResizeObserver` 写变量，`--mb-sec-top` 不许写死，375 实测 `#sec-upload` top=431） |
+| §2/§5/§6 卡头、徽标、重识别数值 | D-1 第 1/2/4 条已抄进数值（checkbox 16 左上、行高 32、删除视觉 24/热区 44、选中 `#c8102e` + inset、徽标 16 圆 `①②③④` 与 checkbox 不重叠、重识别**卡底整行右对齐**） |
+| §7 重复提示 | D-1 第 5/6 条并入；**规格 §7 只写了"对库"一路，缺 P0-1 要求的"批内"一路** ⇒ 本版补 5.2b/5.3b，并作为 addendum 交审 |
+| §7 末段「算不了哈希 → 灰 Tag 本次未做文件查重（取建议 a）」 | **与 r1 P0-2 冲突**：定为 **(d) 纯 JS SHA-256 为主**（两端一致），(a) 的灰 Tag 降级为"哈希抛异常时"的兜底（不许静默） |
+| §8 A1–A12 | D-4 改为「验收 = 规格 A1–A12 + 本计划补充 4 条（B1–B4）」，fixed 类断言全部删除 |
+| §9 边界（只改 3 文件、`mb-` 前缀、不碰既有契约） | F9 与 D-5 照抄为硬约束 |
 
 ## 修订说明（v0.1 → v0.2，逐条对 r1）
 
@@ -25,7 +41,7 @@
 | **P1-3** 不要在 `addFiles` 里再拉一次清单 | D-1 第 5.4 条写死「复用 `loadReports()` 已加载 state，零额外请求」；副作用（440KB / 含 rows）记入 F6 |
 | **P1-4** 图标不许 danger 红、全页不出现"删除" | D-1 第 1 条 + D-3 第 3 条：`DeleteOutlined` 非 danger 或 `MinusCircleOutlined`，`aria-label="移除此文件（未入库）"`，① 段全页只用「移除」 |
 | **P1-5** C-9 无服务端护栏 | C-9 改**挂起**，附放行实测（4 张 ×4000px 的字节数/耗时） |
-| **P1-6** 端口 5193/5199 已被占 | D-5 验收脚本用 **5194/5195** |
+| **P1-6** 端口 5193/5199 已被占 | D-4 验收脚本用 **5194/5195** |
 | **P1-7** "无固定栏先例"表述不准 | R/N4 改为「页面层无先例；`web/src/meddata/embedded.css:402/405` 是第三方 Tailwind 产物里的 `.fixed`/`\!fixed`，`CardPreview.jsx:8` 是注释」 |
 | 事实订正：`done` 态今天已有「重新识别」 | C-4 / D-1 第 2 条改为「**收紧成条件渲染** + failed 补「重试」」，不再是"新增" |
 | 事实订正：`status:'dup'` 消费点 4 处 | F3 改为 4 处（`UploadPanel.jsx:21`、`IntakePage.jsx:447-453`、`:506-523`、`:573`），并新增两 Tag 文案区分要求 |
@@ -61,7 +77,7 @@
 - **R8｜「一键识别」与「一键导入」分居两个面板。** `UploadPanel.jsx:29-33` vs `ReviewPanel.jsx:22-25`（经 `IntakePage.jsx:905` 传入）。
 - **R9｜卡片占屏。** `Col xs={24}`（`UploadPanel.jsx:68`）+ 120px 缩略图 + 信息行 + `block` 按钮 ⇒ 375 下约 3.7 张/屏。
 - **R10｜手机端必然算不了 `crypto.subtle`（已定案，不是待取证）。**
-  `server.mjs:1808` `server.listen(PORT, '0.0.0.0')` ⇒ 手机只能走 `http://<局域网IP>:5174`，不可能是 `localhost`/`127.0.0.1`；`crypto.subtle` 只在安全上下文（`https:` / `localhost` / `127.0.0.1` / `file:`）存在 ⇒ **手机端 `window.isSecureContext === false`**。⇒ 若只做原生 WebCrypto，N3 在手机端（= 主场）等于没做。
+  `server.mjs:1808` `server.listen(PORT, '0.0.0.0')` ⇒ 手机只能走 `http://<局域网IP>:5174`，不可能是 `localhost`/`127.0.0.1`；`crypto.subtle` 只在安全上下文（`https:` / `localhost` / `127.0.0.1` / `file:`）存在 ⇒ **手机端 `window.isSecureContext === false`**。⇒ 若只做原生 WebCrypto，N3 在手机端（= 主场）等于没做。**v0.3 定案：以 (d) 纯 JS SHA-256 为主**，WebCrypto 仅作加速；灰 Tag「本次未做文件查重」只作异常兜底。
 - **R11｜同批内重复完全可以复现，且现在没有任何拦截。**
   `addFiles()` 对每个文件**无条件** `setItems(prev => [...prev, ...accepted])`（`IntakePage.jsx:180`）；整页粘贴走同一函数（`:198-206`）。同一张图"拖一次 + ⌘V 一次"⇒ 两条独立 `uid()` 都进列表；直到入库第二条才被服务端拦（`server.mjs:1683`），且批量路径是 `silent:true` ⇒ 用户只看到一句汇总「N 张疑似重复已跳过」（`IntakePage.jsx:523`）。**这就是用户说的"导入过程中误操作重复导入"。**
 
@@ -100,60 +116,66 @@
 
 ## D. 简化后的方案 + 验收断言 + 前提问题
 
-### D-1 留下的项（含 r1 必改）
+### D-1 留下的项（含 r1 必改 + 规格数值）
 
-1. **卡片头**：`Checkbox`（受控，`picked` 样式沿用 `UploadPanel.jsx:69` 的描边）+ 状态 Tag + 文件名（`ellipsis`，tooltip 保留）+ **非 danger** 图标按钮（`DeleteOutlined` 或 `MinusCircleOutlined`，`aria-label="移除此文件（未入库）"`，触摸区 ≥44px）。① 段全页只用「移除」，**不出现"删除"二字**。
-2. **收紧每卡按钮**：`status==='pending'` 不出按钮；`done` 出「重新识别」（现状 `:120` 已有）；`failed` 出「重试」（新增）。整行 `block` 按钮改为角落小按钮或卡底小行（由 UI 规格定，需给理由）。
-3. **下方浮动固定栏**（P0-3 必改落点）：
-   - 3.1 位置 `fixed; bottom:0`，`z-index` 高于内容、低于 antd Modal；`padding-bottom: calc(12px + env(safe-area-inset-bottom))`（数值待 UI 定）。
-   - 3.2 出现条件写死：`items.length > 0 && sec === 'upload'`（无文件不出现空栏；② 段隐藏）。
-   - 3.3 三态：未选中 → `一键识别（N）` + `一键导入（M）` + 「更多」；选中 1 → `移除选中`（+ 主操作弱化）；选中 ≥2 → `拼接选中（N）` + `移除选中`；批量中 → `识别中 d/t` + `停止`（沿用 `batch`）。
-   - 3.4 **同批删除顶部两处冗余**：`UploadPanel.jsx:29-33`（一键识别全部）与 `:56-63`（勾选文案 + 拼接 + 清空勾选）整行移除，改由固定栏承载；`清空勾选` 进「更多」（C-13）。顶部只保留计数 Tag（`共 N / 待识别 / 未识别 / 疑似重复`）。
-   - 3.5 ② 段隐藏靠 `sec`（`IntakePage.jsx:126-140` 的 observer 现成）；① 段内容容器补 `padding-bottom = 栏高 + 安全区`。
-4. **多选语义**：`selected` 改通用多选，上限 4；顺序 = 勾选顺序；卡片显示 `①②③`；`doStitch` 改 `>=2`（C-9 挂起前，前端仍按 2 张启用，多张开关一并挂）。
-5. **导入即查重（P0-1/P0-2 必改）**：
-   - 5.1 哈希：`crypto.subtle.digest('SHA-256', buf)`；不可用时（`!window.isSecureContext` 或 `!crypto.subtle`）走 **纯 JS SHA-256**（~40 行、零依赖，配 `sha256Hex('abc')` 与 node `crypto` 对拍断言）。
-   - 5.2 两路比对：① 与 `loadReports()` state 的 `sha256` 集合（对库）；② 与本批 `Map<sha256, itemId>`（批内）。
-   - 5.3 命中行为写死：**批内**命中 ⇒ 不新增第二张卡，`message.warning('这张图本次已选过，已跳过')` + `pushLog`；**对库**命中 ⇒ 正常建卡但打 `Tag`「库内已有同一文件」并记 `predup`。
+1. **卡片头**（规格 §2）：顺序 `[checkbox 16] 4 [序号徽标 16（仅选中时）] 8 [状态 Tag] 6 [文件名 flex:1 min-width:96 nowrap ellipsis] 8 [删除 24（热区 44）]`；行高 **32**；checkbox **放左上**（右上已被删除占用，44+44>56 会重叠）；删除图标 `DeleteOutlined` 视觉 24 / 热区 `::before{inset:-10px}`，常态灰 `#8c8c8c`、hover `#ff4d4f`+`#fff1f0`、**非 danger 常驻**；`aria-label/title="移除此文件"`（① 段全页**不出现"删除"二字**）。选中态 `border-color:#c8102e` + `box-shadow:0 0 0 1px #c8102e inset`，只加 `className="mb-item-card"`，**不动 `.card`**。
+2. **收紧每卡按钮**（规格 §6）：`pending` 无按钮、`ocr` 出 `Spin`+「识别中…」、`done` 出「重新识别」（现状 `:120` 已有）、`failed` 出「重试」（新增）。位置 = **卡底整行右对齐**（角落图标会与删除的 44 热区在 56px 内重叠；与元信息同排不新增行高）；375 下元信息先 `flex-wrap`，按钮 `flex:0 0 auto`。
+3. **下方操作栏**（P0-3 + 规格 §3；机制由 `fixed` 改 **`sticky`**）：
+   - 3.1 `position: sticky; bottom: 0; z-index: 6;`，`margin: 0 -12px -12px`（抵消 `.ant-card-body` 12px padding）、`padding: 8px 12px calc(8px + env(safe-area-inset-bottom,0px))`、`background:#fff; border-top:1px solid #f0f0f0; box-shadow:0 -2px 8px rgba(0,0,0,.06); border-radius:0 0 8px 8px`。栏总高：≥576 **49**（32 按钮+8+8+1）/ ≤575 **61 + safe-area**（44+8+8+1）。
+   - 3.2 出现条件写死：`items.length > 0 && sec !== 'review'`（即 `sec === 'upload'`）。sticky 占位 ⇒ **内容区不补 `padding-bottom`**；`sec` 条件只是保险（页面 state，`IntakePage.jsx:112`）。
+   - 3.3 三态（规格 §4，**短文案定稿**）：0 选 → `识别（N）`(primary) + `导入（M）`，**「更多」不渲染**；选 1 → `移除选中`(default+danger 文字) + `更多`(icon-only 44 热区)，主操作**不渲染**；选 ≥2 → `拼接（N）`(primary) + `移除选中` + `更多`；批量中 → `识别中 d/t` + `停止`(danger)。长语义进 `title`（`识别` →「一键识别全部 N 张（串行，可停止）」；`导入` →「只入库已识别且未入库的 M 张；疑似重复会自动跳过」）。
+   - 3.4 **同批删除顶部两处冗余**：`UploadPanel.jsx:29-33`（一键识别全部）与 `:56-63`（勾选文案 + 拼接 + 清空勾选）整行移除；顶部只保留计数 Tag（`共 N / 待识别 / 未识别 / 疑似重复 / 已导入过 M`）。
+   - 3.5 栏**必须是 `.ant-card-body` 直接子元素**且**不许放进 antd `<Space>`**（`.ant-space-item` 高度=栏高 ⇒ sticky 退化成"跟内容走"，整块失效）；结构照规格 §3.3 的 `mb-upload-body` 包一层。
+   - 3.6 窄屏（≤767）栏内按钮 `flex:1 1 0; min-width:0` 均分（375 三按钮各 ≈95.7px），`white-space:nowrap`；大屏左对齐、右侧 `已选 N` 用 `margin-left:auto`。
+4. **多选语义**（规格 §5/§9-5）：`selected` 改通用多选，上限 **4**（第 5 次 `message.info('一次最多拼接 4 张；再拼请分批')` 且不加入）；顺序 = 勾选顺序；徽标 **16 圆 `#c8102e` + `①②③④`**，与 checkbox **并排不重叠**（`gap:4`）；`toggleSelect` 不再挤掉最早；`doStitch` 改 `>=2 && <=4`。**C-9 未放行前**：3–4 张时 `拼接` 按钮**禁用** + `title="本次最多拼 2 张（多张拼接待实测放行）"`（按钮/徽标逻辑先实现，仅闸门关着）。
+5. **导入即查重**（P0-1/P0-2 必改 + 规格 §7）：
+   - 5.1 哈希：优先 `crypto.subtle.digest('SHA-256', await file.arrayBuffer())`；`!window.isSecureContext || !crypto.subtle` 时走 **纯 JS SHA-256**（~40 行零依赖，只在此时使用），D-4 的 B4 对拍。
+   - 5.2 两路比对：**5.2a 对库** = 与 `loadReports()` state 里的 `sha256` 集合比；**5.2b 批内** = 与本批 `Map<sha256, itemId>` 比（增量维护，`addFiles` 内）。
+   - 5.3 命中行为写死：**5.3a 对库命中** ⇒ 正常建卡，卡底元信息行追加 `Tag color="orange"`「同一文件已导入过」（`title="本文件 sha256 与库内已有文件完全相同；入库时仍会再判一次"`），并记 `predup:{kind:'exact-file', of}`，`status` 仍 `pending`；**5.3b 批内命中** ⇒ **不新增第二张卡**，`message.warning('这张图本次已选过，已跳过')` + `pushLog`。
    - 5.4 零额外请求：复用 `loadReports()` 已加载 state（F6 副作用记账）。
-   - 5.5 降级粗筛：哈希完全不可用时，**批内**用 `name+size` 相同判"疑似误选两次"（零成本、不依赖 crypto）；**绝不**用于对库（库不存文件名）。
+   - 5.5 兜底（哈希抛异常时，不许静默）：卡片打灰 `Tag`「本次未做文件查重」，顶部不出「已导入过」计数；**批内**再用 `name+size` 粗筛兜一层（只对批内，绝不用于对库）。
    - 5.6 拼接图（`IntakePage.jsx:236-249`，无 `_file`、`size:null`）**不做预检**，卡片标「拼接图（不查重）」。
-   - 5.7 判定真相仍归服务端 `findDuplicate`（`server.mjs:1683`）；前端只做提示，不改入库结果。
-6. **识别后提示**保持，但文案两口径分开：「库内已有同一文件」（exact）/「疑似重复（入库时判定）」（单据级，现状 `dup`）。
-7. **顶部计数 Tag 保留**（仍是复核入口），「更多」只收「清空勾选」（C-13）。
+   - 5.7 判定真相仍归服务端 `findDuplicate`（`server.mjs:1683`）；前端只提示，不改入库结果。
+6. **识别后提示**（规格 §7）：单据级 Tag 文案改「**疑似同一份报告**」（`shared.js:10` 的 `ST.dup.label` 只改这一个字面，`color`/`default` 不动）；顶部计数分离为「已导入过 M」（新）与「疑似重复 dupCount」（保留原名），两者不合并。
+7. **顶部计数 Tag 保留**（复核入口）；「更多」只收「清空勾选」（C-13，且 0 选不渲染）。
 
 ### D-2 挂起 / 延后 / 砍（触发条件）
 
-- **C-9 多张拼接（挂起）** —— 放行条件：一条实测 `POST /api/intake/stitch` 拼 4 张 4000px 高的图，返回 `dataUrl` 解码字节 ≤8MB 且耗时 ≤2s（`lib/reportIntake.mjs:144-161` 无护栏，靠前端兜不住 OOM）。未通过则保持两两拼接。
+- **C-9 多张拼接（挂起）** —— 放行条件：一条实测 `POST /api/intake/stitch` 拼 4 张 4000px 高的图，返回 `dataUrl` 解码字节 ≤8MB 且耗时 ≤2s（`lib/reportIntake.mjs:144-161` 无护栏）。未通过则 `拼接` 在 N>2 时禁用（D-1 第 4 条已写）。
 - **C-12 卡片横向紧凑（延后）** —— 触发：C-1~C-3 后 375 实测可见卡 <2 张。
-- **C-10 dHash 预检（砍）** —— 因 `lib/reportIntake.mjs:115` 反例冲突。
-- **C-11 Tag 进固定栏（砍）** —— 卡片已有状态 Tag。
-- **C-6 合并识别与导入（砍）** —— 数据责任，见 C 表。
+- **C-10 dHash 预检（砍）** / **C-11 Tag 进栏（砍）** / **C-6 合并识别与导入（砍：数据责任）**。
 
-### D-3 需要用户拍板的 4 条前提（未答则按建议执行）
+### D-3 需要用户拍板的 5 条前提（未答则按建议执行）
 
-1. **固定栏是否在 ② 校对区常驻** → 建议**隐藏**（F4：会盖住每项 Collapse 内的「入库这份报告」，`:835`）。
-2. **「一键导入」语义** → 建议**不合并**，按钮 tooltip 写死「只入库已识别的 N 张」（`classifyImportable` 只取 `lab`/`textual`，`:513-515`）。
-3. **「移除」范围** → 只移除本次未入库条目；库内删除是 `intake-dedupe-1116`（另一条线）。**三道锁**：① 段不出现"删除"二字、图标非 danger、确认文案写「这 N 张还没入库，移出后需重新导入」。
-4. **手机端哈希降级** → **推荐 (d) 纯 JS SHA-256**（r1 P0-2）：两端行为一致，不给"这个端不查重"的例外。备选 (a)：接受降级但 UI 明写「本端未做文件查重」（不许静默）。(c)（按文件名对库）已删 —— 库内无文件名（`sourceFile` 是归档路径、`imageRef` 是 `sha256:`）。
+1. **固定栏是否在 ② 校对区常驻** → 建议**不常驻**（sticky 布局上自然消失 + `sec` 保险）。
+2. **「一键导入」语义** → 建议**不合并**；`title` 写死「只入库已识别且未入库的 M 张」。
+3. **「移除」范围** → 只移除本次未入库条目；库内删除属 `intake-dedupe-1116`。三道锁：不出现"删除"二字、图标非 danger 常驻、确认文案「这 N 张还没入库，移出后需重新导入」。
+4. **手机端哈希** → 建议 **(d) 纯 JS SHA-256**（r1 P0-2），灰 Tag 仅作异常兜底。（规格 §7 原写"取建议 a"，本版按 r1 改为 (d) 为主，已作为 addendum 交审。）
+5. **短列表（内容不足一屏）时栏是否仍吸底** → 建议**不吸底**（sticky 自然贴在内容末尾；规格 §10-3）。若要求"永远吸底"，需 `min-height: calc(100dvh - var(--mb-sec-top))` + `ResizeObserver` 写 `--mb-sec-top`（375 实测 `#sec-upload` top=431，**不许写死**）。
 
-### D-4 验收断言（r1 §3-⑤ 原文照抄，四档各跑一次：375 / 414 / 768 / 1440）
+### D-4 验收判据（改用规格 A1–A12 + 本计划补充 4 条）
 
-1. 栏存在且是 fixed：`getComputedStyle(bar).position === 'fixed'`
-2. 栏在视口内完整可见：`bar.getBoundingClientRect().bottom <= innerHeight + 1 && bar.top >= 0`
-3. **不遮内容**：`window.scrollTo(0, document.body.scrollHeight)` 后，① 段最后一个可交互元素 `el.bottom <= bar.top + 1`
-4. **不遮入库按钮**：② 段展开最后一个 Collapse 项，`#btn-import-item`（给 `IntakePage.jsx:835` 加 `data-testid`）的 `bottom <= innerHeight`
-5. **不新增横滚**：`document.documentElement.scrollWidth <= innerWidth + 1`（四档 + **改前也跑一次**作 must-be-0 基线）
-6. **安全区**：`getComputedStyle(bar).paddingBottom >= 8px`，且 CSS 里出现 `env(safe-area-inset-bottom)`（桌面计算值为 0，只断言声明存在）
-7. **遮挡反证（防空过）**：把栏高硬编码成 `90vh` 跑一次 ⇒ 第 3、4 条必须变红
+**判据主体 = `.agents/batch-import-1116-spec.md` §8 的 A1–A12**（原文照抄，不再在本文重复；其中 **A1 sticky 改 static 必红、A4 去掉 `flex:1 1 0` 必红**，两次都要贴退出码 1）。四档视口 `1440×900 / 768×1024 / 414×896 / 375×812`，端口 **5194/5195** + 副本库。
 
-另需断言（本计划新增，C-5/C-7）：
-8. 批内重复：同一 `File` 选两次 ⇒ `items.length` 只 +1，且出现「这张图本次已选过」提示
-9. 对库重复：用副本库已有 `sha256` 的图 ⇒ 建卡且 `Tag`「库内已有同一文件」出现，`predup.kind === 'exact-file-lib'`
-10. 顶部冗余入口已删：`grep -c "一键识别全部" UploadPanel.jsx === 0`、`grep -c "拼接选中的两张" === 0`
-11. 纯 JS 哈希对拍：`sha256Hex('abc') === ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad`（与 node `crypto` 同值，已用 `node -e` 取过基准）
+**本计划补充 4 条**（C-5/C-7 落地必须量）：
 
-### D-5 复跑命令清单（本版结论的证据）
+| # | 判据 | 量测式 | 期望 |
+|---|---|---|---|
+| **B1** | 批内重复不建卡 | 同一 `File` 连续 `addFiles([f])` 两次（或"拖一次 + 粘贴一次"） | `items.length` 只 +1；出现「这张图本次已选过」提示 |
+| **B2** | 对库重复打标 | 用副本库里已有 `sha256` 的文件导入 | 卡片有 `.mb-predup` 且文案 === `同一文件已导入过`；`predup.kind === 'exact-file'`；`status === 'pending'` |
+| **B3** | 顶部冗余入口已删 | `grep -c "一键识别全部" web/src/pages/intake/UploadPanel.jsx`、`grep -c "拼接选中的两张"` | 均 === **0** |
+| **B4** | 纯 JS 哈希对拍 | `sha256Hex('abc')` vs `node -e "crypto.createHash('sha256').update('abc')…"` | 均 === `ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad` |
+
+### D-5 实现边界（规格 §9 照抄为硬约束）
+
+1. **只允许改 3 个文件**：`web/src/pages/intake/UploadPanel.jsx`、`web/src/pages/IntakePage.jsx`（传 `sec` + 多选语义）、`web/src/pages/intake/shared.js`（**只改 `ST.dup.label` 一个字面**）。
+2. **不碰**：`.card`、`rb-edit-grid-wrap`、DataGrid 的 `.g-ctl`/`g-main`/`.mb-edit-modal`、`.mb-review-grid` 及其 375 注入 CSS。
+3. **新增 DOM/CSS 一律 `mb-` 前缀**：`mb-upload-body`/`mb-batchbar`/`mb-item-card`/`mb-file-name`/`mb-icon-btn`/`mb-hit44`/`mb-pick-badge`/`mb-predup`/`mb-bar-btn`。
+4. **不引入新色值**（只用规格 §1 颜色表）；不引入第三方依赖（含 SHA-256 实现必须自写）。
+5. 改完 `MEDBRIEF_WEB_BASE=/ MEDBRIEF_WEB_OUT=dist-next npm run build:web` + 硬刷新；不动 `lib/**`/`server.mjs` ⇒ **不需要重启 5174**。
+
+
+### D-6 复跑命令清单（本版结论的证据）
 
 ```bash
 cd /Users/scallion/Documents/projects/MedBrief
@@ -172,4 +194,4 @@ grep -rn "position.*fixed" web/src --include=*.jsx --include=*.css | wc -l      
 
 ---
 
-**下一步**：本文件（v0.2）已送 代诊-报告 r2（`.agents/batch-import-1116-review-input-r2.md`）。终判「可以开工」+ 用户说「按以上计划执行」后才编码；UI 数值规格回填后进 v0.3（若 r3 需要）。
+**下一步**：v0.2 已送 r2（`.agents/batch-import-1116-review-input-r2.md`）；v0.3 吸收 UI 规格 `35761dc`，其 delta 与两处规格侧缺口写进 `.agents/batch-import-1116-review-input-r2-addendum.md`，作为 r3（或 r2 判词后的续期轮）的输入。终判「可以开工」+ 用户说「按以上计划执行」后才编码。
