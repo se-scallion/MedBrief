@@ -145,3 +145,86 @@
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* =====================================================================
+   校对网格（DataGrid）控件规格 token —— grid-narrow-1116 D-1
+   2026-11-16 r1 判词准予的 5 条之一。放在 @layer 之外：
+   不参与 Tailwind tree-shaking，确保 /（dist-next，preflight 关）与
+   /meddata（dist-meddata，preflight 在）两侧产物都含同一套声明。
+   作用域 .g-grid（DataGrid 根 div），不外溢到别的页面。
+   为什么必须写 border 简写：/ 侧 embedded.css 的 .border 只有 border-width、
+   没有 border-style（preflight:false），input/button/select 各自落 UA 默认
+   （inset / outset / UA / 不画），这就是用户说的「描边不均匀、像样式 bug」。
+   ===================================================================== */
+.g-grid {
+  --g-ctl-h: 32px;
+  --g-ctl-pad-x: 8px;
+  --g-ctl-radius: 6px;
+  --g-ctl-font: 12px;
+  --g-ctl-line: 18px;
+  --g-line: 1px solid #cbd5e1;
+  --g-divider: 1px solid #f1f5f9;
+  --g-row-h: 40px;
+}
+
+/* 控件统一规格：高 32 / 左右 8 / 圆角 6 / 12px·18 / 边框恒 1px solid。
+   聚焦只加外环，不改边框宽度与颜色（修「聚焦时描边跳」）。 */
+.g-grid .g-ctl {
+  height: var(--g-ctl-h);
+  padding: 0 var(--g-ctl-pad-x);
+  /* 边框的 **style 与 width** 必须留在 (0,2,0)：/ 侧 `.border` 工具类只给 width、
+     不给 style，一旦被盖掉就回落 UA 默认（input=inset / button=outset / 部分=none），
+     正是「描边不均匀」的机制。 */
+  border-style: solid;
+  border-width: 1px;
+  border-radius: var(--g-ctl-radius);
+  font-size: var(--g-ctl-font);
+  line-height: var(--g-ctl-line);
+  box-sizing: border-box;
+}
+/* 只有 color 放进 :where()（特异性 0）：状态色 `.border-red-300` (0,1,0) 能覆盖它，
+   以后新增状态色自动生效，不必维护色彩快照（r2 P1-2）。 */
+:where(.g-grid .g-ctl) { border-color: #cbd5e1; }
+
+/* 虚线例外：未识别态的代码选择器靠 border-dashed(0,1,0) 表达「未识别」，
+   而上面 border-style:solid 在 (0,2,0) 会把它压平 → 未识别与已识别同形（用户可见回归）。
+   必须显式把 dashed 抬回同一层。 */
+.g-grid .g-ctl.border-dashed { border-style: dashed; }
+/* 聚焦只加外环：**不写 border-color**，否则会把状态色（红/橙/琥珀/青）覆盖成灰。
+   r1 V4 要求「聚焦前后 border-color 不变」。 */
+.g-grid .g-ctl:focus,
+.g-grid .g-ctl:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.35);
+}
+
+/* 显式「无边框」：去掉 border 类并不等于没边框 —— / 侧没有 preflight，
+   UA 默认会给 <input> inset 2px、<button> outset 2px。序号输入与 ↺ 按钮
+   本来就该是「无框」的，必须显式 border:0 才真的是无框（r1 V3 例外 / V5'）。 */
+.g-grid .g-bare { border: 0 !important; background: transparent; }
+.g-grid button.g-bare { box-shadow: none; }
+
+/* 行高锁 40px、单行不折行、超长省略（行高在 44/62 之间跳是「间距宽」的主因） */
+/* 只作用于**主校对表**（g-main）。r2 P1-1：原来写成 `table td/tr` 会命中
+   :1084 的「粘贴解析预览表」（min-w-[520px]、只读），把预览锁成 40px 行高并截断。 */
+.g-grid table.g-main tbody tr { height: var(--g-row-h); }
+.g-grid table.g-main td { padding: 4px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.g-grid table.g-main th { padding: 8px; white-space: nowrap; }
+.g-grid table.g-main td .g-ctl { white-space: nowrap; text-overflow: ellipsis; }
+
+/* 校对网格内关掉 .card 的 hover 光晕与边框变色：嵌套卡会把 3px 光晕放大成「整片在动」。
+   只在本作用域内关，不动全局 .card（那会影响约 20 处页面）。 */
+.g-grid .card { transition: none; }
+.g-grid .card::after { display: none; }
+.g-grid .card:hover { border-color: #e2e8f0; }
+
+/* G6 轨道收窄：DataGrid 的双栏 .grid 隐式 auto 轨道会被内含 table.min-w-[760px]
+   的子项撑到 784px，导致整页/容器被横向拖宽。minmax(0,1fr) + 子项 min-width:0
+   让表格自带的 .overflow-x-auto 成为唯一横向滚动容器。 */
+/* G6 轨道收窄：只清零子项 min-width，**不显式声明栅格轨道**。
+   教训（r2 P0）：显式写 minmax(0,1fr) 那条规则特异性 (0,2,0) 且无 media，
+   会压掉 md:grid-cols-2 / lg:grid-cols-4（它们只有 (0,1,0)），
+   把 :799 记录信息卡在 1440 下压成 1 列、768–1023 下 2 列也没了。
+   auto 轨道的基尺寸取子项 min-content，子项清零就够收，不需要显式轨道。 */
+.g-grid > .grid > * { min-width: 0; }
+
