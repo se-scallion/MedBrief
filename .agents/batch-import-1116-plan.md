@@ -454,4 +454,16 @@ grep -rn "position.*fixed" web/src --include=*.jsx --include=*.css | wc -l      
 
 ---
 
+## 实施记录（2026-11-17，用户「按以上计划执行」后落地）
+
+- **代码/测试 HEAD = `512219b`**（本计划同批文档提交另计）。改动范围 = 规格 §9 白名单 3 个前端文件 + 1 个新测试 + 2 处治理同步；`lib/**`、`server.mjs` **零 diff**。
+- **门禁**：`node tests/verify-batch-1116.mjs` → **86 通过 / 0 失败 / 0 未证，exit 0**；既有门禁不回归（edit-modal 30/0、edit-save 8/0、reports-refresh 5/0）。
+- **证伪 5 次全部真红**（每次都附退出码 1）：A1 sticky→static（414 gap 189.95 / 375 gap 242.95）／**A4b** 去 `flex:1 1 0`（414·375 `96/88` 不等宽）／A9b 注掉 `batchIdx`（同图两次 → 2 张卡）／A9c P1′ 改回 `continue`（第二张同名图消失 → 1 张卡）／**A6** 去掉 `.ant-card-extra{overflow:visible}`（414·375 `hit=false`）。
+- **实现中发现的 4 处规格错误**（已指名给 UI，v1.9 `066276d` 全部改正）：
+  1. `@ant-design/icons` **未装**（`package.json` 无、`node_modules/@ant-design` 不存在）⇒ 改用内联 SVG（`ReportDayList.jsx:26` 既有惯例）。
+  2. antd 6 的 `Badge` 自定义 `count` 渲染 `.ant-scroll-number-custom-component`（`ScrollNumber.js:56`），不是 `.ant-badge-count`。
+  3. `.ant-card-extra` 的祖先裁剪把 44 热区裁掉 ⇒ 规则「祖先链 `overflow:visible`」+ **A6 父链断言**（不靠注释）。
+  4. §8 的"A4 去 flex 必红"**不成立**（0 选态两按钮都是七字、自然等宽）⇒ 改挂 **A4b**（选 2 态断均分）；另 `flex:1 1 0` 需 `!important`（antd Button 自带 flex 简写，computed 仍是 `0 0 auto`）。
+- **规格归档**：v1.9 为实现对照表，不再审一轮（与 r5 判词一一对得上）。
+
 **下一步（r5 判「可以开工」之后）**：① UI 出 **spec v1.5**（上表 2 行）→ ② 用户说「按以上计划执行」（§8.5：审核通过 ≠ 授权编码）→ ③ 才交实现方编码。r1–r5 五份判词 + 本计划一并交用户。

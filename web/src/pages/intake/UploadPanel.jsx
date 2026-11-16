@@ -30,9 +30,13 @@ const SVG_MORE = 'M5 12h.01 M12 12h.01 M19 12h.01'
 // 尺寸/热区/布局作用域 —— 规格 §1.1 红线 1 允许的两类覆盖，不重画外观
 const MB_BATCH_CSS = `
 .mb-upload-body { display: flex; flex-direction: column; margin: 0 -12px -12px; }
-.mb-item-card .ant-card-head { min-height: 32px; padding: 0 8px; }
+
 .mb-item-card .ant-card-head-title { padding: 6px 0; }
-.mb-item-card .ant-card-extra { padding: 6px 0; overflow: visible; }  /* antd 默认 overflow:hidden 会裁掉图标的 44 热区 */
+.mb-item-card .ant-card-head { min-height: 32px; padding: 0 8px; overflow: visible; }
+/* 规格 v1.9 §2.4：图标热区靠 ::before{inset:-10px} 外扩 ⇒ 祖先链必须 overflow:visible，
+   否则 44 热区被裁（实现方实测 375/414 四点里三点落空）。head 与 extra 两层都写，
+   并由 A6 的父链断言兜底（不靠这句注释）。 */
+.mb-item-card .ant-card-extra { padding: 6px 0; overflow: visible; }
 .mb-item-card .ant-card-body { padding: 8px; }
 .mb-head-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .mb-file-name { flex: 1 1 auto; min-width: 96px; font-size: 13px; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -290,11 +290,20 @@ try {
         return el === btn || (el && btn.contains(el))
       })
       const cs = getComputedStyle(btn)
-      return { w: Math.round(r.width), h: Math.round(r.height), hit, color: cs.color, cls: btn.className }
+      // 规格 v1.9：热区靠 ::before 外扩 ⇒ 祖先链必须 overflow:visible（不靠文档，靠这条断言）
+      const clippers = []
+      let n = btn.parentElement
+      while (n && !n.classList.contains('mb-item-card') && n !== document.body) {
+        const ov = getComputedStyle(n).overflow
+        if (ov !== 'visible') clippers.push(`${n.className.toString().slice(0, 24)}=${ov}`)
+        n = n.parentElement
+      }
+      return { w: Math.round(r.width), h: Math.round(r.height), hit, color: cs.color, cls: btn.className, clippers }
     })
     if (a6.err) fail(`A6 ${w} 找不到 .mb-icon-btn`)
     else if (a6.w === 24 && a6.h === 24 && a6.hit && a6.color !== 'rgb(255, 77, 79)' && !a6.cls.includes('ant-btn-dangerous')) {
-      ok(`A6 ${w} 视觉 24×24、四点热区命中、常态色 ${a6.color}（非危险红）`)
+      if (a6.clippers.length === 0) ok(`A6 ${w} 视觉 24×24、四点热区命中、常态色 ${a6.color}（非危险红）、祖先链 overflow 无裁剪`)
+      else fail(`A6 ${w} 热区被裁：${a6.clippers.join('、')}`)
     } else fail(`A6 ${w} 异常：${a6.w}×${a6.h} hit=${a6.hit} color=${a6.color} danger=${a6.cls.includes('ant-btn-dangerous')}`)
 
     // ---- A11 既有契约无回退 + A3 ② 段隐藏 ----
