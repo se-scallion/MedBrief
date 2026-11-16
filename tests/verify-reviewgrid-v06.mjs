@@ -159,6 +159,10 @@ try {
           thNarrow: ths.filter((t) => t.getBoundingClientRect().width < 30).length,
           saveWrapped: saveRow ? saveRow.getBoundingClientRect().height > 52 : false,
           styleIds: [...document.querySelectorAll('head > style[id]')].map((s) => s.id).filter((i) => i.startsWith('mb-')),
+          gridSave: [...scope.querySelectorAll('button')].filter((x) => x.getBoundingClientRect().height > 0 && /保存到本地/.test(x.textContent)).length,
+          gridReset: [...scope.querySelectorAll('button')].filter((x) => x.getBoundingClientRect().height > 0 && /清空本次/.test(x.textContent)).length,
+          gridToolbar: [...scope.querySelectorAll('button')].filter((x) => x.getBoundingClientRect().height > 0 && /智能补项|空白行|一键修正/.test(x.textContent)).length,
+          pageHasSave: [...document.querySelectorAll('button')].some((x) => x.getBoundingClientRect().height > 0 && /入库这份报告/.test(x.textContent)),
         }
       })
       if (m) {
@@ -170,6 +174,15 @@ try {
         else throw new Error('保存区仍被压高')
         if (m.styleIds.includes('mb-review-grid-mobile')) ok('页面级窄屏样式 #mb-review-grid-mobile 已注入')
         else throw new Error(`styles=${m.styleIds.join(',')}`)
+        // 冗余保存按钮（2026-11-16 用户指出）：网格内「保存到本地数据库」在本页 onSave 只弹提示 → 隐藏
+        if (m.gridSave === 0) ok('校对网格内「保存到本地数据库」已隐藏（写库唯一入口＝页面「入库这份报告」）')
+        else throw new Error(`gridSave=${m.gridSave}`)
+        if (m.gridReset === 1) ok('网格内「清空本次」保留')
+        else throw new Error(`gridReset=${m.gridReset}`)
+        if (m.gridToolbar === 3) ok('工具栏 3 个按钮未被误伤')
+        else throw new Error(`gridToolbar=${m.gridToolbar}`)
+        if (m.pageHasSave) ok('页面级「入库这份报告」仍在（唯一写库入口）')
+        else throw new Error('页面级写库按钮缺失')
       } else console.log('SKIP 375 校对区断言：PDF 未就绪或校对区未展开')
     } else console.log('SKIP 375 校对区断言：找不到真 PDF')
   } finally { await browser.close() }

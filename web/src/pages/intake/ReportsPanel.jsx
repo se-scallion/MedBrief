@@ -157,6 +157,11 @@ const REPORT_EDIT_MODAL_MOBILE_CSS = `
   .mb-edit-modal .rb-edit-grid-wrap .card:has(> .card > .h-48) { display: none !important; }
   .mb-edit-modal .rb-edit-grid-wrap > div > * + * { margin-top: 10px !important; }
   .mb-edit-modal .rb-edit-grid-wrap textarea.input { height: 96px !important; }
+  /* 网格底部的「保存到本地数据库」与本弹窗 footer 的「保存修改」是同一个 handler（onSave=saveEdit），
+     纯重复；且这里 date="" 写死 → 它恒为 disabled，是个永远灰的死按钮。
+     只留 footer 那个（常驻可见）。「清空本次」保留，页面没有别的重置入口。
+     选择器精确到保存行直接子按钮，不误伤工具栏的 .btn-primary。 */
+  .mb-edit-modal .rb-edit-grid-wrap .flex.items-center.justify-end.gap-3 > .btn-primary { display: none !important; }
 }
 `
 

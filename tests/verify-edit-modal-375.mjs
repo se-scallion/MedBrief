@@ -74,6 +74,13 @@ async function measure(width, height) {
       c1ImgPresent: w.querySelectorAll('.rb-edit-grid-wrap .card:has(> .card > .h-48) img').length,
       c2Margins: [...(w.querySelector('.rb-edit-grid-wrap > div')?.children || [])].map((c) => getComputedStyle(c).marginTop),
       c3TextareaHeights: [...w.querySelectorAll('.rb-edit-grid-wrap textarea.input')].map((t) => Math.round(t.getBoundingClientRect().height)),
+      // 冗余保存按钮（2026-11-16 用户指出）：网格内「保存到本地数据库」与 footer「保存修改」同一 handler
+      gridSaveVisible: [...w.querySelectorAll('.rb-edit-grid-wrap button')]
+        .filter((x) => x.getBoundingClientRect().height > 0 && /保存到本地/.test(x.textContent)).length,
+      gridResetVisible: [...w.querySelectorAll('.rb-edit-grid-wrap button')]
+        .filter((x) => x.getBoundingClientRect().height > 0 && /清空本次/.test(x.textContent)).length,
+      gridToolbarVisible: [...w.querySelectorAll('.rb-edit-grid-wrap button')]
+        .filter((x) => x.getBoundingClientRect().height > 0 && /智能补项|空白行|一键修正/.test(x.textContent)).length,
     }
   })
   await p.screenshot({ path: `/tmp/edit-modal-${width}-after.png`, fullPage: false })
@@ -146,6 +153,14 @@ try {
 
   if (m.bodySH <= 1300) ok(`C 批纵向收益：body scrollHeight=${m.bodySH}（A+B 时 1580，目标 ≈1258）`)
   else throw new Error(`C 批后 bodySH=${m.bodySH} 仍偏高`)
+
+  // 冗余按钮：只留 footer 的「保存修改」；网格内那个（同 handler + 恒 disabled）隐藏
+  if (m.gridSaveVisible === 0) ok('网格内「保存到本地数据库」已隐藏（与 footer「保存修改」重复，且 date="" 恒灰）')
+  else throw new Error(`gridSaveVisible=${m.gridSaveVisible}`)
+  if (m.gridResetVisible === 1) ok('「清空本次」保留（页面无其它重置入口）')
+  else throw new Error(`gridResetVisible=${m.gridResetVisible}`)
+  if (m.gridToolbarVisible === 3) ok('工具栏 3 个按钮未被误伤（智能补项/空白行/一键修正）')
+  else throw new Error(`gridToolbarVisible=${m.gridToolbarVisible}`)
 
   if (m.footBtns.some((t) => t.includes('保存修改')) && m.footBtns.some((t) => t.includes('取消'))) ok('footer 有「取消 / 保存修改」')
   else throw new Error(`footBtns=${m.footBtns.join(',')}`)

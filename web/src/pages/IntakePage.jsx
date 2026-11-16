@@ -65,6 +65,10 @@ const REVIEW_GRID_MOBILE_CSS = `
   .mb-review-grid .flex.items-center.justify-end.gap-3 > p { display: none !important; }
   .mb-review-grid .flex.items-center.justify-end.gap-3 > button { white-space: nowrap !important; flex: 0 0 auto !important; }
   .mb-review-grid .btn-primary, .mb-review-grid .btn-secondary { padding: 4px 10px !important; font-size: 12px !important; }
+  /* 去掉与页面「入库这份报告」重复的空按钮（本页 onSave 只弹提示）。
+     精确到保存行（flex justify-end gap-3）的直接子按钮，避免误伤工具栏的
+     「智能补项/解析/确认解析」三个 .btn-primary。「清空本次」(.btn-secondary) 保留。 */
+  .mb-review-grid .flex.items-center.justify-end.gap-3 > .btn-primary { display: none !important; }
   .mb-review-grid .grid.gap-4.lg\\:grid-cols-5 { gap: 8px !important; }
 }
 `
@@ -724,11 +728,11 @@ export default function IntakePage() {
         </Space>
         {/* v0.6：整份复用 MedData DataGrid（代码列 / 审计色 / 一键修正 / 智能补项 /
             重新匹配 / 粘贴解析 / 清空本次 / 复制反馈）。0 行也挂：DataGrid 自带 0 点空态与
-            补行手段，条件渲染等于「半个组件」。按钮文案硬编码在 MedData 组件里，不改跨项目文件，
-            用下面这行说明澄清：本页「保存到本地数据库」只应用到待入库内容，真正写库用下方按钮。 */}
-        <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>
-          本页「保存到本地数据库」＝应用到待入库内容；真正写库请用下方「入库这份报告」。
-        </Text>
+            补行手段，条件渲染等于「半个组件」。
+            2026-11-16 用户指出「网格底部『保存到本地数据库』与页面『入库这份报告』重复」：
+            已按 REVIEW_GRID_MOBILE_CSS 隐藏网格内那个按钮（它在本页 onSave 只弹提示，是空按钮），
+            写库唯一入口＝下方「入库这份报告」（它才带查重/空值过滤/textOnly/更新原报告分支）。 */}
+
         <div className="mb-review-grid">
         <DataGrid
           date={item.meta?.sampledAt || ''}
