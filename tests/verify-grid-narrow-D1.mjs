@@ -31,6 +31,22 @@ const browser = await chromium.launch({ headless: true })
 
 const trackCount = (e) => (e ? getComputedStyle(e).gridTemplateColumns.split(' ').filter(Boolean).length : null)
 
+
+/** V1a′（UI §9.18 定稿）：判据不是「容器不横滚」（表宽 ≥760 下不可满足），
+ *  而是「容器横滚量 === 表宽超额」。既能红（表被撑到 900 ⇒ 227≠87、
+ *  或 min-w 被改小到 700 ⇒ 27≠87），也可满足。*/
+const TABLE_MIN_W = 760
+function assertV1aPrime(tag, scrollerSW, scrollerCW) {
+  if (scrollerSW == null || scrollerCW == null) { fail(`V1a′ ${tag} 量不到滚动容器`); return }
+  const expectOver = Math.max(0, TABLE_MIN_W - scrollerCW)
+  const actualOver = scrollerSW - scrollerCW
+  if (Math.abs(actualOver - expectOver) <= 1) {
+    ok(`V1a′ ${tag} 容器横滚量 ${actualOver} === 表宽超额 ${expectOver}（容器 SW/CW ${scrollerSW}/${scrollerCW}、表 ${TABLE_MIN_W}）`)
+  } else {
+    fail(`V1a′ ${tag} 容器横滚量 ${actualOver} ≠ 表宽超额 ${expectOver}（容器 SW/CW ${scrollerSW}/${scrollerCW}、表 ${TABLE_MIN_W}）`)
+  }
+}
+
 /** 打开报告库 → 编辑弹窗（内含 DataGrid）。必须挑有指标行的报告，否则量到空态（假绿）。 */
 async function openModalGrid(width, height) {
   const p = await browser.newPage({ viewport: { width, height } })
@@ -194,6 +210,8 @@ async function openMeddataGrid(width, height) {
       dashedReal: [...root.querySelectorAll('.g-ctl.border-dashed')].map((e) => getComputedStyle(e).borderTopStyle),
       infoTracks: n(infoCard), splitTracks: n(splitCard),
       deSW: document.documentElement.scrollWidth, deCW: document.documentElement.clientWidth,
+      scrollerSW: (() => { const sc = root.querySelector('div.overflow-x-auto'); return sc ? sc.scrollWidth : null })(),
+      scrollerCW: (() => { const sc = root.querySelector('div.overflow-x-auto'); return sc ? sc.clientWidth : null })(),
     }
   })
   await p.screenshot({ path: `/tmp/grid-meddata-${width}.png` })
@@ -225,6 +243,7 @@ async function runMeddataEntry() {
     else fail(`⑤ /meddata ${c.w} 轨数 ${m.infoTracks}/${m.splitTracks}（期望 ${c.info}/${c.split}）`)
     if (m.deSW <= m.deCW + 1) ok(`⑤ /meddata ${c.w} 页面无横向滚（${m.deSW}/${m.deCW}）`)
     else fail(`⑤ /meddata ${c.w} 页面横向滚 ${m.deSW}/${m.deCW}`)
+    assertV1aPrime(`/meddata ${c.w}`, m.scrollerSW, m.scrollerCW)
   }
 }
 
@@ -325,8 +344,8 @@ try {
   if (d.splitTracks === 5) ok(`V9 双栏卡轨道数 ${d.splitTracks}（lg:grid-cols-5）`)
   else fail(`V9 双栏卡轨道数 ${d.splitTracks}（期望 5）`)
 
-  // V1a（弹窗内）标 N/A —— 弹窗宽 <760 属预期，不作为判据
-  measure('V1a', `N/A（弹窗内 ${d.scrollerSW}/${d.scrollerCW}，弹窗宽 <760 属预期，不可判）`)
+  // V1a′（弹窗内）：弹窗宽 <760，横滚量应恰等于表宽超额（§9.18，不再 N/A）
+  assertV1aPrime('弹窗 1440', d.scrollerSW, d.scrollerCW)
 
   // ================= V1a（全页）+ V1b + V9（窄屏轨道）=================
   // V9 期望档位：1440 → info 4 / split 5；1023 → info 2（md:grid-cols-2）/ split 1；窄屏 → 各 1
@@ -347,16 +366,8 @@ try {
     else fail(`V9 ${c.w} 记录信息卡轨道 ${n.infoTracks}（期望 ${c.info}）`)
     if (n.splitTracks === c.split) ok(`V9 ${c.w} 双栏卡轨道 ${n.splitTracks}（期望 ${c.split}）`)
     else fail(`V9 ${c.w} 双栏卡轨道 ${n.splitTracks}（期望 ${c.split}）`)
-    if (c.v1a) {
-      // 修复 B（UI 定稿）：表宽 ≥760 是契约，容器 <761 时必然滚 → 标 N/A，不算缺陷。
-      if (n.scrollerCW !== null && n.scrollerCW < 761) {
-        measure(`V1a ${c.w}`, `N/A（容器 ${n.scrollerCW}px < 761，表宽 ≥760 契约下必然滚：${n.scrollerSW}/${n.scrollerCW}）`)
-      } else if (n.scrollerSW !== null && n.scrollerSW <= n.scrollerCW + 1) {
-        ok(`V1a ${c.w} 全页表格容器不横滚（${n.scrollerSW}/${n.scrollerCW}）`)
-      } else {
-        fail(`V1a ${c.w} 全页表格容器横滚 ${n.scrollerSW}/${n.scrollerCW}（容器 ≥761 时不应滚）`)
-      }
-    }
+    // V1a′（§9.18）：不再有「容器 <761 就标 N/A」的出口 —— 那等于把红判据改成 measure 变绿。
+    assertV1aPrime(`全页 ${c.w}`, n.scrollerSW, n.scrollerCW)
   }
 
   // 窄屏弹窗内：行高 + 页面不滚（补充口径）
@@ -367,6 +378,7 @@ try {
     else fail(`V1b ${w} 弹窗内页面横向滚 ${m.deSW}/${m.deCW}`)
     if (m.hMin === 40 && m.hMax === 40) ok(`V2 ${w} 行高恰好 40px`)
     else fail(`V2 ${w} 行高 ${m.hMin}~${m.hMax}（期望恰好 40）`)
+    assertV1aPrime(`弹窗 ${w}`, m.scrollerSW, m.scrollerCW)
     if (m.dashedReal && m.dashedReal.length >= 1) {
       ok(`V3虚线 ${w} 未识别行保持 dashed（${m.dashedReal.length} 个）`)
       m.dashedReal.forEach((x, i) => { if (x !== 'dashed') fail(`V3虚线 ${w} 第 ${i} 个被压成 ${x}`) })
