@@ -10,6 +10,31 @@ function it(name, fn) {
   catch (e) { fails.push(name); console.log(`  ✗ ${name}\n      ${e.message}`) }
 }
 
+it('单号与正文年份冲突（月日一致）⇒ 只标记 dateConflict，**不改写** reportDate', () => {
+  const t = '检验报告\n报告单号 •20260805G0110051\n报告时间 2020-08-05 07:53:30\n白细胞计数 0.71'
+  const r = guessMeta(t, [])
+  assert.equal(r.reportDate, '2020-08-05')          // 正文标签值优先，不瞎改
+  assert.deepEqual(r.dateConflict, {
+    textDate: '2020-08-05', barcodeDate: '2026-08-05', reason: 'year-mismatch-same-mmdd',
+  })
+})
+
+it('冲突标记只在「月日相同、年份不同」时出现；月日不同/同年一律没有标记', () => {
+  assert.equal(guessMeta('报告单号 20260805G0110051\n报告时间 2020-09-11 07:00', []).dateConflict, undefined)
+  assert.equal(guessMeta('报告单号 20260805G0110051\n报告时间 2026-08-05 07:00', []).dateConflict, undefined)
+  // 反例留痕：`rep_mwean73u0q0` 正文 2026-08-02 / 单号 20200802G0182001 —— 单号本身也可能被读错
+  const anti = guessMeta('报告单号 20200802G0182001\n报告时间 2026-08-02 12:18:27', [])
+  assert.equal(anti.reportDate, '2026-08-02')
+  assert.equal(anti.dateConflict.barcodeDate, '2020-08-02')
+})
+
+it('非日期型单号（V02008911352 / MAX123）不得被误当日历日期', () => {
+  const r = guessMeta('条码 V02008911352\n报告时间 2026-07-24 10:00', [])
+  assert.equal(r.reportDate, '2026-07-24')
+  assert.equal(r.dateConflict, undefined)
+})
+
+
 it('标签优先：采样/报告两个标签都在 → date=采样、reportedAt=报告（打印时间不得被当成报告日期）', () => {
   const t = '检验报告单\n采样时间 2026-10-10 16:14\n报告时间：2026-10-16 15:13\n打印时间 2026-11-15 09:00'
   const r = extractDocDates(t)

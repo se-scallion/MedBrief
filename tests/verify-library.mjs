@@ -86,6 +86,8 @@ if (!fs.existsSync(FILE)) {
       checked++
       const want = `${m[2]}-${String(m[3]).padStart(2, '0')}-${String(m[4]).padStart(2, '0')}`
       const meta = guessMeta(r.text, [])
+      // 严格判据不变：报告日期必须等于标签后的日期。年份与单号冲突时 guessMeta **不会**改写日期
+      // （只打 dateConflict 标记，见 tests/verify-report-meta.mjs），所以这里不需要例外。
       assert.equal(meta?.reportDate, want, `第 ${reports.indexOf(r) + 1} 份：报告日期应取标签后的 ${want}`)
     }
     assert.ok(checked >= 1, `库里应有带报告时间标签的样本，实际 ${checked}`)
