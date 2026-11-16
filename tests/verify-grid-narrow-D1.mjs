@@ -56,6 +56,14 @@ async function openModalGrid(width, height) {
     // 否则 /meddata（有 preflight，线会画）恒为 41、/（无 preflight）恒为 40，成"永远红/永远绿"。
     const rowContent = (t) => Math.round(t.getBoundingClientRect().height - parseFloat(getComputedStyle(t).borderBottomWidth || 0))
     const heights = trs.map(rowContent)
+    // V2 补印三件：避免"边框涨到 3px 时内容仍 40、断言照绿"的口子（UI §9.16 第 2 条）
+    const v2Triple = (() => {
+      const t = trs[0]
+      if (!t) return null
+      const outer = Math.round(t.getBoundingClientRect().height)
+      const borderB = parseFloat(getComputedStyle(t).borderBottomWidth || 0)
+      return { contentH: Math.round(outer - borderB), borderB, outer }
+    })()
     const cells = [...root.querySelectorAll('tbody td')]
     const st = (e) => { const cs = getComputedStyle(e); return { bs: cs.borderTopStyle, bw: cs.borderTopWidth, pl: cs.paddingLeft, h: Math.round(e.getBoundingClientRect().height) } }
     const infoCard = root.querySelector(':scope > .card.grid')
@@ -69,6 +77,7 @@ async function openModalGrid(width, height) {
     return {
       deSW: de.scrollWidth, deCW: de.clientWidth,
       scrollerSW: scroller ? scroller.scrollWidth : null, scrollerCW: scroller ? scroller.clientWidth : null,
+      v2Triple,
       rowCount: trs.length, hMin: heights.length ? Math.min(...heights) : null, hMax: heights.length ? Math.max(...heights) : null,
       seq: seqInput ? st(seqInput) : null, code: codeBtn ? st(codeBtn) : null,
       val: valInput ? st(valInput) : null, arrow: arrowSel ? st(arrowSel) : null,
@@ -232,6 +241,7 @@ try {
   const d = await openModalGrid(1440, 900)
   if (!d || d.noRoot) skip('未取到 .g-grid 根（编辑弹窗未开或无数据）')
   if (!d.gctlCount) skip('表格里没有 .g-ctl（很可能打开了「全文型（无指标行）」→ 空态，量测无意义）')
+  if (d.v2Triple) measure('V2 三件', `contentH=${d.v2Triple.contentH} borderB=${d.v2Triple.borderB} outer=${d.v2Triple.outer}`)
   console.log(`\n=== ${LABEL} @1440（弹窗内）===`)
   measure('量测值', JSON.stringify(d))
 
