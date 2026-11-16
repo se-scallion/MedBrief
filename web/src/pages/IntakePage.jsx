@@ -35,10 +35,40 @@ const { Dragger } = Upload
 import { runBatch, ST, KIND_OPTIONS, FLAG_TEXT, uid, fmtSize, rawJson, postJson } from './intake/shared.js'
 import UploadPanel from './intake/UploadPanel.jsx'
 import ReviewPanel from './intake/ReviewPanel.jsx'
+// v0.6 第 2 段：② 校对区整份复用 MedData DataGrid（与报告库编辑弹窗同一个组件、同一个 bundle）
+import DataGrid from '../../../meddata/src/components/DataGrid.jsx'
+import { toPoints, fromPoints, filterEmptyValueRows } from './intake/points.js'
+import { emitTrace } from '../../../meddata/src/utils/trace.js'
+import '../meddata/embedded.css'
 
 // MedData 四引擎工作台：原来是与本页「平级」的第二个 Segmented 入口（同一件事两条路）。
 // 2026-11-13 收敛：主路径只有本页这一套；四引擎降级为抽屉里的**实验备选**，不占导航、不并列。
 const MedDataWorkbench = React.lazy(() => import('../meddata/MedDataWorkbench.jsx'))
+
+// v0.6 第 2 段：② 校对区整份挂 DataGrid 后，375 实测（截图 /tmp/v06-shots/e2e-2-375…）
+// 表头「序号/标准代码」被 min-w-[760px] 的网格挤成竖排单字、底部「保存到本地数据库」按钮
+// 折成 3 行占大块。DataGrid 是 MedData 组件、不改跨项目文件，这里用页面级注入收窄：
+//   · 网格容器自身横向滚动（表格仍 760px 可左右看，不压正文）；
+//   · 表头 th/button 一律 nowrap，禁止中文逐字折行；
+//   · 底部保存区保持横排、按钮不竖排、说明文字隐藏（表单下方已有说明行）。
+const REVIEW_GRID_MOBILE_CSS = `
+@media (max-width: 575px) {
+  .mb-review-grid { max-width: 100% !important; overflow: hidden !important; }
+  .mb-review-grid .card { padding: 8px !important; max-width: 100% !important; }
+  /* 表格 760px 必须在容器内横向滚动；容器绝不能被表格撑到 760（375 实测 de=818 的真因） */
+  .mb-review-grid .overflow-x-auto { max-width: 100% !important; width: 100% !important;
+    overflow-x: auto !important; overflow-y: visible !important; }
+  .mb-review-grid table { min-width: 760px !important; }
+  .mb-review-grid th, .mb-review-grid th button { white-space: nowrap !important; }
+  .mb-review-grid th button { display: inline-flex !important; flex-wrap: nowrap !important; }
+  .mb-review-grid .flex.items-center.justify-end.gap-3 { flex-wrap: nowrap !important; gap: 6px !important; }
+  .mb-review-grid .flex.items-center.justify-end.gap-3 > p { display: none !important; }
+  .mb-review-grid .flex.items-center.justify-end.gap-3 > button { white-space: nowrap !important; flex: 0 0 auto !important; }
+  .mb-review-grid .btn-primary, .mb-review-grid .btn-secondary { padding: 4px 10px !important; font-size: 12px !important; }
+  .mb-review-grid .grid.gap-4.lg\\:grid-cols-5 { gap: 8px !important; }
+}
+`
+
 
 
 export default function IntakePage() {
@@ -60,6 +90,14 @@ export default function IntakePage() {
   const [mdOpen, setMdOpen] = useState(false) // 四引擎实验台（抽屉）
   // ② 校对区折叠面板的展开键：识别完自动把这张展开，用户才看得见系统填了什么
   const [openKeys, setOpenKeys] = useState([])
+  // ≤575px 注入 ② 校对区 DataGrid 窄屏样式（独立 id、独立 effect、卸载即移除）
+  useEffect(() => {
+    const style = document.createElement('style')
+    style.id = 'mb-review-grid-mobile'
+    style.textContent = REVIEW_GRID_MOBILE_CSS
+    document.head.appendChild(style)
+    return () => { style.remove() }
+  }, [])
 
   // 页内分段（2026-11-13）：①②③ 原本纵向堆叠、一屏只见 ①，医生/家属要一路往下滚。
   // 这里加一条吸顶分段条：点哪段滚到哪段，滚动时高亮当前段。不动 state、不拆页面。
@@ -248,6 +286,27 @@ export default function IntakePage() {
       message.warning('图片还没读取完成')
       return
     }
+    // r3 A / v0.6：已入库条目「重新识别」不静默清 saved、也不用 force 重导
+    // （force 会 push 出第二份同源报告）。确认后生成一份**新的待校对副本**，
+    // 带 sourceReportId，由用户明确选「更新原报告」或「另存为新报告」。
+    if (item.saved) {
+      modal.confirm({
+        title: '这份已入库，重新识别会生成待校对副本',
+        content: '原报告保持不变。改完内容后选「更新原报告」（原地更新，不产生第二份）或「另存为新报告」（库里会有两份同源报告）。',
+        okText: '生成待校对副本', cancelText: '取消',
+        onOk: () => {
+          const copy = {
+            ...item, id: uid(), name: `${item.name}（重新识别）`, saved: false, status: 'pending',
+            reportId: undefined, sourceReportId: item.reportId || item.id,
+            rows: [], baselineRows: [], text: '', ocrNote: '', parsed: null,
+          }
+          setItems((prev) => [...prev, copy])
+          setOpenKeys((ks) => [...ks, copy.id])
+          message.info('已生成待校对副本，请点「识别这张」')
+        },
+      })
+      return
+    }
     patchItem(item.id, { status: 'ocr' })
     try {
       // 拼接产物必须带 stitched:true：后端只对拼接结果做「重叠区重复行」合并。
@@ -268,10 +327,29 @@ export default function IntakePage() {
         pushLog(`「${item.name}」未识别${body.unavailable ? '（8008 不可用）' : ''}`, 'warn')
         return
       }
+      const rowsNow = body.rows || []
+      // r2 #1 / r3：OCR 响应没有 blocks，只有版式行 lines。
+      // snapshot 如实标注 layout-lines，不假造网格；emitTrace 先写 localStorage，
+      // readTraceLocal 只读 localStorage → 不依赖后端可用，不新增端点。
+      try {
+        await emitTrace(item.id, {
+          traceSource: 'recognize',
+          rawGrid: { kind: 'layout-lines', lines: body.lines || body.layoutLines || [] },
+          rawGridSource: 'layout-lines',
+          ocrLoop: null,
+          recognizedAt: new Date().toISOString(),
+          reportType: body.meta?.reportType || '',
+          source: body.engine || '',
+        })
+      } catch (e) {
+        pushLog(`「${item.name}」识别留痕失败（不影响识别结果）：${e.message}`, 'warn')
+      }
       patchItem(item.id, {
         status: 'done',
         text: body.text || '',
-        rows: body.rows || [],
+        rows: rowsNow,
+        // 识别后、编辑前的真值快照：供 DataGrid 算 diff / 复制反馈（v0.6 第 3 段）
+        baselineRows: rowsNow.map((r) => ({ ...r })),
         ocrNote: body.upstream ? `上游提示：${body.upstream}` : '',
         engine: body.engine || '',
         rawRowCount: body.rawRowCount ?? null,
@@ -336,14 +414,21 @@ export default function IntakePage() {
 
   // ---------- 4. 入库（重复必须二次确认，绝不静默丢弃） ----------
   const saveReport = async (item, { force = false, silent = false } = {}) => {
+    // r3 B：智能补项会加「有单位/区间但 value=''」的推测行，绝不入库
+    // （定性结果「阴性/未检出」value 非空，不受影响）。
+    const { rows: keptRows, dropped } = filterEmptyValueRows(item.rows || [])
+    if (dropped) pushLog(`「${item.name}」${dropped} 行无值未入库（智能补项/空白行，不写空值）`, 'info')
+    const isTextOnly = !keptRows.length && !!String(item.text || '').trim()
     const payload = {
       image: item.isPdf ? '' : (item.dataUrl || ''),
       // PDF 不入 sha256 查重图指纹（它是文档不是截图）；靠内容指纹查重
       pdf: item.isPdf ? (item.dataUrl || '') : '',
       force,
       text: item.text || '',
-      rows: item.rows || [],
-      meta: item.meta || {},
+      rows: keptRows,
+      // r2 ③：textOnly 只在这个 0 行全文型分支加，绝不放进公共 item.meta
+      // （否则会关掉所有报告的文本回退解析）。服务端 :1585 已有该护栏。
+      meta: isTextOnly ? { ...(item.meta || {}), textOnly: true } : (item.meta || {}),
     }
     const { body } = await postJson('/api/intake/reports', payload)
 
@@ -453,6 +538,22 @@ export default function IntakePage() {
     message[r.failed ? 'warning' : 'success'](`入库完成：${r.ok} 张${r.skipped ? `（跳过重复 ${r.skipped}）` : ''}${r.failed ? `，失败 ${r.failed}` : ''}`)
   }
 
+  // v0.6 第 4 段：「更新原报告」走 PUT + rowsReplace（原地更新，不 push 第二条）
+  const updateOriginalReport = async (item) => {
+    if (!item.sourceReportId) { message.error('这份不是待校对副本，无法更新原报告'); return }
+    try {
+      const { body } = await postJson(`/api/intake/reports/${encodeURIComponent(item.sourceReportId)}`, {
+        rowsReplace: true, fromReportId: item.sourceReportId,
+        rows: item.rows || [], text: item.text || '',
+        meta: item.meta || {},
+      }, 'PUT')
+      if (!body.ok) throw new Error(body.error || '更新失败')
+      patchItem(item.id, { saved: true, reportId: item.sourceReportId, sourceReportId: undefined, status: 'done' })
+      loadReports()
+      message.success(`已更新原报告 ${item.sourceReportId}（${body.rows} 行，未新增记录）`)
+      pushLog(`「${item.name}」已更新原报告 ${item.sourceReportId}（原地更新）`, 'ok')
+    } catch (e) { message.error(e.message) }
+  }
   const onSaveReport = async (item) => {
     try {
       await saveReport(item)
@@ -621,27 +722,34 @@ export default function IntakePage() {
           <Tag>{item.rows.length} 行</Tag>
           {item.status === 'failed' && <Tag color="red">未识别</Tag>}
         </Space>
-        {item.rows.length === 0 ? (
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={item.status === 'failed' ? '未识别：没有解析出指标行' : '还没有指标行，先识别或粘贴文本后解析'}
-          />
-        ) : (
-          <Table
-            size="small"
-            rowKey={(r, i) => `${r.name}-${i}`}
-            pagination={false}
-            columns={rowColumns}
-            dataSource={item.rows.map((r, i) => ({ ...r, __itemId: item.id, __idx: i }))}
-            onRow={(r) =>
-              r.status === 'unknown'
-                ? { style: { background: '#fffbe6' } }
-                : r.status === 'abnormal'
-                  ? { style: { background: '#fff1f0' } }
-                  : {}
-            }
-          />
-        )}
+        {/* v0.6：整份复用 MedData DataGrid（代码列 / 审计色 / 一键修正 / 智能补项 /
+            重新匹配 / 粘贴解析 / 清空本次 / 复制反馈）。0 行也挂：DataGrid 自带 0 点空态与
+            补行手段，条件渲染等于「半个组件」。按钮文案硬编码在 MedData 组件里，不改跨项目文件，
+            用下面这行说明澄清：本页「保存到本地数据库」只应用到待入库内容，真正写库用下方按钮。 */}
+        <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>
+          本页「保存到本地数据库」＝应用到待入库内容；真正写库请用下方「入库这份报告」。
+        </Text>
+        <div className="mb-review-grid">
+        <DataGrid
+          date={item.meta?.sampledAt || ''}
+          time=""
+          onDateChange={(v) => patchItem(item.id, (it) => ({ meta: { ...it.meta, sampledAt: v } }))}
+          reportedDate={item.meta?.reportDate || ''}
+          reportedTime=""
+          onReportedDateChange={(v) => patchItem(item.id, (it) => ({ meta: { ...it.meta, reportDate: v } }))}
+          onReportedTimeChange={() => {}}
+          reportType={item.meta?.reportType || ''}
+          onReportTypeChange={(v) => patchItem(item.id, (it) => ({ meta: { ...it.meta, reportType: v }, typeAuto: false }))}
+          points={toPoints(item.rows || [])}
+          onPointsChange={(next) => patchItem(item.id, { rows: fromPoints(next) })}
+          reportText={item.text || ''}
+          onReportTextChange={(v) => patchItem(item.id, { text: v })}
+          baselinePoints={toPoints(item.baselineRows || [])}
+          traceId={item.id}
+          onSave={() => message.info('已应用到待入库内容，请点「入库这份报告」写库')}
+          onReset={() => patchItem(item.id, { rows: (item.baselineRows || []).map((r) => ({ ...r })) })}
+        />
+        </div>
       </div>
 
       <Divider style={{ margin: '4px 0' }} />
@@ -706,9 +814,23 @@ export default function IntakePage() {
             onChange={(e) => patchItem(item.id, (it) => ({ meta: { ...it.meta, hospital: e.target.value } }))}
           />
         </span>
-        <Button type="primary" size="small" onClick={() => onSaveReport(item)} disabled={!item.rows.length && !item.text}>
-          入库这份报告
-        </Button>
+        {item.sourceReportId ? (
+          <>
+            <Button type="primary" size="small" onClick={() => updateOriginalReport(item)}
+              title="原地更新原报告，不产生第二份同源记录">
+              更新原报告
+            </Button>
+            <Button size="small" onClick={() => onSaveReport(item)}
+              title="另存为新报告：库里会有两份同源报告（会走查重，可确认仍要导入）">
+              另存为新报告
+            </Button>
+            <Tag color="blue">基于 {item.sourceReportId}</Tag>
+          </>
+        ) : (
+          <Button type="primary" size="small" onClick={() => onSaveReport(item)} disabled={!item.rows.length && !item.text}>
+            入库这份报告
+          </Button>
+        )}
         {item.saved && <Tag color="green">已入库 {item.reportId}</Tag>}
       </Space>
     </Space>

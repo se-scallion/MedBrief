@@ -39,9 +39,10 @@ export async function rawJson(path, opts = {}) {
   return { httpStatus: res.status, body }
 }
 
-export const postJson = (path, data) =>
+// 第 3 个参数 method 只给「更新原报告」的 PUT 用；不传仍是 POST（所有既有调用零改动）
+export const postJson = (path, data, method = 'POST') =>
   rawJson(path, {
-    method: 'POST',
+    method,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data ?? {}),
     })         // postJson 结尾

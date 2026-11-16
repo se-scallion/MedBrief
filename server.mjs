@@ -32,6 +32,7 @@
 
 import http from 'node:http'
 import fs from 'node:fs'
+import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { spawn, execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -650,14 +651,15 @@ function getNextReleaseCountdown() {
     return
   }
 
-  // 读取 POST 请求体
+  // 读取 POST/PUT 请求体（v0.6 第 4 段：PUT /reports/:id 也要读体；
+  // 原本只判 POST，导致 PUT 的 readJsonBody 恒空 → 400「缺 rowsReplace」）
   let bodyBuffer = []
-  if (req.method === 'POST') {
+  if (req.method === 'POST' || req.method === 'PUT') {
     for await (const chunk of req) {
       bodyBuffer.push(chunk)
     }
     const rawBody = Buffer.concat(bodyBuffer).toString('utf8')
-    // POST 体已被本分支读空；留一份给后续非 POST 作用域的处理器（如 /api/intake/*）
+    // POST/PUT 体已被本分支读空；留一份给后续处理器（如 /api/intake/*）
     req.__rawBody = rawBody
     let payload = {}
     try {
@@ -1214,6 +1216,69 @@ function getNextReleaseCountdown() {
       writeReports(store)
     }
     return sendJson(res, 200, { ok: true, id, changed, patchedAt: rep.patchedAt || null, patchLogCount: log.length, report: rep })
+  }
+
+  // 10o2. v0.6 第 4 段：「更新原报告」（PUT /api/intake/reports/:id）
+  // 与 POST /patch 的区别：整行替换 rows + text 一起更新，**原地改、不 push 第二条**。
+  // r3 A：force 重导会 push 出两份同源报告（材料清单 +1 / 同日同码两值），故不用 force。
+  // r4 P0：patch 白名单原本没有 text，只换 rows 会留下「新指标行 + 旧结论」。
+  // r5 P1-1：text 的 patchLog 只存 {fromLen,toLen,fromSha,toSha}，绝不复制患者原文进 reports.json。
+  // r5 P1-2：rows.added/removed 快照只存 {name,value,unit} 截 40 字，严禁 rawSnippet，removed 上限 50 行。
+  if (req.method === 'PUT' && /^\/api\/intake\/reports\/[^/]+$/.test(pathname)) {
+    const id = decodeURIComponent(pathname.slice('/api/intake/reports/'.length))
+    const body = await readJsonBody(req).catch(() => ({}))
+    const store = readReports()
+    const rep = store.reports.find((r) => r.id === id)
+    if (!rep) return sendJson(res, 404, { ok: false, error: `报告不存在：${id}` })
+    // r5：只有 rowsReplace===true 且带 fromReportId 时才接受 text；空值拒绝（清空必须留标记）
+    const rowsReplace = body.rowsReplace === true
+    const fromReportId = String(body.fromReportId || '')
+    if (!rowsReplace || !fromReportId) return sendJson(res, 400, { ok: false, error: '更新原报告须带 rowsReplace:true + fromReportId' })
+    if (fromReportId !== id) return sendJson(res, 400, { ok: false, error: 'fromReportId 与目标报告不一致' })
+    if (!Array.isArray(body.rows)) return sendJson(res, 400, { ok: false, error: 'rows 必须是数组（空数组表示全文型）' })
+
+    const log = Array.isArray(rep.patchLog) ? rep.patchLog : []
+    const at = new Date().toISOString()
+    const sha = (v) => createHash('sha256').update(String(v || '')).digest('hex').slice(0, 12)
+    const clip = (v) => String(v ?? '').slice(0, 40)
+    const snapshot = (r) => ({ name: clip(r?.name), value: clip(r?.value), unit: clip(r?.unit) })
+    const oldRows = Array.isArray(rep.rows) ? rep.rows : []
+    const newRows = body.rows.filter((r) => String(r?.value ?? '').trim() !== '')  // r3 B：空值行不入库
+    const dropped = body.rows.length - newRows.length
+
+    // r4：两份行数不同时不按 index 硬对齐，用 added/removed 分条 + 被删行快照
+    const n = Math.min(oldRows.length, newRows.length)
+    const changedRows = []
+    for (let i = 0; i < n; i++) {
+      const a = snapshot(oldRows[i]); const b = snapshot(newRows[i])
+      if (JSON.stringify(a) !== JSON.stringify(b)) changedRows.push({ index: i, from: a, to: b })
+    }
+    const added = newRows.slice(n).map(snapshot)
+    const removed = oldRows.slice(n).map(snapshot).slice(0, 50)
+    const textOld = String(rep.text || '')
+    const textNew = body.text === undefined ? textOld : String(body.text || '')
+    if (body.text !== undefined && !textNew.trim()) return sendJson(res, 400, { ok: false, error: 'text 不许清空（清空必须留标记）' })
+
+    log.push({
+      at, field: 'rowsReplace', fromReportId,
+      rows: { from: oldRows.length, to: newRows.length, changed: changedRows.length,
+        added: added.length, removed: removed.length, droppedEmptyValue: dropped },
+      // 只留「有哪些行变了」的可审计摘要 + 被删行快照（不含原文行切片）
+      addedSnapshot: added.slice(0, 50), removedSnapshot: removed,
+      // r5 P1-1：text 只存长度 + sha，绝不 from/to 原文
+      text: body.text === undefined ? null : { fromLen: textOld.length, toLen: textNew.length, fromSha: sha(textOld), toSha: sha(textNew) },
+    })
+    rep.rows = newRows
+    if (body.text !== undefined) rep.text = textNew
+    if (body.meta?.reportDate !== undefined) rep.reportDate = String(body.meta.reportDate)
+    if (body.meta?.reportType !== undefined) rep.reportType = String(body.meta.reportType)
+    rep.patchedAt = at
+    rep.patchedFields = [...new Set([...(rep.patchedFields || []), 'rowsReplace', ...(body.text !== undefined ? ['text'] : [])])]
+    rep.patchLog = log
+    writeReports(store)   // lib/reportStore.mjs 原子写，保 {version,reports,trashed,audit}
+    return sendJson(res, 200, { ok: true, id, changed: ['rowsReplace', ...(body.text !== undefined ? ['text'] : [])],
+      rows: newRows.length, droppedEmptyValue: dropped, added: added.length, removed: removed.length,
+      patchLogCount: log.length, report: rep })
   }
 
   // 10p. 报告编辑「操作记录」（2026-11-15 用户口径：记录操作用于优化反馈；Manager 审核放行 D1）

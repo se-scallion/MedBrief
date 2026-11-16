@@ -39,6 +39,10 @@ const tmpData = path.join(tmp, 'data')
 fs.mkdirSync(tmpData, { recursive: true })
 const tmpReports = path.join(tmp, 'reports.json')
 fs.copyFileSync(path.join(ROOT, 'data/reports.json'), tmpReports)
+// ⚠️ 别用「createdAt 最新」找本次入库记录：真实库里可能有比本次 e2e 更晚的用户记录
+// （2026-11-16 实测：取到 07-22 血常规而非本次 PDF，6 条断言全红但生产逻辑没坏）。
+// 用「脚本启动前库里已有的 id 集合」做差集，唯一确定本次新记录。
+const BEFORE_IDS = new Set(JSON.parse(fs.readFileSync(tmpReports, 'utf8')).reports.map((r) => r.id))
 
 const srv = spawn('node', ['server.mjs'], {
   cwd: ROOT,
@@ -134,14 +138,22 @@ try {
   }
 
   // ---- 入库：走界面按钮，落到副本库
+  // 这份真 PDF 与库里已有报告同条码/同日期 → 会命中既有查重 `barcode-date-crosscheck`
+  // （不是 bug，是 2026-11-15 修过的「同单不同形态」判重）。用户路径是点「仍要导入」，
+  // 这里就照真实用户走一遍；之前脚本靠「按 createdAt 取最新」蒙混过，实际取到了别的报告。
   const saveBtn = page.getByRole('button', { name: '入库这份报告' }).first()
   await saveBtn.click({ timeout: 10000 })
-  await page.waitForTimeout(1500)
+  await page.waitForTimeout(800)
+  const stillBtn = page.getByRole('button', { name: '仍要导入' }).first()
+  if (await stillBtn.count()) {
+    await stillBtn.click({ timeout: 8000 })
+    await page.waitForTimeout(1200)
+  }
+  await page.waitForTimeout(800)
 
   const list = await (await fetch(`${BASE}/api/intake/reports`)).json()
-  // 取**本次新入库**的那条：按 createdAt 最新
-  const byNewest = [...(list.reports || [])].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
-  const saved = byNewest[0]
+  // 取**本次新入库**的那条：与启动前 id 集合做差集（不依赖 createdAt 时间序）
+  const saved = (list.reports || []).find((r) => !BEFORE_IDS.has(r.id))
   console.log('[e2e] 最新记录：', JSON.stringify({ id: saved?.id, createdAt: saved?.createdAt, date: saved?.reportDate, type: saved?.reportType, kind: saved?.kind, hosp: saved?.hospital, src: saved?.source }))
   ok('入库：副本库多了一条 2026-07-17 的报告', !!saved, saved ? `id=${saved.id}` : '未找到')
   if (saved) {
