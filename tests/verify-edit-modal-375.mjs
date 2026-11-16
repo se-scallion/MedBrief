@@ -68,6 +68,12 @@ async function measure(width, height) {
       noteText: body.textContent.includes('编辑口径说明'),
       de: document.documentElement.scrollWidth,
       styles: [...document.querySelectorAll('head > style[id^="mb-report-"]')].map((s) => s.id),
+      // C 批（用户点头「三项全做」）
+      c1Count: w.querySelectorAll('.rb-edit-grid-wrap .card:has(> .card > .h-48)').length,
+      c1Hidden: (() => { const c = w.querySelector('.rb-edit-grid-wrap .card:has(> .card > .h-48)'); return c ? getComputedStyle(c).display === 'none' : null })(),
+      c1ImgPresent: w.querySelectorAll('.rb-edit-grid-wrap .card:has(> .card > .h-48) img').length,
+      c2Margins: [...(w.querySelector('.rb-edit-grid-wrap > div')?.children || [])].map((c) => getComputedStyle(c).marginTop),
+      c3TextareaHeights: [...w.querySelectorAll('.rb-edit-grid-wrap textarea.input')].map((t) => Math.round(t.getBoundingClientRect().height)),
     }
   })
   await p.screenshot({ path: `/tmp/edit-modal-${width}-after.png`, fullPage: false })
@@ -123,6 +129,24 @@ try {
     ok(`G10 三段页面级 style 并存且 id 唯一（${m.styles.join(' / ')}）`)
   } else throw new Error(`G10 styles=${m.styles.join(',')}`)
 
+  // ---- C 批（用户 2026-11-16 点头「三项全做」）----
+  if (m.c1ImgPresent === 0 && m.c1Hidden === true) {
+    ok(`C1 无图时收起「脱敏原图」空占位卡（命中 ${m.c1Count} 个，display:none）`)
+  } else if (m.c1ImgPresent > 0) {
+    ok('C1 有裁剪图时卡片保留（选择器带 > .card > .h-48 守卫，未误伤）')
+  } else throw new Error(`C1 count=${m.c1Count} hidden=${m.c1Hidden} img=${m.c1ImgPresent}`)
+
+  const marginsOk = m.c2Margins.length > 1 && m.c2Margins.slice(1).every((v) => parseFloat(v) === 10)
+  if (marginsOk) ok(`C2 大块间距 16→10px（实测 ${m.c2Margins.join(' / ')}）`)
+  else throw new Error(`C2 margins=${m.c2Margins.join(',')}`)
+
+  if (m.c3TextareaHeights.length && m.c3TextareaHeights.every((h) => h <= 100)) {
+    ok(`C3 原文框收到 ≤96px（实测 ${m.c3TextareaHeights.join('/')}），仍可滚可编辑`)
+  } else throw new Error(`C3 textarea=${m.c3TextareaHeights.join(',')}`)
+
+  if (m.bodySH <= 1300) ok(`C 批纵向收益：body scrollHeight=${m.bodySH}（A+B 时 1580，目标 ≈1258）`)
+  else throw new Error(`C 批后 bodySH=${m.bodySH} 仍偏高`)
+
   if (m.footBtns.some((t) => t.includes('保存修改')) && m.footBtns.some((t) => t.includes('取消'))) ok('footer 有「取消 / 保存修改」')
   else throw new Error(`footBtns=${m.footBtns.join(',')}`)
   if (!m.topSaveVisible) ok('顶部冗余「保存修改」已隐藏（footer 是唯一写库入口）')
@@ -141,6 +165,10 @@ try {
     if (d.bodySW === d.bodyCW && d.topSaveVisible) ok(`G11c 桌面 body 无内部横向滚（${d.bodySW}/${d.bodyCW}）+ 顶部保存按钮仍显示`)
     else throw new Error(`G11c body ${d.bodySW}/${d.bodyCW} topSave=${d.topSaveVisible}`)
     if (d.de === 1440) ok('G11d 1440 无横向溢出'); else throw new Error(`de=${d.de}`)
+    if (d.c1Hidden !== true) ok('G11e 桌面「脱敏原图」卡仍在（C1 只作用于 ≤575px）')
+    else throw new Error('C1 误伤桌面')
+    if (d.c3TextareaHeights.every((h) => h > 96)) ok(`G11f 桌面原文框仍是 rows=6 原高（${d.c3TextareaHeights.join('/')}）`)
+    else throw new Error(`桌面 textarea=${d.c3TextareaHeights.join(',')}`)
   } else console.log('SKIP G11：1440 列表没有编辑按钮')
 
   // ---------------- G12 320 / 414 复跑 ----------------

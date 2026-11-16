@@ -111,6 +111,8 @@ const REPORT_DAY_MOBILE_CSS = `
 //   连带必改：工具栏在 335 下折行（B2，否则按钮组 445px、中文竖排）；关闭按钮 top:8（A3，
 //     header 压薄后会探出 2.4px 压 body 首行）。
 //
+// C 批（用户点头后追加）：无图收起「脱敏原图」空占位卡（−276px）、大块间距 16→10、原文框 138→96。
+//
 // 作用域：全部以 .mb-edit-modal 开头、只在 ≤575px；桌面 ≥576 一条都不匹配（1440 零回归）。
 // 三段页面级 style 各自独立 id/useEffect，互不覆盖。
 const REPORT_EDIT_MODAL_MOBILE_CSS = `
@@ -146,6 +148,15 @@ const REPORT_EDIT_MODAL_MOBILE_CSS = `
   .mb-edit-modal .rb-edit-grid-wrap .card > .flex.items-center.justify-between { flex-wrap: wrap !important; row-gap: 6px !important; }
   .mb-edit-modal .rb-edit-grid-wrap .card > .flex.items-center.justify-between > div { flex-wrap: wrap !important; row-gap: 6px !important; }
   .mb-edit-modal .rb-edit-grid-wrap button { white-space: nowrap !important; }
+  /* C 批（用户 2026-11-16 点头「三项全做」，判词 §2 C1–C3，再省约 322px 纵向）：
+     C1 本弹窗从未传 croppedImage（DataGrid 只有 :902 那条 img 分支），
+        「脱敏原图」卡永远是 192px 空占位灰块 → 无图时整卡收起。
+        选择器带 > .card > .h-48 守卫：将来真接上裁剪图，卡片自动回来。
+     C2 三个大块之间 16px 间距收到 10px。
+     C3 「报告原文」textarea rows=6 的 138px 收到 96px（仍可滚、仍可编辑，不丢内容）。 */
+  .mb-edit-modal .rb-edit-grid-wrap .card:has(> .card > .h-48) { display: none !important; }
+  .mb-edit-modal .rb-edit-grid-wrap > div > * + * { margin-top: 10px !important; }
+  .mb-edit-modal .rb-edit-grid-wrap textarea.input { height: 96px !important; }
 }
 `
 
