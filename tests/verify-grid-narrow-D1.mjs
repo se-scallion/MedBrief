@@ -23,9 +23,26 @@ const skip = (why) => {
   process.exit(1)
 }
 
+// 探活（UI §9.21 三条边界）：
+//  ① 放宽 ≠ 取消：打不通时仍 SKIP + 非 0，不许静默 0；
+//  ② 放宽只影响"能不能开始"，不影响"无行必须 fail"（页面 200 但网格空 ⇒ 仍 fail）；
+//  ③ dev 入口只是诊断，不进放行汇总（交付说明分三行写）。
 let ready = false
-try { ready = (await fetch(`${BASE}/api/health`, { signal: AbortSignal.timeout(3000) })).ok } catch {}
-if (!ready) skip(`服务未就绪：${BASE}`)
+let readyVia = ''
+try {
+  if ((await fetch(`${BASE}/api/health`, { signal: AbortSignal.timeout(3000) })).ok) { ready = true; readyVia = '/api/health' }
+} catch {}
+if (!ready) {
+  // dev server（vite，子路径 base）没有 /api/health：退回"页面 200"即认为可探
+  for (const probe of [`${BASE}/meddata/`, `${BASE}/`]) {
+    try {
+      const r = await fetch(probe, { signal: AbortSignal.timeout(3000) })
+      if (r.ok) { ready = true; readyVia = probe; break }
+    } catch {}
+  }
+}
+if (!ready) skip(`服务未就绪（/api/health 与页面探活均失败）：${BASE}`)
+if (readyVia !== '/api/health') console.log(`NOTE 探活经页面 200 放宽：${readyVia}（该入口为诊断，不进放行汇总）`)
 
 const browser = await chromium.launch({ headless: true })
 
