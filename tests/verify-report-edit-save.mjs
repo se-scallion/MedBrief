@@ -113,6 +113,30 @@ try {
     await p.waitForTimeout(300)
   }
 
+  // ---------- T1c：单号（barcode）可修且留审计、不许清空 ----------
+  {
+    const lib = JSON.parse(fs.readFileSync(tr, 'utf8'))
+    const victim = (lib.reports || []).find((r) => r.barcode)
+    if (!victim) skip('T1c 单号修正', '副本库没有带单号的报告')
+    else {
+      const newBc = '20260101TEST0001'
+      const r1 = await (await fetch(`${BASE}/api/intake/reports/${encodeURIComponent(victim.id)}/patch`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ barcode: newBc }),
+      })).json()
+      const after = JSON.parse(fs.readFileSync(tr, 'utf8')).reports.find((r) => r.id === victim.id)
+      const logged = (after.patchLog || []).some((x) => x.field === 'barcode' && x.to === newBc)
+      if (r1.ok && after.barcode === newBc && logged) ok(`T1c 单号可修且留审计（${victim.barcode} → ${newBc}）`)
+      else fail(`T1c 单号修正失败：ok=${r1.ok} stored=${after.barcode} logged=${logged}`)
+      // 不许清空（清空 = 查重键残缺）
+      const r2 = await (await fetch(`${BASE}/api/intake/reports/${encodeURIComponent(victim.id)}/patch`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ barcode: '   ' }),
+      })).json()
+      const still = JSON.parse(fs.readFileSync(tr, 'utf8')).reports.find((r) => r.id === victim.id).barcode
+      if (still === newBc) ok('T1c 单号不许被清空（空串被忽略）')
+      else fail(`T1c 单号被清空：${JSON.stringify(still)}`)
+    }
+  }
+
   // ---------- T2：回收站恢复（同一类 bug 的第二处） ----------
   const alive = JSON.parse(fs.readFileSync(tr, 'utf8')).reports || []
   if (!alive.length) {

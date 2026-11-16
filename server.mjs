@@ -1161,11 +1161,14 @@ function getNextReleaseCountdown() {
     // 报告级白名单：医院/日期 + 类型（2026-11-14 扩：用户要求列表显示「对应类型」，如 超声-床旁超声 / CT-胸部）
     // kind 只能在固定枚举内（前端 KIND_OPTIONS 与 meddata/store.js 的 lab/影像分流都依赖它）
     const KIND_ENUM = ['lab', 'pathology', 'imaging', 'discharge', 'drug', 'unknown']
-    for (const f of ['hospital', 'reportDate', 'reportType', 'kind']) {
+    // 2026-11-17 扩 barcode：单号是**查重键**（barcode+日期+类型），OCR 把单号年份读错时
+    // 不修它 ⇒ 同一份单再导入会因单号不一致而漏判重复。修单号必须留审计（走本接口即自动记 patchLog）。
+    for (const f of ['hospital', 'reportDate', 'reportType', 'kind', 'barcode']) {
       if (body[f] === undefined) continue
       const v = String(body[f]).trim()
       if (f === 'kind' && !KIND_ENUM.includes(v)) continue
       if (f === 'reportType' && !v) continue
+      if (f === 'barcode' && !v) continue   // 单号不允许清空（清空 = 查重键残缺）
       push(f, rep[f], v); rep[f] = v
     }
     // 护栏④（2026-11-14，沙箱实证后新增）：**左移行不许半写**。
