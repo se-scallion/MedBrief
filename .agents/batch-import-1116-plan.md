@@ -1,4 +1,4 @@
-# ① 批量导入模块 —— 交互与界面重构（需求整理 + 排雷）**v0.7**
+# ① 批量导入模块 —— 交互与界面重构（需求整理 + 排雷）**v0.8**
 
 > 触发（用户原话，2026-11-16 22:58，附截图 2186×1480）：
 > 「批量导入模块需要重新设计交互和界面。」
@@ -12,9 +12,18 @@
 >
 > 排雷：**无项目定制层**（`grep -rlF '**通用层**：~/.agents/skills/plan-review.md' .` 命中 4 个文件，全是正文引用，不是文件头标记），仅通用层。
 > 状态：**v0.3 方案，未编码**。作者：代诊-Manager。实现方：待定。
-> 审核：代诊-报告 **r1**（只准哪几条）+ **r2**（只准哪几条，另有附录 A 的规格 delta 判词）＋ **r3**（只准哪几条，1 条 P0 = B4 锚点错对象）已出；v0.6 已裁到终态并送 r4。
+> 审核：代诊-报告 **r1**（只准哪几条）+ **r2**（只准哪几条，另有附录 A 的规格 delta 判词）＋ **r3**（只准哪几条，1 条 P0 = B4 锚点错对象）已出；v0.6 已裁到终态并送 r4；**r4**（只准哪几条，1 条 P0 = B4 两条规则自相打架）已出，v0.8 裁到终态待送 r5。
 > 规格现为 **v1.3**（`1d2d609` 的 v1.2 + r3 的 5 条，工作树未提交）；v0.7 采纳其 P1′ 口径更正（`sha` 非空即可不建卡，含纯 JS），并记录其正文 4 处未落地。
 > UI 规格：`.agents/batch-import-1116-spec.md` **v1.1 已出**（39 条数值 + A1–A12/A1b/A9b 共 14 条判据，提交 `6b16606`；v1.0 `35761dc` 已被其取代），v0.4 已并入。
+
+## 修订说明 ⓪⁗（v0.7 → v0.8，逐条对 **r4 判词**）
+
+| r4 条目 | 本版落点 |
+|---|---|
+| **P0（唯一）B4 两条规则自相打架**：表格写"`span ≤ 0` 不进 B4，走 A1b-else"，代码块却 `if (!(span > 100)) fail('夹具不合格')` —— `span ≤ 0` 也落进 fail；而 1440 下 4 张卡是 `md={8}` 两行、`cardBottomDoc ≈ 716 < 900` ⇒ `span ≈ −184`（**这是正确行为**：内容不足一屏本就不该吸底）⇒ 正确实现被判"夹具不合格"；且 `fail()` 不抛错时后面继续量无意义值 | D-4 B4 改**三分支**：`span > 100` → 跑 B4 主体（**唯一承担 sticky/static 证伪**）；`span ≤ 0` → **A1b-else（只作护栏，不承担证伪）**；**仅 `0 < span ≤ 100` 的灰区才 fail**，且灰区**先允许用 `viewport.height − 200` 重跑一次**，仍灰区才判不合格。**不许用 `na()`**（夹具不够是测试自己的问题，不是被测对象状态） |
+| 攻击点① 1440/768 的 `span` 大概率 ≤ 0；"临时压视口"可以但必须是**允许的重跑方式** | 已写进灰区分支（重跑一次），不作为常态 |
+| 攻击点② 顶部「N 张未做查重 · 疑似重复 M」**不违反 F3**，但要加对账断言 | D-4 新增 **B7**：顶部汇总的 `M` === 页面橙 Tag（`predup` 类）个数 |
+| 攻击点③ 灰字顶高 61→77：A2 要改**允许集合**（单值断言迟早被删）+ 灰字 `nowrap`/`line-height:16px` + `scrollHeight <= clientHeight + 1` | D-4 新增 **B8**：A2 期望改为集合 `{49, 65, 61+safe, 77+safe}`（`65 = 49+16`），并断灰字单行 |
 
 ## 修订说明 ⓪‴（v0.6 → v0.7，逐条对 **规格 v1.3**）
 
@@ -32,8 +41,9 @@
 |---|---|---|---|
 | 1 | §8 **A1** 量测式 | 仍写 `documentElement.scrollTop = (scrollHeight - clientHeight) * 0.5` | 改 **span 锚点**：`cardBottomDoc = .ant-card-body.bottom + scrollTop`、`span = cardBottomDoc − innerHeight`、`span <= 100 ⇒ fail`、`scrollTop = span*0.5`、`await rAF` |
 | 2 | §8 **A3** | 仍断言 `document.querySelector('.mb-batchbar') === null` | 改几何：`bar.getBoundingClientRect().bottom <= 0` |
-| 3 | §8 **A2** | 仍单一 "49 / 61+safeArea" | 改**三态高度**（含 3.3b 灰字 +16 ⇒ 375 下 77） |
+| 3 | §8 **A2** | 仍单一 "49 / 61+safeArea" | 改**允许集合** `{49, 65, 61+safe, 77+safe}`（r4：单值断言迟早被删）+ 灰字 `nowrap`/`line-height:16px`/`scrollHeight ≤ clientHeight+1` |
 | 4 | **§4.5（3.3b）** | 正文无此小节（只在 header 提） | 补 12px 灰字「先拼前两张，再继续加」，仅 `2 < N ≤ 4` 出现 |
+| 5 | §7.4 顶部汇总 | 只有"三个数不合并" | 补一条对账：顶部「疑似重复（粗判）M」=== 卡片橙 Tag 个数（对应 B7） |
 
 ## 修订说明 ⓪″（v0.5 → v0.6，逐条对 **r3 判词**）
 
@@ -249,23 +259,40 @@
 | **B4** | **中途贴底**（分辨 sticky vs static 的唯一判据；**锚点必须是 ① 卡片，不是全文档** —— r3 P0） | 见下表后的代码块（几何锚点 `span`，`span <= 100` ⇒ `fail` 夹具不合格） | `\|innerHeight − bar.bottom\| ≤ 1`（`static` ⇒ `innerHeight + span/2`，恒红）；短列表 `span ≤ 0` 不进 B4，走 A1b 的 else 分支 |
 | **B5** | 375 横滚**改前基线**（不许冒领） | 5194 + 副本库 + `?tab=intake`，改前先量 `documentElement.scrollWidth / clientWidth` | 改后 **≤ 改前**，且交付必须写**改前/改后数值对**。**优先级：A12（绝对判据）高于 B5（相对判据），不许被 B5 稀释** —— 改前已超时只有两条路：本批修掉，或 **A12 降为记录项 + 用户书面接受** |
 | **B6** | sticky 前提：`overflow` 链无 hidden | 从 `#sec-upload` 逐级向上到 `body`，`getComputedStyle(el).overflow` 与 `overflowY` | 均 **!== 'hidden'**（将来给卡片加 `overflow:hidden` 会静默破坏贴底） |
+| **B7** | 顶部汇总与卡片 Tag **对账**（r4 攻击点②） | 页面统计：顶部「疑似重复（粗判）M」的 M；卡片上橙 Tag（`predup.kind === 'name-size-suspect'`）个数 | **M === 橙 Tag 个数**（有计数必有断言；两者语义不同不合并，但必须对得上） |
+| **B8** | A2 的**允许集合** + 灰字单行（r4 攻击点③） | `Math.round(bar.getBoundingClientRect().height)`；`getComputedStyle(灰字).whiteSpace === 'nowrap'`、`lineHeight === '16px'`、`灰字.scrollHeight <= 灰字.clientHeight + 1` | 栏高 ∈ **{49, 65, 61+safe, 77+safe}**（`65 = 49+16`、`77 = 61+16`）；灰字恒单行（单值断言迟早被人删，故用集合） |
 
-**B4 的可复制实现（四档各跑一次）**：
+**B4 的可复制实现（三分支；四档各跑一次）**：
 
 ```js
 const bar  = document.querySelector('.mb-batchbar')
-const body = document.querySelector('.ant-card-body')          // sticky 的 containing block
+const body = document.querySelector('.ant-card-body')            // sticky 的 containing block
 const doc  = document.documentElement
-const cardBottomDoc = body.getBoundingClientRect().bottom + doc.scrollTop
-const span = cardBottomDoc - innerHeight                       // 卡片底部到视口底的可见跨度
-if (!(span > 100)) fail(`B4 夹具不合格：span=${span}px（① 段内容太短，改用 A1b 的 else 分支）`)  // fail，不是 N/A
-doc.scrollTop = span * 0.5                                     // 只滚到「卡片仍在视口下方」的区间
-await new Promise((r) => requestAnimationFrame(r))              // sticky 要等一帧
-const gap = Math.abs(innerHeight - bar.getBoundingClientRect().bottom)
-if (gap <= 1) ok(`B4 ${w} 中途贴底：|innerHeight − bar.bottom| = ${gap} ≤ 1`)
-else fail(`B4 ${w} 中途未贴底：gap=${gap}（static 时会等于 span/2 = ${(span / 2).toFixed(1)}）`)
+const measure = async (w) => {
+  const cardBottomDoc = body.getBoundingClientRect().bottom + doc.scrollTop
+  const span = cardBottomDoc - innerHeight                       // 卡片底 → 视口底 的跨度
+  if (span > 100) {                                              // ① 主体：唯一承担 sticky/static 证伪
+    doc.scrollTop = span * 0.5
+    await new Promise((r) => requestAnimationFrame(r))            // sticky 要等一帧
+    const gap = Math.abs(innerHeight - bar.getBoundingClientRect().bottom)
+    if (gap <= 1) ok(`B4 ${w} 中途贴底：gap=${gap} ≤ 1（span=${span}）`)
+    else fail(`B4 ${w} 中途未贴底：gap=${gap}（static 时应为 span/2 = ${(span / 2).toFixed(1)}）`)
+    return
+  }
+  if (span <= 0) {                                               // ② 短列表：只作护栏，本档两者不可分辨
+    doc.scrollTop = doc.scrollHeight
+    await new Promise((r) => requestAnimationFrame(r))
+    const gap = bar.getBoundingClientRect().bottom - innerHeight
+    if (gap <= 1) ok(`B4 ${w} 短列表：栏排在内容末尾（bottom − 视口底 = ${gap.toFixed(1)} ≤ 1），A1b-else 通过`)
+    else fail(`B4 ${w} 短列表：栏跑到视口下方 ${gap.toFixed(1)}px`)
+    return
+  }
+  fail(`B4 ${w} 夹具灰区：span=${span}px ∈ (0,100]，建议以 viewport.height − 200 重跑一次`)  // ③ 灰区才 fail
+}
+// 灰区重跑（只允许这一种）：
+//   const p2 = await browser.newPage({ viewport: { width: w, height: Math.max(320, innerHeight - 200) } })
+//   仍灰区 ⇒ 判不合格；不许用 na()（夹具不够是测试的问题，不是被测对象的状态）
 ```
-
 ### D-5 实现边界（规格 §9 照抄为硬约束）
 
 1. **只允许改 3 个文件**：`web/src/pages/intake/UploadPanel.jsx`、`web/src/pages/IntakePage.jsx`（传 `sec` + 多选语义）、`web/src/pages/intake/shared.js`（**只改 `ST.dup.label` 一个字面**）。
