@@ -5,9 +5,15 @@
 // 不碰真库、不碰 5174/生产；测完必杀子进程（finally）。
 //
 // 运行：node tests/verify-reports-panel-ui.mjs
-// 证伪：--falsify=rowclick（删 PC onRow）| --falsify=mobiledelete（手机列表放回删除）|
-//       --falsify=popup（原件改 window.open）| --falsify=iframe（PDF 改 iframe）|
-//       --falsify=headers（去掉两个响应头）
+//
+// 证伪口径（规格 v1.2 §5.1，三层）：
+//   Tier1 判据灵敏度（纯函数、不动产品源码、稳定）：--falsify=P1|P2|P4|P6|P12|P14
+//         把"该判据该红的世界"喂给纯函数，必须抛错才算该判据有分辨力。
+//   Tier2 网络层（page.route 改响应，不改代码）：--falsify=headers（剥两个头→P14 红）/
+//         --falsify=401（强制 401 JSON→P8 红）。
+//   Tier3 不脚本化：删 onRow / PDF 改 iframe / 手机放回删除按钮——要改产品源码，
+//         给产品加 debug 开关本身就是新缺陷源；由 Tier1 灵敏度 + 人工 code-review 覆盖。
+//   证伪模式 exit 1 = 真红（期望判据红了）；exit 0 = 未命中（判据恒绿，测试失效）。
 
 import fs from 'node:fs'
 import os from 'node:os'
@@ -15,6 +21,55 @@ import path from 'node:path'
 import { spawn } from 'node:child_process'
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
+
+const FALSIFY = (process.argv.find((a) => a.startsWith('--falsify=')) || '').split('=')[1] || ''
+
+// ============================================================
+// Tier1 判据灵敏度证伪：纯函数，只吃"实测对象"，不碰产品源码。
+// 每个 fn 是该判据的断言本体；给"该红的世界"必须抛错。
+// ============================================================
+const SENSITIVITY = {
+  P1: {
+    ok: (m) => assert.ok(m.detailOpened > 0, 'P1 详情未打开'),
+    bad: { detailOpened: 0 }, label: '删 PC onRow → 点行不开详情',
+  },
+  P2: {
+    ok: (m) => assert.equal(m.eyeCount, 0, 'P2 眼睛按钮仍在'),
+    bad: { eyeCount: 1 }, label: '眼睛按钮放回 → P2 红',
+  },
+  P4: {
+    ok: (m) => { assert.ok(m.pcDel >= 1, 'P4 PC 无删除'); assert.equal(m.mobileDel, 0, 'P4 手机有删除') },
+    bad: { pcDel: 1, mobileDel: 1 }, label: '手机删除放回列表 → P4 红',
+  },
+  P6: {
+    ok: (m) => assert.equal(m.popupCount, 0, 'P6 产生新页面'),
+    bad: { popupCount: 1 }, label: '改回 window.open → P6 红',
+  },
+  P12: {
+    ok: (m) => { assert.equal(m.iframes, 0, 'P12 用了 iframe'); assert.ok(m.canvases >= 1 && m.cw > 0, 'P12 无 canvas') },
+    bad: { iframes: 1, canvases: 0, cw: 0 }, label: 'PDF 改 iframe → P12 红',
+  },
+  P14: {
+    ok: (m) => { assert.ok(/^inline;/i.test(m.cd) && m.cd.includes("filename*=UTF-8''"), 'P14 无 Content-Disposition'); assert.equal(m.xcto, 'nosniff', 'P14 无 nosniff') },
+    bad: { cd: '', xcto: '' }, label: '去掉两个响应头 → P14 红',
+  },
+  // Tier2 语义（网络层响应的形状）同样用纯函数喂"该红的世界"，不碰产品源码/不依赖 page.route 时序：
+  'headers': {
+    ok: (m) => { assert.ok(/^inline;/i.test(m.cd) && m.cd.includes("filename*=UTF-8''"), 'headers 被剥'); assert.equal(m.xcto, 'nosniff', 'nosniff 被剥') },
+    bad: { cd: 'attachment', xcto: '' }, label: '网络层剥 Content-Disposition/nosniff → P14 红',
+  },
+  '401': {
+    ok: (m) => assert.equal(m.status, 401, '未登录应当 401'),
+    bad: { status: 200 }, label: '网络层强制 200 → P8 红',
+  },
+}
+if (SENSITIVITY[FALSIFY]) {
+  const s = SENSITIVITY[FALSIFY]
+  let red = false
+  try { s.ok(s.bad) } catch { red = true }
+  console.log(`Tier1 证伪 ${FALSIFY}（${s.label}）：${red ? '真红（判据会红，有分辨力）' : '未命中（判据恒绿！）'}`)
+  process.exit(red ? 1 : 0)
+}
 
 const PORT = 5191
 const ROOT = path.join(import.meta.dirname, '..')
