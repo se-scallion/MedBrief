@@ -1,7 +1,10 @@
-# MedBrief 生产部署计划 —— 排雷与取舍 v0.5e（阶段 1 已验证通过）
+# MedBrief 生产部署计划 —— 排雷与取舍 v0.5f（骨架已上线；数据上线挂起）
 
 > 触发（用户原话，2026-11-17 10:34）：「完成以上任务之后，设计一个部署计划。服务器直接无密连接 ssh ubuntu@62.234.146.222」。
-> 状态：**阶段 1 已在服务器实测通过**（Node v22.20.0/`node:sqlite`/`npm ci`+`cd vendor && npm ci`/投递 sha256 双端一致/`GET /` 与 assets 200/`bind=127.0.0.1`/`commitSource=env`）。**审核门 ✅／G6 ✅／拍板 ✅** 三门齐。阶段 2 硬闸（凭据轮换三选）与阶段 3 建站（DNS A 记录）待用户。
+> 状态：**骨架已上线（2026-11-17 17:30 运维报，我只读复核属实）**：`https://medbrief.shanhailingjing.top` HTTP 301→HTTPS 200、独立 Let's Encrypt EC-256 证书（CN/SAN=medbrief，有效期至 2027-02-15，admin 站点不串证）、systemd `medbrief.service` 绑 127.0.0.1:5174、MemoryCurrent≈82MB/上限 768M、`NRestarts=0`、`/opt/ops/verify-medbrief.sh` 11 项 PASS + 公网侧断言 4/4、用户已成功登录。**审核门 ✅／G6 ✅／拍板 ✅**；r7 判"只准哪几条"——骨架条件准予（三前置全满足）、**数据上线硬挂起**。
+> **数据上线解锁条件（r7 硬闸，全未完成不投 221M）**：6b③ 全机凭据轮换 + 重换 `MB_SESSION_SECRET` + 清空骨架期测试库并重跑哈希 + 未知 SSH 公钥处置闭环；用户当前"先不轮换"，运维不越过。解锁只需用户给时间窗（批 A 2 分钟 / 批 A+B 10 分钟）。
+> **已知偏离（r7/运维）**：站点以手工落 1Panel `conf.d` 站点层（面板无 API key 看不到此站），未改 openresty 裸配置、未碰 admin/www；纳管需面板 API key。**运维手册** `.agents/deploy-ops-runbook-1117.md`（运维一手产物、**当前未提交 `??`，由运维自己决定提交，我不替它提**）；服务器留档 `/root/ir/medbrief-releases.log`。
+> 版本 v0.5f：记骨架上线完成 + r7 分段放行（骨架准予/数据挂起）+ 已知偏离（1Panel conf.d 手工落站）+ runbook 路径与归属 + 验收入口升级为 11 项。
 > 版本 v0.5e：落 r6 两条 P1——**事实订正：Secure cookie 已实现**（`auth.mjs:57` `MB_COOKIE_SECURE=1`，运维已启用），零命中只剩 XFP/首登改密/口令策略；拍板 #10 措辞相应更正；6b 改"骨架/数据拆分"（①② 运维已完成→骨架上线→③ 轮换留数据前→数据上线）+ 六防点；阶段 4 加 `/opt/ops/verify-medbrief.sh` 8 项验收唯一入口。
 > 版本 v0.5d：按运维新事实订正——可移植 lock **已真提交 `c28a2aa`**（HEAD `8488494`，`link:true`=0、`../MedData`=0、工作树 clean；我先前报"没提交"是过期快照，认错）；`.deploy-commit` 现钉实际部署 HEAD `8488494`（distSha256 `757631a7…` 自 `83d1b99` 未变）；阶段 1 已验证项标绿。**教训：凡断言 HEAD/lock 状态，以 `git log -1`/`git show HEAD:<file>` 即时输出为准，不用几分钟前快照（本轮我自己栽过）。**
 > 版本 v0.5c：补运维阶段 1 实测 3 缺口（vendor/ npm ci、可移植 lock 判据、.deploy-commit 一致+dirty 口径）。v0.5b 归档 10 拍板；v0.5a 折进 r5 的 2 P1+4 P2。
@@ -127,7 +130,7 @@ MedBrief 本地开发时 `MEDREC_BACKEND=8011` 由 launchd 守护 `com.user.medr
 6b. **P0-5 入侵史主机前置 + r6 骨架/数据拆分（新顺序：①②→骨架上线→③→数据上线）**：该机 ES 曾被 Meow 擦库留勒索信 `recover_your_database`。
    - **骨架上线前（①②，运维已完成，2026-11-17）**：规则/暴露面全量留档(`/root/ir/`：ufw status numbered、iptables-save、docker ps -a、ss -tlnp、ip a)；持久化排查(全体 authorized_keys/crontab/陌生 unit/异常镜像/SUID/**`/tmp` 可执行文件已清零**，`app-server` 已 systemd 托管于 `/opt/shanhai/bin`，`app-search` 收编留回滚源后删除，9007 仍 200)；**⇒ 骨架上线前置已满足**。
    - **骨架上线（空库）**：可先起服务/反代验链路，**骨架期禁一切真实数据**。`lib/intakeCard.js:28` 首启仍会建 `data/`+`medbrief.db` ⇒ 记下其 sha256，数据期用白名单版覆盖或先删空壳。无开放注册 ⇒ 不会被抢注。`MB_COOKIE_SECURE=1`（Secure cookie 已启用，见拍板 #10）。
-   - **数据上线前（③）**：**全机凭据轮转**(MySQL root 923229904 兼 Redis 口令、明文在 4 处；SSH/1Panel/容器 env tokens) + **轮转 `MB_SESSION_SECRET`**；待用户对"凭据轮换三选"落字。④ 数据最小化白名单(见 5)+ 若 #3 原样上生产则传输加密(gpg/gocryptfs)。
+   - **数据上线前（③，r7 锁死硬闸）**：**全机凭据轮转**(MySQL root 923229904 兼 Redis 口令、明文在 4 处；SSH/1Panel/容器 env tokens) + **重换 `MB_SESSION_SECRET`** + **清空骨架期测试库并重跑全量哈希校验** + 公钥处置闭环；待用户对"凭据轮换三选"落字（用户当前"先不轮换"⇒ **221M 数据硬挂起，运维不越过**）。④ 数据最小化白名单(见 5)+ 若 #3 原样上生产则传输加密(gpg/gocryptfs)。
    - **唯一待用户定**：`/root/.ssh/authorized_keys` 里 `root@VM-66-189-ubuntu`(2026-06-05 建、从未登录)是否自己的机器，非则删。**①② 已完成、③ 未落字前只上骨架不投数据。**
 6c. 备份：上传前对生产目标目录打 tar.gz 快照；记录回滚点。
 
@@ -143,7 +146,7 @@ MedBrief 本地开发时 `MEDREC_BACKEND=8011` 由 launchd 守护 `com.user.medr
 10b. **只读版入口断言（含 GUAHO_BROWSER）**：若只读版，断 ① 上传/识别入口不可点或返回"未启用"；② `curl /api/guahao/monitor/realtime` → `disabled:true, code:BROWSER_DISABLED`；③ **反向断言** `POST /api/guahao/114/flow/start` → **503 `BROWSER_DISABLED`**（r5：守卫实际 **6 处** `:564/:596/:612/:633/:862/:972`，计划原只写 3 处，补反向断言覆盖写路径）；不以全功能清单量它。
 11. 门禁：服务器上 `node tests/verify-card.mjs`(62/0)、`verify-card-module1`(9/0)、`verify-auth`(43/0)——**隔离事实订正（P0-4，删"CWD切/tmp可百分百杜绝"的错误说法）**：`server.mjs:115` `DATA_DIR=path.join(__dirname,'data')` **不可 env 覆盖**、`:242` `REPORTS_FILE` 默认 `__dirname`；CWD 只影响 `lib/intakeCard.js:28`/`recognitionHits.mjs:19`。**真实隔离 = `MEDBRIEF_REPORTS_FILE` 指副本库 + `MEDBRIEF_DATA_DIR` 指临时副本 + 独立端口**，并**断言实际路径**（health 或日志确认读取的是副本而非生产 data/）；CWD 切 /tmp 仅作附加、不作保证。只读版降级时验收同步收窄。
 12. **暴露面/数据断言**：API 原始 JSON **不脱敏**（`mask=1` 只在打印渲染），确认生产经 HTTPS + auth；`ss` 断 5174 仅本地绑。**会话加固（r6 订正）**：`Secure cookie` **已启用**（`MB_COOKIE_SECURE=1`）；XFP/首登改密未实现——按归档拍板 #10 书面接受或归账号线补，不假称已做。
-13. **只读版验收唯一入口（r6 攻击3/4，运维已写）**：`/opt/ops/verify-medbrief.sh`（8 项判定：environ 四开关 / 无子浏览器进程 / `/proc/<pid>/maps` 无浏览器 / `flow/start` 回 `BROWSER_DISABLED` / `data/guahao-browser.flag` 不得为 on / bind 只回环 / `health.head`==`.deploy-commit.commit` / `fileHashes` 自证），任一失败退出 1。运维临时实例实测 **7 绿 + 第 7 项按预期红**（故意塞不符 commit 被抓出，证明断言有效）；第 8 项待写工补 `.deploy-commit.fileHashes` 后启用。**以该脚本为阶段 4 只读版验收的唯一判据入口**，不再靠零散 curl。
+13. **只读版验收唯一入口（r6 攻击3/4 → r7 补 3 断言，运维已写并实测）**：`/opt/ops/verify-medbrief.sh`——骨架上线实测 **11 项 PASS**（原 8 项：environ 四开关/无子浏览器进程/`/proc/<pid>/maps` 无浏览器/`flow/start` 回 `BROWSER_DISABLED`/`data/guahao-browser.flag` 非 on/bind 只回环/`health.head`==`.deploy-commit.commit`/`fileHashes` 自证；r7 补 3 项：systemd 实启态+MemoryCurrent/未登录 401/HTTPS 与 Secure cookie）；**公网侧断言 4/4**（HTTP 301 / 独立证书不与 admin 串证 / 真实登录 Set-Cookie 含 `Secure+HttpOnly+SameSite=Lax` / 未登录 401×3）。任一失败退出 1——**以该脚本为阶段 4 只读版验收唯一判据入口**，不再靠零散 curl。
 14. 回滚点：systemd stop + 恢复上一版目录/数据快照 + 1Panel 反代指回；**每步可独立回滚**。
 
 **延后项的触发条件：**
