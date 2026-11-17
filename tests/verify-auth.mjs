@@ -98,6 +98,43 @@ async function main() {
     T('首页能取到资产 URL', !!asset)
     if (asset) T(`资产 200 ${asset}`, (await req(asset)).status === 200)
 
+    // ---- /assets/ 未命中必须 404，不能落到 SPA 回退（2026-11-17 运维假绿修复）----
+    // 判据：产物没发上去时，/assets/xxx.js 绝不能回 200 + text/html。
+    const miss = await req('/assets/index-doesnotexist.js')
+    T('不存在的 asset 404', miss.status === 404)
+    T('不存在的 asset 体不含 <html', !String(miss.raw).toLowerCase().includes('<html'))
+    T('不存在的 asset 非 html 类型', !String(miss.headers.get('content-type') || '').includes('text/html'))
+
+    // 已有 asset 仍 200（回退不能把正常资产也拦掉）
+    const assetsDir = path.join(ROOT, 'web', 'dist-next', 'assets')
+    const jsFile = fs.existsSync(assetsDir)
+      ? fs.readdirSync(assetsDir).find((f) => f.endsWith('.js'))
+      : null
+    T('dist 里能找到 .js 资产', !!jsFile)
+    if (jsFile) {
+      const hit = await req(`/assets/${jsFile}`)
+      T(`已有 asset 200 /assets/${jsFile}`, hit.status === 200)
+      T('已有 asset 是 JS MIME', String(hit.headers.get('content-type') || '').includes('application/javascript'))
+    }
+    // pdf.js worker 是 .mjs，必须 application/javascript（octet-stream 会被浏览器拒绝执行）
+    const mjsFile = fs.existsSync(assetsDir)
+      ? fs.readdirSync(assetsDir).find((f) => f.endsWith('.mjs'))
+      : null
+    T('dist 里能找到 .mjs worker', !!mjsFile)
+    if (mjsFile) {
+      const w = await req(`/assets/${mjsFile}`)
+      T(`.mjs worker 200 /assets/${mjsFile}`, w.status === 200)
+      T('.mjs worker 是 application/javascript', String(w.headers.get('content-type') || '').includes('application/javascript'))
+    }
+    // 越权不许放宽：/assets/../ 越界仍是 403
+    T('越权 /assets/../server.mjs 仍 403', (await req('/assets/../server.mjs')).status === 403)
+
+    // SPA 回退只对非 assets 生效：深链仍 200 + text/html
+    for (const u of ['/reports', '/intake', '/card', '/some/deep/link']) {
+      const r = await req(u)
+      T(`深链 SPA 200 ${u}`, r.status === 200 && String(r.headers.get('content-type') || '').includes('text/html'))
+    }
+
     // ---- 未登录 401 ----
     T('未登录 reports 401', (await req('/api/intake/reports')).status === 401)
 

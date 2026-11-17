@@ -2059,6 +2059,19 @@ function getNextReleaseCountdown() {
       }
     }
 
+    // 9c-assets（2026-11-17 修「产物没发上去也回 200」的假绿）：/assets/ 未命中必须 404，
+    //   不能落到下面的 SPA 回退。否则 /assets/index-doesnotexist.js 会回 200 + text/html，
+    //   运维看不见产物缺失，pdf.js worker 加载失败也被吞成"页面怪怪的"。
+    //   注：能走到这里说明 9a 没命中（dist-next 里没有这个文件）；/assets/../xxx 这类越权
+    //   路径已在 9c-gate 判 403，不会到这里。
+    if (rel.startsWith('assets/')) {
+      setCors(null, res)
+      res.statusCode = 404
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+      res.end('asset not found')
+      return
+    }
+
     // 9d. 新壳首页与 SPA 回退
     const spaIndex = path.join(distDir, 'index.html')
     if (fs.existsSync(spaIndex)) {
