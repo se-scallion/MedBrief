@@ -107,7 +107,7 @@ MedBrief 本地开发时 `MEDREC_BACKEND=8011` 由 launchd 守护 `com.user.medr
 **阶段 1 — 环境与前提（纯环境/投递，不再改仓库代码）：**
 1. 装固定版本 Node（**必须 ≥22.5**：`lib/blobStore.mjs` 用 `node:sqlite` 的 `DatabaseSync`；apt 旧版不行 ⇒ NodeSource/nvm，记录版本）。
 2. 建部署目录（如 `/opt/medbrief`，用户定），权限 750，owner ubuntu。
-3. `npm ci`（用阶段 0 生成的 lock）装**全依赖含 playwright**（顶层 import）；`npm run build:web` 产物随代码投递。**playwright 浏览器二进制**：本地只读版出卡/打印是否调 `chromium.launch()` 未核实（AI 审核 P1-3）——若不调，设 `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` 省 8.2G 磁盘；若调，补系统依赖与浏览器并重估内存。
+3. `npm ci`（用阶段 0 生成的 lock）装**全依赖含 playwright**（顶层 import）；`npm run build:web` 产物随代码投递。**Chromium 调用链已实测确定**：`server.mjs:983` **确实调用** `chromium.launch()` ⇒ **不能跳过浏览器下载**，必须装 Chromium 二进制 + 系统依赖（如 libnss3/libatk 等），并重估 1.0G 可用内存与 8.2G 磁盘（r3 自检 P1-A 销号）。
 4. rsync 投递阶段 0 钉死的 commit 产物（不含工作树在途项）。
 
 **阶段 2 — 数据与配置：**
@@ -125,7 +125,7 @@ MedBrief 本地开发时 `MEDREC_BACKEND=8011` 由 launchd 守护 `com.user.medr
 **阶段 4 — 验收与回滚：**
 10. **只读冒烟（不写生产库，订正 AI 审核 P0-3）**：`curl https://medbrief.shanhailingjing.top/api/health` → `ok:true, auth:on, head=<部署commit>`（head 取不到则须部署时带 `.git` 或注入版本环境变量——P1-4）；登录页可达、用**只读端点**（报告列表/资料卡）确认出卡与打印预览渲染；**不在生产域名建报告/导入**（那会写脏数据，违反 B6/G7）。写类操作只在阶段 4.11 的副本库环境验。识别链路 8008/8011/8045 的验证同样放副本库，不写生产。
 10b. **只读版入口断言**（P1-6）：若本版裁剪为只读，验收须断"上传/识别入口不可点或返回明确'未启用'"，不以全功能清单量它。
-11. 门禁：服务器上 `node tests/verify-card.mjs`（62/0）、`verify-card-module1`（9/0）、`verify-auth`（43/0）——**隔离已实测可用**：`MEDBRIEF_DATA_DIR` 被 `lib/accounts.mjs:18`/`blobStore.mjs:13`/`correctionsStore.mjs:23` 读取（`process.env.MEDBRIEF_DATA_DIR || cwd/data`），且 verify-auth/card-inject 等测试已用它+独立端口跑通。要求：独立端口（避开 5174）+ `MEDBRIEF_DATA_DIR` 指向临时副本（绝不指向生产 data/）+ `MEDBRIEF_REPORTS_FILE` 指向副本库；只读版降级时验收同步收窄，不以全功能清单量只读版。
+11. 门禁：服务器上 `node tests/verify-card.mjs`（62/0）、`verify-card-module1`（9/0）、`verify-auth`（43/0）——**隔离已实测可用**：`MEDBRIEF_DATA_DIR` 被 `lib/accounts.mjs:18`/`blobStore.mjs:13`/`correctionsStore.mjs:23` 读取，且 verify-auth/card-inject 等测试已用它+独立端口跑通。要求：独立端口（避开 5174）+ `MEDBRIEF_DATA_DIR` 指向临时副本 + `MEDBRIEF_REPORTS_FILE` 指向副本库 + **CWD 切到 /tmp 沙盒**（r3 P1-C 防呆：`server.mjs:115/242` 有 `__dirname/data` 相对路径兜底，物理隔离 CWD 可百分百杜绝碰生产 data/）；只读版降级时验收同步收窄，不以全功能清单量只读版。
 12. **暴露面/数据断言**：API 原始 JSON **不脱敏**（`mask=1` 只在打印渲染），确认生产经 HTTPS + auth；`ss` 断 5174 仅本地绑。**会话加固（Secure cookie/XFP/首登改密）代码未实现**（grep 零命中，AI 审核 P0-4）——部署侧配不出来；若拍板要加固，归阶段 0 D0-5④ 补代码；否则书面接受"仅 HTTPS 传输层+auth"风险，不在本计划假称已做。
 13. 回滚点：systemd stop + 恢复上一版目录/数据快照 + 1Panel 反代指回；**每步可独立回滚**。
 
@@ -157,4 +157,5 @@ cd /Users/scallion/Documents/projects/MedBrief && node -e "const p=require('./pa
 grep -n "127.0.0.1:8008\|127.0.0.1:8045\|MEDREC_BACKEND\|VISION_ENDPOINT" server.mjs lib/*.mjs
 ```
 
-> 下一步（两个独立的门）：①**审核门**：AI Studio 同 session 续跑 r3（r1/r2 判词已落盘，r2 两条 P0 已裁：P0-A 正文统一/P0-B 实测排除）；②**用户拍板门**：上面 10 项（范围/域名已定/数据/资源/重启/暴露面/审核进度/裁剪/只读入口/会话加固）。两门都过 + 用户一句"按以上计划执行"才动服务器。
+> **审核闭环完成**：AI Studio 同 session r1→r2→r3（`--session-key MedBrief/deploy-1117`），**r3 终判「可以开工」**（逻辑预审视角 P0 清零；判词 `.agents/deploy-1117-review-r{1,2,3}.md`）。另有独立 Bot 实测判词 `.agents/deploy-1117-review-r1-bot.md`（分通道留痕）。**但「可以开工」≠ 授权部署**：仍受 G6 + 下面 10 项拍板约束。
+> 下一步（两个独立的门）：①**审核门 ✅ 已过**（r3 可以开工）；②**用户拍板门（待）**：下面 10 项（范围/域名已定/数据/资源/重启/暴露面/审核进度/裁剪/只读入口/会话加固）全部落定 + 用户一句"按以上计划执行"，才动服务器。
