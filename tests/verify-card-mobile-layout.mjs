@@ -27,7 +27,7 @@
 //   A3  所有 svg text 渲染高 ≥9px，且参考刻度 bbox 与点值标签 bbox 零相交
 //   A4  趋势卡 scrollIntoView 后额外落盘截图（.agents/ui-audit-1117/shots/）
 //   L17a 375 首屏（不滚动）第一张趋势卡 top < 视口×0.55（改前 ≈3200px）
-//   L17b 指标选择行收起态 ≤60px、选择器 ≤40px
+//   L17b 指标选择行收起态 ≤40px（单行）、选择器 ≤40px
 //   L17c showSearch 中文可用（输入「血红」选项数变少且结果都含该词）
 //   L18  页签文字 scrollWidth ≤ clientWidth+1，容器可滚时必须能滚到末项
 //
@@ -93,7 +93,10 @@ const M_TRENDS = () => {
   const nonEmpty = getComputedStyle(g).gridTemplateColumns.split(' ').filter((v) => parseFloat(v) > 0).length
   // 指标选择行（.mb-trend-opt）：文字 + Select + 模式切换 —— 零遮挡/零水平裁切 + 高度 + 首卡位置
   const optRow = document.querySelector('.mb-trend-opt')
-  const optLabel = optRow ? optRow.firstElementChild : null
+  // 移动档没有独立文字行了（计数折进选择器内），此时首个子元素就是选择器自身
+  const optLabelRaw = optRow ? optRow.firstElementChild : null
+  const isSelectEl = !!optLabelRaw && (optLabelRaw.classList.contains('ant-select') || !!optLabelRaw.querySelector('.ant-select'))
+  const optLabel = isSelectEl ? null : optLabelRaw
   const optSelect = optRow ? optRow.querySelector('.ant-select') : null
   const inter = (a, c) => {
     const ox = Math.max(0, Math.min(a.right, c.right) - Math.max(a.left, c.left))
@@ -140,7 +143,7 @@ const M_TRENDS = () => {
     vh55: Math.round(window.innerHeight * 0.55), scrollY: window.scrollY,
     optRowH: optRow ? Math.round(rowRect.height) : null,
     optSelectH: optSelect ? Math.round(optSelect.getBoundingClientRect().height) : null,
-    optLabelW: optLabel ? Math.round(optLabel.getBoundingClientRect().width) : null,
+    optLabelW: optLabel ? Math.round(optLabel.getBoundingClientRect().width) : (optSelect ? Math.round(optSelect.getBoundingClientRect().width) : null),
     optLabelOverlap: (optLabel && optSelect) ? inter(optLabel.getBoundingClientRect(), optSelect.getBoundingClientRect()) : 0,
     optRowScrollW: optRow?.scrollWidth ?? 0, optRowClientW: optRow?.clientWidth ?? 0,
     clippedInRow,
@@ -214,7 +217,7 @@ const M_TOUCH = () => {
 
 // ============ 页面流程 ============
 // 证伪注入（必须在每个用到该判据的视口都执行，否则 1440 分支永远绿 = 假绿）
-async function injectFalsify(page) {
+async function injectFalsify(page, opts = {}) {
   if (FALSIFY === 'grid') {
     await page.addStyleTag({ content: '@media (max-width:575px){ .mb-trends-grid{ grid-template-columns: repeat(auto-fit, minmax(0,1fr)) !important; } }' })
   }
@@ -223,12 +226,16 @@ async function injectFalsify(page) {
   }
   // 证伪注入要**严格高于**组件内 <style> 的优先级（同权重时后插入的组件样式会赢 ⇒ 假绿）：
   // 组件是 .mb-src-modal .ant-modal-container（0,2,0），这里用三层类（0,3,0）
-  if (FALSIFY === 'tabs') {
-    // 还原「长页签被右缘截断」：把页签文字换成超长中文
+  if (FALSIFY === 'tabs' && opts.tabs !== false) {
+    // 还原「长页签被右缘截断」：把页签文字换成超长中文。**原文先存 window**，
+    // 量完 L18 立刻还原——否则趋势页签也被改名 ⇒ 后面点不到它、选择器永远不渲染（证伪会崩而不是红）。
     await page.evaluate(() => {
-      document.querySelectorAll('.ant-tabs-tab .ant-tabs-tab-btn').forEach((el) => {
+      const els = [...document.querySelectorAll('.ant-tabs-tab .ant-tabs-tab-btn')]
+      window.__mbTabOriginals = els.map((el) => el.textContent)
+      els.forEach((el) => {
         el.textContent = '临床指标总览与动态趋势看板全部原件时间轴'
-        el.style.minWidth = '0'
+        // 复现「被右缘截断」的真实签名：固定宽度 + ellipsis（antd 当年就是这样把「全病程…」压掉的）
+        el.style.cssText = 'width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block'
       })
     })
   }
@@ -289,6 +296,14 @@ async function run(browser, results) {
         for (const it of tabs18.items) if (it.scrollW > it.clientW + 1) throw new Error(`页签「${it.text}」被截断（scrollW ${it.scrollW} > clientW ${it.clientW}）`)
         if (tabs18.canScroll && !tabs18.moved) throw new Error('页签容器可滚但滚不到末项')
       })
+      // 断言完立刻还原页签文字，后续流程（点趋势页签、测量趋势卡）照常
+      if (FALSIFY === 'tabs') {
+        await page.evaluate(() => {
+          const els = [...document.querySelectorAll('.ant-tabs-tab .ant-tabs-tab-btn')]
+          ;(window.__mbTabOriginals || []).forEach((txt, i) => { if (els[i]) { els[i].textContent = txt; els[i].style.cssText = '' } })
+        })
+        await page.waitForTimeout(300)
+      }
       await page.locator('.ant-tabs-tab', { hasText: /趋势|动态趋势看板/ }).first().click()
       await page.waitForTimeout(1600)
       await injectAfterNav(page)
@@ -311,7 +326,7 @@ async function run(browser, results) {
       T('L17a 375 首屏第一张趋势卡 top < 视口×0.55', () => {
         if (!(t.gridTopAbs < t.vh55)) throw new Error(`首卡 top ${t.gridTopAbs} ≥ ${t.vh55}（开屏看不到趋势卡）`)
       })
-      T('L17b 375 指标选择行收起态高度 ≤60px', () => { if (!(t.optRowH <= 60)) throw new Error(`选择行高 ${t.optRowH} > 60`); if (!(t.optSelectH <= 40)) throw new Error(`选择器高 ${t.optSelectH} > 40`) })
+      T('L17b 375 选择行收起态高度 ≤40px（单行）', () => { if (!(t.optRowH <= 40)) throw new Error(`选择行高 ${t.optRowH} > 40`); if (!(t.optSelectH <= 40)) throw new Error(`选择器高 ${t.optSelectH} > 40`) })
 
       // L17c：showSearch 中文可用（输入「血红」选项数必须变少，且可见项都含该词）
       {
@@ -403,7 +418,7 @@ async function run(browser, results) {
     try {
       await page.goto(BASE + '/?tab=card', { waitUntil: 'networkidle' })
       await page.waitForTimeout(1500)
-      await injectFalsify(page)
+      await injectFalsify(page, { tabs: false })   // 1440 不注入「长页签」（L18 只在 375 断言）
       await page.locator('.ant-tabs-tab', { hasText: /趋势|动态趋势看板/ }).first().click()
       await page.waitForTimeout(1600)
       const t2 = await page.evaluate(M_TRENDS)
@@ -422,7 +437,7 @@ async function run(browser, results) {
     try {
       await page.goto(BASE + '/?tab=card', { waitUntil: 'networkidle' })
       await page.waitForTimeout(1500)
-      await injectFalsify(page)
+      await injectFalsify(page, { tabs: false })
       await page.locator('tr.ant-table-row').first().click({ timeout: 6000 })
       await page.waitForTimeout(2200)
       const d2 = await page.evaluate(M_MODAL)
@@ -494,4 +509,14 @@ const main = async () => {
   process.exit(fail === 0 ? 0 : 1)
 }
 
-main().catch((e) => { console.error('门禁异常：', e.message); process.exit(1) })
+// 兜底（主理人要求）：证伪模式下脚本自身崩了，必须能与「判据真红（exit 1）」区分开
+// —— 报 `FALSIFY-BROKEN: <name>` 并 exit 2，绝不允许混进正常的红/绿。
+main().catch((e) => {
+  if (FALSIFY) {
+    console.error(`FALSIFY-BROKEN: ${FALSIFY} —— 证伪过程中脚本异常，不能当作判据真红`)
+    console.error(String(e && e.message || e).split('\n').slice(0, 4).join('\n'))
+    process.exit(2)
+  }
+  console.error('门禁异常：', e.message)
+  process.exit(1)
+})

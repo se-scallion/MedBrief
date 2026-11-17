@@ -171,6 +171,15 @@ export default function TrendsTab({ card, onOpenSource }) {
   const defaults = useMemo(() => all.filter((t) => t.core).map((t) => t.key), [all])
   const [picked, setPicked] = useState(null)
   const [mode, setMode] = useState('网格')
+  // 移动档（≤575）把「网格/对比」下沉到下拉底部，保证选择行单行、高度 ≤40px
+  const [isNarrow, setIsNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 575px)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 575px)')
+    const on = () => setIsNarrow(mq.matches)
+    on()
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
   const selected = picked ?? defaults
 
   if (!all.length) return <Empty description="还没有 ≥2 次的指标可以画趋势" />
@@ -185,16 +194,20 @@ export default function TrendsTab({ card, onOpenSource }) {
           （≈3200px、首张趋势卡在屏外），桌面与移动统一改成**一行收起态**：文字 + Select 多选 + 模式切换。
           搜索/清空/多选都在下拉里，「恢复默认/全选/清空」收进下拉底部（不占行高）。 */}
       <div className="mb-trend-opt" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <Text strong style={{ whiteSpace: 'nowrap' }}>
-          可选指标 <Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>（已选 {selected.length} / 共 {all.length}）</Text>
-        </Text>
+        {!isNarrow && (
+          <Text strong style={{ whiteSpace: 'nowrap' }}>
+            可选指标 <Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>（已选 {selected.length} / 共 {all.length}）</Text>
+          </Text>
+        )}
         <Select
           className="mb-trend-select"
           mode="multiple"
           size="small"
           showSearch
           allowClear
-          maxTagCount="responsive"
+          maxTagCount={isNarrow ? 0 : 'responsive'}
+          // 移动档收起态：标签全折成「已选 9 / 共 74」，保证单行 ≤40px
+          maxTagPlaceholder={() => `可选指标 · 已选 ${selected.length} / 共 ${all.length}`}
           style={{ flex: '1 1 200px', minWidth: 0 }}
           placeholder="搜索或选择指标（可多选）"
           value={selected}
@@ -215,7 +228,8 @@ export default function TrendsTab({ card, onOpenSource }) {
           popupRender={(menu) => (
             <>
               {menu}
-              <div style={{ borderTop: '1px solid #f0f0f0', padding: '6px 8px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ borderTop: '1px solid #f0f0f0', padding: '6px 8px', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                {isNarrow && <Segmented size="small" value={mode} onChange={setMode} options={['网格', '对比']} />}
                 <Button size="small" onClick={() => setPicked(defaults)}>恢复默认 8 项</Button>
                 <Button size="small" onClick={() => setPicked(all.map((t) => t.key))}>全选</Button>
                 <Button size="small" onClick={() => setPicked([])}>清空</Button>
@@ -223,7 +237,7 @@ export default function TrendsTab({ card, onOpenSource }) {
             </>
           )}
         />
-        <Segmented size="small" value={mode} onChange={setMode} options={['网格', '对比']} />
+        {!isNarrow && <Segmented size="small" value={mode} onChange={setMode} options={['网格', '对比']} />}
       </div>
 
       {!shown.length ? <Empty description="一个都没选" /> : (
