@@ -10,6 +10,10 @@ export async function jfetch(path, opts = {}) {
     if (res.status === 401 && !path.startsWith('/api/auth/login')) {
       try { window.dispatchEvent(new CustomEvent('mb:unauthorized')) } catch {}
     }
+    // 403：交给 App 统一弹人话提示，避免手机上前端把 403 JSON 渲染成白屏（用户实际踩到过）
+    if (res.status === 403) {
+      try { window.dispatchEvent(new CustomEvent('mb:forbidden', { detail: body || {} })) } catch {}
+    }
     throw err
   }
   return body

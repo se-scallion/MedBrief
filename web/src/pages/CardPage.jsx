@@ -55,7 +55,10 @@ const CARD_MOBILE_CSS = `
 export default function CardPage() {
   const { message } = AntApp.useApp()
   const { pushLog } = useLog()
-  const { go } = useNav()
+  const { go, permissions } = useNav()
+  // 用户口径第1条（2026-11-17）：普通用户能看资料卡页面，但**不能打印/下载** ⇒
+  // 打印入口按权限**不渲染**（不是 disabled、不是灰按钮），后端 /api/intake/card?embed=1 同步 403。
+  const canExport = !!(permissions && (permissions.role === 'admin' || permissions.card_export))
   const [form] = Form.useForm()
   const iframeRef = useRef(null)
 
@@ -187,13 +190,18 @@ export default function CardPage() {
     const onKey = (e) => {
       if (!(e.metaKey || e.ctrlKey) || (e.key !== 'p' && e.key !== 'P')) return
       if (printOpen) return   // 弹窗自己的监听会把快捷键转给 iframe
+      if (!canExport) {       // 无导出权限：不打开打印件，给一句人话
+        e.preventDefault()
+        message.info('未开通导出权限，请联系管理员')
+        return
+      }
       e.preventDefault()
       setPrintOpen(true)
       message.info('请在弹出的打印预览里点「立即打印 / 存为 PDF」')
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [printOpen, message])
+  }, [printOpen, message, canExport])
 
   const openSource = useCallback((target) => setSource({ open: true, target }), [])
   const openProfile = useCallback((field) => { setFocusField(field || ''); setProfileOpen(true) }, [])
@@ -227,7 +235,9 @@ export default function CardPage() {
           <Space wrap>
             <Button onClick={() => openProfile('')}>编辑档案与三问</Button>
             <Button size="small" onClick={() => makeCard(mask)} loading={cardLoading}>刷新数据</Button>
-            <Button type="primary" onClick={() => setPrintOpen(true)} disabled={!card?.html}>打印预览 / 存 PDF</Button>
+            {canExport && (
+              <Button type="primary" onClick={() => setPrintOpen(true)} disabled={!card?.html}>打印预览 / 存 PDF</Button>
+            )}
           </Space>
         </div>
       </Card>
@@ -244,7 +254,9 @@ export default function CardPage() {
               <Text style={{ fontSize: 12 }}>{missing.map((m) => `${m.label}：${m.detail}`).join('；')}</Text>
               <Space size={8}>
                 <Button size="small" type="primary" ghost onClick={() => go('intake')}>去补传报告</Button>
-                <Text type="secondary" style={{ fontSize: 12 }}>不影响打印，卡片仍可照常导出</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {canExport ? '不影响打印，卡片仍可照常导出' : '补传后可让资料更完整'}
+                </Text>
               </Space>
             </Space>
           }

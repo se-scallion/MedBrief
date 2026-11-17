@@ -35,7 +35,7 @@ async function req(p, opts = {}) {
   const text = await r.text()
   let body = null
   try { body = JSON.parse(text) } catch { body = text }
-  return { status: r.status, body, headers: r.headers }
+  return { status: r.status, body, raw: text, headers: r.headers }
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -133,13 +133,33 @@ async function main() {
     T('第三方看 0 条', otherList.status === 200 && otherList.body.total === 0)
     T('第三方读他人报告 403', (await req(`/api/intake/reports/${sampleId}`, { headers: { cookie: otherCookie } })).status === 403)
 
-    // ---- 功能授权 ----
-    T('普通用户 card 403', (await req('/api/intake/card', { headers: { cookie: ownerCookie } })).status === 403)
+    // ---- 权限矩阵（2026-11-17 用户口径）：资料卡页面可看，打印/导出处仍 403 ----
+    T('普通用户 资料卡页面 200（页面可见）', (await req('/api/intake/card', { headers: { cookie: ownerCookie } })).status === 200)
+    const emb1 = await req('/api/intake/card?embed=1', { headers: { cookie: ownerCookie } })
+    T('普通用户 card?embed=1（打印件）403/65B', emb1.status === 403 && Buffer.byteLength(emb1.raw) === 65)
+    T('普通用户 brief/bundle 403', (await req('/api/brief/bundle', { method: 'POST', headers: { cookie: ownerCookie, 'content-type': 'application/json' }, body: '{}' })).status === 403)
+    T('普通用户 meddata/summary 403', (await req('/api/meddata/summary', { headers: { cookie: ownerCookie } })).status === 403)
     T('admin card 200', (await req('/api/intake/card', { headers: { cookie: adminCookie } })).status === 200)
     T('普通用户 guahao 403', (await req('/api/guahao/orders', { headers: { cookie: ownerCookie } })).status === 403)
-    // 授权后放行
+
+    // ---- 原件：登录 + 本人归属即可，完全不看 card_export ----
+    const upB64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8AAAwAB/AH+9wAAAABJRU5ErkJggg=='
+    const up = await req('/api/intake/blob', { method: 'POST', headers: { cookie: ownerCookie, 'content-type': 'application/json' }, body: JSON.stringify({ dataUrl: upB64, mime: 'image/png' }) })
+    T('普通用户上传原件 200（无需 card_export）', up.status === 200 && !!up.body.id)
+    const blobId = up.body.id
+    const noCookieBlob = await req('/api/intake/blob/' + blobId)
+    T('未登录 blob 401/35B', noCookieBlob.status === 401 && Buffer.byteLength(noCookieBlob.raw) === 35)
+    const ownBlob = await req('/api/intake/blob/' + blobId, { headers: { cookie: ownerCookie } })
+    T('本人原件 200', ownBlob.status === 200)
+    T('本人原件 content-disposition: inline', String(ownBlob.headers.get('content-disposition') || '').startsWith('inline'))
+    T('本人原件 x-content-type-options: nosniff', ownBlob.headers.get('x-content-type-options') === 'nosniff')
+    const otherBlob = await req('/api/intake/blob/' + blobId, { headers: { cookie: otherCookie } })
+    T('他人原件 403/44B（65B=还卡在 card_export 红灯）', otherBlob.status === 403 && Buffer.byteLength(otherBlob.raw) === 44)
+
+    // 授权后放行（打印/导出处）
     accounts.setPermissions(owner.id, { card_export: 1, guahao: 1 }, admin.id)
     T('授权后 card 200', (await req('/api/intake/card', { headers: { cookie: ownerCookie } })).status === 200)
+    T('授权后 card?embed=1（打印件）200', (await req('/api/intake/card?embed=1', { headers: { cookie: ownerCookie } })).status === 200)
     T('授权后 guahao 200', (await req('/api/guahao/orders', { headers: { cookie: ownerCookie } })).status === 200)
 
     // ---- 档案隔离 ----
@@ -200,6 +220,29 @@ async function main() {
     } finally {
       offSrv.kill('SIGKILL')
       if (offSrv.exitCode === null && offSrv.signalCode === null) await new Promise((r) => { offSrv.once('exit', r); setTimeout(r, 500) })
+    }
+
+    // ---- 菜单：无 card_export/guahao 账号登录后，无空组（连组标题消失）----
+    try {
+      const { chromium } = await import('playwright')
+      const browser = await chromium.launch({ headless: true })
+      try {
+        const ctx = await browser.newContext()
+        const [ckName, ...ckRest] = otherCookie.split('=')
+        await ctx.addCookies([{ name: ckName, value: ckRest.join('='), domain: '127.0.0.1', path: '/' }])
+        const page = await ctx.newPage()
+        await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' })
+        await page.waitForSelector('.ant-menu-item', { timeout: 15000 })
+        const groups = await page.$$eval('.ant-menu-item-group-title', (els) => els.map((e) => e.textContent.trim()))
+        const items = await page.$$eval('.ant-menu-item', (els) => els.map((e) => e.textContent.trim()))
+        T('菜单无空组（组标题只出现在有子项时）', groups.length === items.length ? false : groups.length === 1 && items.length === 3)
+        T('普通用户菜单只有「资料」组（出诊/系统整组不渲染）', groups.join(',') === '资料')
+        T('普通用户菜单含 资料录入/报告库/资料卡', ['资料录入', '报告库', '资料卡'].every((x) => items.includes(x)))
+        T('普通用户菜单无 出诊监控/挂号与预约/114 会话/账号管理', !items.some((x) => ['出诊监控', '挂号与预约', '114 会话', '账号管理'].includes(x)))
+      } finally { await browser.close() }
+    } catch (e) {
+      T('菜单 DOM 断言可执行（playwright 可用）', false)
+      if (process.env.AUTH_TEST_DEBUG) console.error('menu check error:', e.message)
     }
 
     console.log(`\n==========\n通过 ${pass} / 失败 ${fail}`)

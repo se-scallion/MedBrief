@@ -333,10 +333,15 @@ const server = http.createServer(async (req, res) => {
     let need = null
     // guahao：全部挂号/监控/114 会话接口
     if (p.startsWith('/api/guahao/')) need = 'guahao'
-    // card_export：导出/打印/出卡/摘要/交换包读、原件
-    else if (p === '/api/intake/card' ||
-             p.startsWith('/api/intake/blob/') || p === '/api/brief/visit-summary' ||
+    // card_export：导出/打印类端点（矩阵：普通用户 403）
+    //   注意 `/api/intake/card` 本体对普通用户开放（页面可见、只读展示）；
+    //   但 `?embed=1` 是**打印件本体**（A4 静态 3 页，前端打印弹窗的 iframe 用它），仍归 card_export，
+    //   否则"能看页面"等于"能拿到可直接打印/另存的成品"，与用户口径第1条（不能用下载/打印）冲突。
+    else if ((p === '/api/intake/card' && parsedUrl.searchParams.get('embed') === '1') ||
+             p === '/api/brief/visit-summary' ||
              p === '/api/brief/bundle' || p === '/api/meddata/summary') need = 'card_export'
+    // 原件 /api/intake/blob/:id：登录 + 本人归属即可，**完全不看 card_export**
+    //   （未登录由全局鉴权 401；他人由 handler 的 authn.ownsBlob 403）
     // patient 档案：登录用户各自读写自己那份（r6-add P0-2 分桶后已隔离，不再要求 card_export）
     // admin-only：报告写以外的管理面、OCR 打爆面、病历导入
     else if (p === '/api/recognition-hits' || p === '/api/intake/parse' ||

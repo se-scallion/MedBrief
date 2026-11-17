@@ -67,7 +67,7 @@ export const useLog = () => useContext(LogContext)
 
 // 导航上下文（2026-11-14）：页面之间要能「跳转」而不整页刷新 —— 例：资料卡页的
 // 「去补传报告」按钮要跳到「资料录入」。不引 react-router，只暴露 App 里那个 go()。
-const NavContext = createContext({ go: () => {}, active: 'intake' })
+const NavContext = createContext({ go: () => {}, active: 'intake', permissions: {} })
 export const useNav = () => useContext(NavContext)
 
 const TONE_COLOR = { info: 'default', ok: 'green', warn: 'orange', err: 'red' }
@@ -87,6 +87,17 @@ export default function App() {
     window.addEventListener('mb:unauthorized', onUnauthorized)
     return () => window.removeEventListener('mb:unauthorized', onUnauthorized)
   }, [])
+  // 403 统一提示：不把 JSON 错误留成白屏（用户手机实际踩到）。权限类给人话，其余显原始错误。
+  useEffect(() => {
+    const onForbidden = (e) => {
+      const raw = String(e?.detail?.error || '')
+      if (raw.includes('功能未授权')) message.error('未开通导出权限，请联系管理员')
+      else if (raw.includes('无权访问')) message.error('无权访问该内容')
+      else if (raw) message.error(raw)
+    }
+    window.addEventListener('mb:forbidden', onForbidden)
+    return () => window.removeEventListener('mb:forbidden', onForbidden)
+  }, [message])
 
   const pushLog = useCallback((msg, tone = 'info') => {
     const time = new Date().toLocaleTimeString('zh-CN', { hour12: false })
@@ -111,7 +122,8 @@ export default function App() {
   const ALL_PAGES = [
     { key: 'intake', label: '资料录入', group: '资料', node: <IntakePage />, perm: null },
     { key: 'reports', label: '报告库', group: '资料', node: <ReportsPanel />, perm: null },
-    { key: 'card', label: '资料卡', group: '资料', node: <CardPage />, perm: 'card_export' },
+    // 资料卡页面对普通用户开放（2026-11-17 用户口径第1条：能看到页面，只是不能下载/打印）
+    { key: 'card', label: '资料卡', group: '资料', node: <CardPage />, perm: null },
     { key: 'brief', label: '病历交换包', group: '资料', node: <BriefPage />, perm: 'card_export' },
     { key: 'monitor', label: '出诊监控', group: '出诊', node: <MonitorPage />, perm: 'guahao' },
     // 发起挂号 + 预约记录 = 同一件事的前后半段，合并成一项（页内两段），见 pages/BookingPage.jsx
@@ -154,12 +166,15 @@ export default function App() {
     } catch { /* file:// 等场景忽略 */ }
   }, [])
 
-  const menuItems = ['资料', '出诊', '系统'].map((group) => ({
-    key: group,
-    type: 'group',
-    label: group,
-    children: PAGES.filter((p) => p.group === group).map((p) => ({ key: p.key, label: p.label })),
-  }))
+  // 用户口径第3条：普通用户不该看到打不开的路由分组 —— children 为空的组**整组不渲染**（连组标题消失）
+  const menuItems = ['资料', '出诊', '系统']
+    .map((group) => ({
+      key: group,
+      type: 'group',
+      label: group,
+      children: PAGES.filter((p) => p.group === group).map((p) => ({ key: p.key, label: p.label })),
+    }))
+    .filter((g) => g.children.length > 0)
   const current = PAGES.find((p) => p.key === active) || PAGES[0]
 
   // 账号系统：登录态守卫（加载中 / 未登录 → 登录页）
@@ -172,7 +187,7 @@ export default function App() {
   }
 
   return (
-    <NavContext.Provider value={{ go, active }}>
+    <NavContext.Provider value={{ go, active, permissions: perms }}>
     <LogContext.Provider value={logValue}>
       <Layout style={{ minHeight: '100vh', background: '#f5f6f8' }}>
         <Header
