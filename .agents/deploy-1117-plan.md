@@ -1,8 +1,8 @@
-# MedBrief 生产部署计划 —— 排雷与取舍 v0.5b（阶段 0 已开工）
+# MedBrief 生产部署计划 —— 排雷与取舍 v0.5c（阶段 1 进行中）
 
 > 触发（用户原话，2026-11-17 10:34）：「完成以上任务之后，设计一个部署计划。服务器直接无密连接 ssh ubuntu@62.234.146.222」。
-> 状态：**阶段 0 已开工**（2026-11-17 16:2x）。**审核门 ✅（r5 可以开工）／G6 ✅（用户"按以上计划执行"，运维第一手转述）／拍板 ✅（10 项按运维推荐全采纳）**——三门齐，阶段 0 派单外包仔落地 D0-5①②⑥⑦，运维复核后进阶段 1。G6/拍板为运维转述，用户可随时纠正。
-> 版本 v0.5b：归档 10 项拍板（见 D 段末）+ 三门状态；v0.5a 折进 r5 的 2 P1+4 P2。
+> 状态：**阶段 1 已在服务器实测推进**（Node v22.20.0/依赖/`GET /` 与 assets 200/bind 生效均通过）。**审核门 ✅／G6 ✅／拍板 ✅** 三门齐（2026-11-17 16:2x，运维转述）。阶段 2 硬闸（凭据轮换）与阶段 3 建站（DNS A 记录）待用户。
+> 版本 v0.5c：补运维阶段 1 实测发现的 3 缺口——vendor/ 也要 npm ci、可移植 lock（link:true=0）、.deploy-commit 与实际部署 commit 一致+dirty 口径。v0.5b 归档 10 拍板；v0.5a 折进 r5 的 2 P1+4 P2。
 > 版本 v0.5：吸收 **r4 实测型审核（代诊-挂号）5 P0**（`.agents/deploy-1117-review-r4.md`，186 行）：P0-1 前端产物构建机投递、P0-3 data/ 白名单、P0-4 CWD 隔离订正、P0-5 入侵史主机前置、P0-2 运维误报纠正（8090 白名单效应，非漏洞）；+ 3 修正（GUAHO_BROWSER 可跳过 Chromium、MemoryMax 统一 768M、MEDBRIEF_COMMIT 三方比对）。v0.4 吸收 r1~r3；v0.3 及以前见历史。
 > **审核方式（用户 2026-11-17 口径：必须走 AI Studio 工具）**：已用 `ai_scheme_review.py --session-key MedBrief/deploy-1117` 绑定 session 并拿到逻辑预审（因该端无本地/SSH 能力，经用户选"把取证材料嵌进 prompt"）。判词为**逻辑预审非独立实测**；可证伪条由实现方实测订正：openresty `NetworkMode=host`（实测）排除 P0-1 的 502 死锁；Secure cookie/XFP/首登改密代码 grep 零命中 ⇒ P0-4 成立。
 > 作者：代诊-Manager。代码/测试 HEAD：本地 `4aae991`（部署文档）；账号线最终代码态 `6c3e424`（5174 实际加载，主理人结案；`adbafc9`/`c55234d` 均为中间快照）。
@@ -112,8 +112,12 @@ MedBrief 本地开发时 `MEDREC_BACKEND=8011` 由 launchd 守护 `com.user.medr
 **阶段 1 — 环境与前提（纯环境/投递，不再改仓库代码）：**
 1. 装固定版本 Node（**必须 ≥22.5**：`lib/blobStore.mjs` 用 `node:sqlite` 的 `DatabaseSync`；apt 旧版不行 ⇒ NodeSource/nvm，记录版本）。
 2. 建部署目录（如 `/opt/medbrief`，用户定），权限 750，owner ubuntu。
-3. `npm ci`（用阶段 0 生成的 lock）装**全依赖含 playwright 包**（顶层 import，包必须装）。**P0-1 前端产物（r4）**：`web/dist-next/` 被 `.gitignore:10` 忽略、`git ls-files`=0；`package.json` 的 `dependencies` 只有 playwright，vite/react/antd 在自定义字段 `medbriefFrontendDeps`（注释"不参与 npm install"）、根 `node_modules` 是软链 ⇒ **服务器装不出前端**。正解：**构建机（本地）跑 `npm run build:web` 产出 `web/dist-next`，算整目录 sha256 随投递带上**，服务器只接收不构建。**Chromium/GUAHO_BROWSER（r4 修正）**：只读版设 **`GUAHO_BROWSER=off`**（现成开关 `server.mjs:127-141`，守卫 `:564/:596/:972`），则全仓两处 `chromium.launch`（`server.mjs:983` 挂号 / `lib/bjcyhScraper.js:31` 出诊监控）**全短路** ⇒ 可设 `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` **完全不装 Chromium 二进制与系统依赖**（playwright 包仍装、避免顶层 import 报错）。删除原"必须装 Chromium"的错误结论。
-4. rsync 投递阶段 0 钉死的 commit 产物 + **构建机的 `web/dist-next`（含 sha256 校验文件）**，不含工作树在途项。
+3. 依赖安装（**v0.5c 运维阶段 1 实测修正，三件缺一即上线失败**）：
+   - **根 `npm ci`**：用阶段 0 的可移植 lock。判据：`grep -c '"link": true' package-lock.json` = **0**，且 `resolved` 全为 `https://...`（旧 lock 含 `"../MedData/.../playwright", "link":true` 软链 → 服务器 `npm ci` 断链、`Cannot find package 'playwright'`）。装 playwright 包本体、只读版 `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` 不装 Chromium。
+   - **`cd vendor && npm ci`（缺口1，P0）**：`lib/auth.mjs:3` 依赖 vendored `iron-session 9.1.0`，`vendor/node_modules` 被 `.gitignore:1` 忽略、仓库只有 `vendor/package.json`+lock ⇒ 不执行即启动 `ERR_MODULE_NOT_FOUND`。
+   - **前端产物（r4 P0-1）**：`web/dist-next/` 被 gitignore、`package.json.dependencies` 只有 playwright、vite/react/antd 在 `medbriefFrontendDeps`（不参与 npm install）⇒ 服务器装不出前端。**构建机（本地）跑 `npm run build:web` 产出 dist-next + 整目录 sha256 随投递**，服务器只接收不构建。
+   - **chromium（r4 修正）**：只读版设 **`GUAHO_BROWSER=off`**（开关 `server.mjs:127-141`，守卫实为 6 处 `:564/:596/:612/:633/:862/:972`），两处 `chromium.launch`（`:983` 挂号 / `lib/bjcyhScraper.js:31` 出诊监控）全短路 ⇒ `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` 完全不装 Chromium。
+4. rsync 投递阶段 0 钉死的 commit 产物 + **构建机的 `web/dist-next`（含 sha256）**，不含工作树在途项。**版本凭证（缺口3）**：`.deploy-commit` 的 `commit` 必须 == **实际部署的 commit**（判据 `python3 -c "import json;print(json.load(open('.deploy-commit'))['commit'])"`）；`dirty` 口径写清——只允许别线在 `lib/`/`.agents/` 的改动，**`web/` 与 `server.mjs` 必须干净**；构建机写 `.deploy-commit`（有 .git），服务器只两方比对 + commitSource（见 D0-5⑥）。**运维阶段 1 实测已过**：Node v22.20.0、`node:sqlite` OK、`/opt/medbrief` 750、包 sha256 双端一致、`GET /` 与 `/assets/index-CXQ0PPDQ.js` 均 200、`ss` 见 `127.0.0.1:5199`（bind 生效）、health `head=83d1b99 commitSource=env`（无 .git）。
 
 **阶段 2 — 数据与配置：**
 5. **data/ 白名单投递（P0-3，禁止整目录 rsync）**：只传必要文件——`data/reports.json` + `data/medbrief.db`(blobs) + `data/intake/**`(病友档案)（`data/gt**` 实测不存在，已从白名单删）；**明确排除** `114-auth.json`(114票据/cookie)、`data/tmp`(48M)、`data/backups`(46M)、`data/114-flow`(2.1M)、`data/meddata-mirror`、`*.log`。先 `--dry-run` + `--checksum`，目标目录 700 / 文件 600。
