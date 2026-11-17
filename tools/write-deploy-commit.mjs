@@ -40,9 +40,20 @@ const record = {
     ['server.mjs', 'lib/auth.mjs', 'web/dist-next/index.html', 'vendor/package.json']
       .map((f) => [f, createHash('sha256').update(fs.readFileSync(path.join(root, f))).digest('hex')])
   ),
-  // 别线在途改动清单：服务器端断言"这些文件不得出现在部署包内" ⇒ 直接证明别线改动没上线
+  // 别线在途改动清单：与 dirtyFilesHeadSha 配套 —— 已跟踪文件记录 HEAD blob 指纹，
+  // 服务器断言"部署包内内容 == HEAD 版本"即证明脏改动没上线（未跟踪文件不在 git archive 里）。
   dirtyFiles: execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' })
-    .trim().split('\n').filter(Boolean).map((l) => l.slice(3).trim()),
+    .split('\n').filter((l) => l.trim()).map((l) => l.slice(3).trim()),
+  // 已跟踪的 dirty 文件：记录 HEAD blob 的 sha256 ⇒ 服务器比对部署包内内容必须等于 HEAD 版本
+  dirtyFilesHeadSha: Object.fromEntries(
+    execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' })
+      .split('\n').filter((l) => l.trim()).map((l) => l.slice(3).trim())
+      .flatMap((f) => {
+        try {
+          return [[f, createHash('sha256').update(execFileSync('git', ['show', 'HEAD:' + f], { cwd: root, maxBuffer: 64 * 1024 * 1024 })).digest('hex')]]
+        } catch { return [] }  // 未跟踪文件不在任何提交里，自然也不会被 git archive 带上
+      })
+  ),
   builtAt: new Date().toISOString(),
   builtBy: `${os.hostname()}@${os.userInfo().username}`,
   nodeVersion: process.version,
