@@ -72,5 +72,20 @@
     "react-router-dom": "6.30.6",
     "vite": "8.3.4",
     "@vitejs/plugin-react": "6.1.2"
+  },
+  "devDependencies": {
+    "vite": "8.3.4",
+    "@vitejs/plugin-react": "6.1.2",
+    "postcss": "8.5.26",
+    "tailwindcss": "3.4.19",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "antd": "6.6.6",
+    "dayjs": "1.11.23",
+    "react-router-dom": "6.30.6",
+    "pdfjs-dist": "4.10.38",
+    "echarts": "6.1.0",
+    "motion": "13.2.0",
+    "tesseract.js": "7.0.0"
   }
 }
