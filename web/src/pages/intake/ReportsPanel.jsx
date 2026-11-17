@@ -20,6 +20,7 @@ import { rawJson } from './shared.js'
 import { KIND_OPTIONS } from './shared.js'
 import { toPoints, fromPoints } from './points.js'
 import ReportDayList, { IconBtn, ICONS } from './ReportDayList.jsx'
+import BlobModal from './BlobModal.jsx'
 import { DEFAULT_SORT, sortReports, nextSort } from './reportSort.js'
 // D2（2026-11-15 用户拍板 + 代诊-Manager 审核放行）：报告库编辑态**直接复用 MedData 的指标行
 // 组件 DataGrid**，不再手写 5 个裸 Input。它与「资料导入」tab 里用的是同一个组件、同一个 bundle
@@ -88,6 +89,9 @@ const REPORT_DAY_MOBILE_CSS = `
   .rb-day-icon { display: inline-flex; color: #9ca3af; }
   .rb-day-icon svg { width: 13px; height: 13px; }
   .rb-day-actions { position: absolute; right: 2px; top: 6px; display: flex; align-items: center; gap: 0; }
+  /* 2026-11-17 UI 规格：IconBtn 视觉 32×32，热区用 ::before 扩到 44×44，布局不变 */
+  .rb-day-actions .ant-btn { position: relative; }
+  .rb-day-actions .ant-btn::before { content: ''; position: absolute; inset: -6px; }
   .rb-day-pager { padding: 8px 4px 2px; text-align: right; }
   .rb-day-pager .ant-pagination-total-text { float: left; font-size: 11px; color: #6b7280; }
 }
@@ -178,7 +182,6 @@ export default function ReportsPanel() {
   const [loading, setLoading] = useState(true)
   const [q, setQ] = useState('')
   // v0.4：管理态只在 active tab 生效；回收站根本不渲染管理控件
-  const [manage, setManage] = useState(false)
   // 排序状态（受控）：默认「日期 降」，与「医生最想看最近那张」一致；取消排序时回到这个默认
   const [sort, setSort] = useState(DEFAULT_SORT)
   // 人工纠错（2026-11-14）：展开某份报告 → 改医院/日期/指标行 → 保存
@@ -188,6 +191,14 @@ export default function ReportsPanel() {
   // 「查看」抽屉（2026-11-14）：列表接口为省负载把 text 剥掉了，全文型报告在界面上**任何地方都读不到**。
   // 单份详情走 GET /api/intake/reports/:id —— 全文 + 逐行清洗视图 + 原件 + patchLog 一次给全。
   const [viewing, setViewing] = useState(null) // { id, loading, data, error }
+  // 原件预览（2026-11-17 UI 规格）：同页 Modal，不再 window.open 新标签（手机端新标签不带 cookie → 401 白屏）
+  const [blobTarget, setBlobTarget] = useState(null) // { blobId, type, name, date }
+  const openBlob = useCallback((r, type) => setBlobTarget({
+    blobId: typeof r === 'string' ? r : r.fileBlobId,
+    type: type || (typeof r === 'object' ? r.fileBlobType : ''),
+    name: typeof r === 'object' ? (r.reportType || r.hospital || '报告') : '报告',
+    date: typeof r === 'object' ? String(r.reportDate || '').slice(0, 10) : '',
+  }), [])
   // 回收站（2026-11-14 用户新决策：报告要能删，但必须可恢复 —— 见服务端 10s 段）
   //   tab: active=报告库 / trash=回收站；trashCount 用于顶部入口显示「回收站（N）」
   const [tab, setTab] = useState('active')
@@ -401,11 +412,18 @@ export default function ReportsPanel() {
       width: isXs ? 92 : 150,
       ...sortable('date'),
       ellipsis: isXs,
+       // 2026-11-17：眼睛按钮删掉后，首格日期是键盘用户查看报告的唯一入口（role/tabIndex/Enter·Space）
       render: (_, r) => (r.reportDate
-        ? <Text>{isXs ? r.reportDate.slice(5) : r.reportDate}</Text>
+        ? <Text role="button" tabIndex={0} style={{ cursor: 'pointer' }}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openView(r.id) } }}>
+            {isXs ? r.reportDate.slice(5) : r.reportDate}
+          </Text>
         : (
           <Tooltip title={`报告日期未识别（入库 ${fmtWhen(r.createdAt)}）：按入库时间参与排序，不会写进 reportDate`}>
-            <Text type="secondary" style={{ fontSize: 12 }}>{isXs ? '未提供' : `未提供 · 入库 ${fmtWhen(r.createdAt)}`}</Text>
+            <Text type="secondary" style={{ fontSize: 12 }} role="button" tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openView(r.id) } }}>
+              {isXs ? '未提供' : `未提供 · 入库 ${fmtWhen(r.createdAt)}`}
+            </Text>
           </Tooltip>
           )),
     },
@@ -481,7 +499,7 @@ export default function ReportsPanel() {
       responsive: ['sm'],   // 手机上「原件」进详情抽屉
       render: (_, r) => (r.fileBlobId ? (
         <IconBtn icon={ICONS.file} label={r.fileBlobType === 'application/pdf' ? '查看 PDF 原件' : '查看原件'}
-          onClick={() => window.open(`/api/intake/blob/${encodeURIComponent(r.fileBlobId)}`, '_blank')} />
+          onClick={() => openBlob(r)} />
       ) : (
         <Tooltip title="这份是页面导入的，入库时没有保存原图字节 —— 无法回看/重识别，需要重新导入">
           <Text type="secondary" style={{ fontSize: 12 }}>无原件</Text>
@@ -491,15 +509,16 @@ export default function ReportsPanel() {
     {
       title: '操作',
       key: 'op',
-      width: isXs ? 96 : (tab === 'trash' ? 210 : 170),   // 回收站多一个「彻底删除」，列宽跟着放宽
+      // 2026-11-17 UI 规格：删眼睛后 170→140；PC 常显 编辑+删除 两枚 44 热区
+      width: isXs ? 96 : (tab === 'trash' ? 210 : 140),
       render: (_, r) => (
         <Space size={isXs ? 0 : 2} direction={isXs ? 'vertical' : 'horizontal'} style={{ lineHeight: 1.2 }}>
-          <IconBtn icon={ICONS.view} label="查看" onClick={() => openView(r.id)} />
           {tab === 'active' ? (
             <>
-              {/* 窄屏把「编辑」收进详情抽屉（抽屉里已有编辑入口），操作列只留查看/删除 */}
-              {!isXs && <IconBtn icon={ICONS.edit} label="编辑" onClick={() => openEdit(r.id)} />}
-              {(manage && tab === 'active') && <Popconfirm
+              {/* 眼睛「查看」已删：PC 点整行看详情（onRow），手机点整行（.rb-day-row） */}
+              <IconBtn icon={ICONS.edit} label="编辑" onClick={() => openEdit(r.id)} />
+              {/* PC 删除常显（用户口径）；手机端删除移到详情抽屉底部，列表不放（防误触） */}
+              {!isXs && <Popconfirm
                 title="删除这份报告？"
                 description="该报告的指标与分类会一并从资料卡移除；删除后可在报告库顶部的『回收站』里恢复。"
                 okText="移入回收站"
@@ -574,10 +593,7 @@ export default function ReportsPanel() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
-          {tab === 'active' && (
-            <Button size="small" aria-label={manage ? '退出管理' : '管理'} title={manage ? '退出管理' : '管理（显示删除按钮）'}
-              type={manage ? 'primary' : 'default'} onClick={() => setManage((v) => !v)} icon={ICONS.manage} />
-          )}
+          {/* 2026-11-17：齿轮 manage 开关已下线（PC 删除常显、手机不在列表删，开关无用途且被误认成删除按钮） */}
           <Button size="small" onClick={load} loading={loading}>刷新</Button>
         </Space>
       </div>
@@ -587,8 +603,8 @@ export default function ReportsPanel() {
         {isXs && (
           <ReportDayList
             key={`${tab}|${q}|${sort.key}|${sort.order}`}
-            rows={sorted} tab={tab} manage={manage} acting={acting} q={kw}
-            onOpen={openView} onEdit={openEdit} onBlob={(r) => window.open(`/api/intake/blob/${encodeURIComponent(r.fileBlobId)}`, '_blank')}
+            rows={sorted} tab={tab} acting={acting} q={kw}
+            onOpen={openView} onEdit={openEdit} onBlob={openBlob}
             onDelete={doDelete} onRestore={doRestore} onPurge={doPurge}
           />
         )}
@@ -599,6 +615,9 @@ export default function ReportsPanel() {
           loading={loading}
           columns={columns}
           dataSource={sorted}
+          // 2026-11-17 UI 规格：删眼睛按钮后，PC 点整行看详情（原只有手机行可点）。
+          // 行内按钮（编辑/删除/原件等）已在 IconBtn/Popconfirm stopPropagation，不会误触。
+          onRow={(r) => ({ onClick: () => openView(r.id), style: { cursor: 'pointer' } })}
           // 受控排序：只改状态，排序在 useMemo 里做（保证「缺值恒末位」不被 antd 的方向翻转让破坏）
           // 三态循环由 nextSort 决定（升 → 降 → 取消回默认日期降），不依赖 antd 内部怎么算 order ——
           // 我们传的是受控 sortOrder，箭头显示由状态驱动，两边不会打架。
@@ -619,6 +638,17 @@ export default function ReportsPanel() {
         width="min(760px, 96vw)"   // 375 下不再硬撑 760px（会把手势区/标题挤出屏）
         destroyOnHidden
         title={viewing ? `报告内容 · ${viewing.id}` : '报告内容'}
+        // 2026-11-17 UI 规格：手机列表不放删除（防误触），删除移到详情抽屉底部（带二次确认）
+        footer={isXs && viewing?.data?.report && tab === 'active' ? (
+          <Popconfirm
+            title="删除这份报告？"
+            description="删除后可在报告库顶部的『回收站』里恢复。"
+            okText="移入回收站" cancelText="不删" okButtonProps={{ danger: true }}
+            onConfirm={() => { doDelete(viewing.data.report.id); setViewing(null) }}
+          >
+            <Button danger loading={acting === viewing.data.report.id}>删除</Button>
+          </Popconfirm>
+        ) : null}
         extra={(
           <Space wrap>
             {/* 窄屏操作列放不下「编辑」，入口收进抽屉（桌面端列表里仍有） */}
@@ -626,7 +656,7 @@ export default function ReportsPanel() {
               <Button size="small" onClick={() => { const id = viewing.data.report.id; setViewing(null); openEdit(id) }}>编辑</Button>
             )}
             {viewing?.data?.originals?.length ? viewing.data.originals.map((o) => (
-              <Button key={o.blobId} size="small" onClick={() => window.open(`/api/intake/blob/${encodeURIComponent(o.blobId)}`, '_blank')}>
+              <Button key={o.blobId} size="small" onClick={() => openBlob(o.blobId, o.type)}>
                 {o.type === 'application/pdf' ? 'PDF 原件' : '查看原件'}
               </Button>
             )) : <Text type="secondary" style={{ fontSize: 12 }}>无原件</Text>}
@@ -792,6 +822,7 @@ export default function ReportsPanel() {
           </Space>
         )}
       </Modal>
+      <BlobModal target={blobTarget} onClose={() => setBlobTarget(null)} />
     </Space>
   )
 }

@@ -19,6 +19,7 @@
     "test:card": "node tests/verify-card.mjs",
     "test:card-layout": "node tests/verify-card-trends-layout.mjs",
     "test:card-module1": "node tests/verify-card-module1.mjs",
+    "test:reports-panel-ui": "node tests/verify-reports-panel-ui.mjs",
     "test:checklist": "node tests/verify-checklist.mjs",
     "test:workbench": "node tests/verify-workbench.mjs",
     "test:cardpdf": "node tools/card-pdf.mjs",

@@ -224,6 +224,9 @@ function serveStatic(req, res, filePath) {
   const mimeMap = {
     '.html': 'text/html; charset=utf-8',
     '.js': 'application/javascript; charset=utf-8',
+    // 2026-11-17：pdf.js worker 是 .mjs 且用动态 import 加载；octet-stream 会被浏览器拒绝执行
+    // （"Failed to fetch dynamically imported module"）⇒ PDF 原件预览失败。必须给 JS MIME。
+    '.mjs': 'application/javascript; charset=utf-8',
     '.css': 'text/css; charset=utf-8',
     '.json': 'application/json; charset=utf-8',
     '.png': 'image/png',
@@ -1658,7 +1661,20 @@ function getNextReleaseCountdown() {
     if (process.env.MEDBRIEF_AUTH !== 'off' && req.mbUser && !authn.ownsBlob(req.mbUser, id)) {
       return sendJson(res, 403, { ok: false, error: '无权访问此原件' })
     }
-    res.writeHead(200, { 'content-type': row.type || 'application/octet-stream', 'content-length': row.data.length, 'cache-control': 'no-store' })
+    // 2026-11-17 UI 规格 P14：补两个防御响应头（根因是前端改同页 Modal；这两个头覆盖长按另存/直链场景）
+    //   Content-Disposition: inline（浏览器内联渲染，不当下载）+ filename* RFC5987 编码
+    //   X-Content-Type-Options: nosniff（禁止 MIME 嗅探把 401 JSON 当图片）
+    const ext = String(row.type || '').toLowerCase().includes('pdf') ? '.pdf'
+      : String(row.type || '').toLowerCase().includes('png') ? '.png'
+        : String(row.type || '').toLowerCase().includes('jpeg') ? '.jpg' : ''
+    const dispName = encodeURIComponent(`原件-${id}${ext}`)
+    res.writeHead(200, {
+      'content-type': row.type || 'application/octet-stream',
+      'content-length': row.data.length,
+      'cache-control': 'no-store',
+      'content-disposition': `inline; filename*=UTF-8''${dispName}`,
+      'x-content-type-options': 'nosniff',
+    })
     res.end(row.data)
     return
   }

@@ -7,8 +7,8 @@
 //  · 主行是真实 <button>（不 div 套 button），内部只放纯文本 + <sup aria-hidden>；
 //    Tag/图标一律放次行，可访问名不含次行文案
 //  · 全文型 Tag 恒在；推断=小上标、无原件=图标位；次行文本标记 ≤2
-//  · 操作区 stopPropagation，点删除不开抽屉
-//  · manageOn = manage && tab==='active'（回收站不渲染管理态）
+//  · 操作区 stopPropagation，点按钮不开抽屉；2026-11-17 删除按钮已移出列表
+//  · 2026-11-17：manage 开关下线（删除移到详情抽屉），列表不再有管理态
 //  · 按组分页：Pagination.total=组数，showTotal 覆盖「共 X 份 · Y 天」
 //
 // 零新增依赖：图标用内联 SVG（项目既有惯例，见 TrendsTab.jsx / SourceModal.jsx）。
@@ -34,7 +34,6 @@ export const ICONS = {
   trash: <Svg d="M3 6h18 M8 6V4h8v2 M6 6l1 14h10l1-14 M10 11v5 M14 11v5" />,
   restore: <Svg d="M3 12a9 9 0 1 0 3-6.7 M3 4v5h5" />,
   purge: <Svg d="M3 6h18 M8 6V4h8v2 M6 6l1 14h10l1-14 M10 11v5 M14 11v5 M5 2l14 20" />,
-  manage: <Svg d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.4 2.4-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21h-3.4v-.5A1.7 1.7 0 0 0 8 19.3l-.1.1L5.5 17l.1-.1A1.7 1.7 0 0 0 4.4 14H4v-3.4h.5A1.7 1.7 0 0 0 6.1 8L6 7.9l2.4-2.4.1.1a1.7 1.7 0 0 0 2.9-1.2V4h3.4v.5A1.7 1.7 0 0 0 17.9 6l.1-.1 2.4 2.4-.1.1a1.7 1.7 0 0 0 1.2 2.9H22V15Z" />,
   noFile: <Svg d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z M14 2v6h6 M4 4l16 16" />,
 }
 
@@ -85,12 +84,11 @@ const secondaryTags = (r) => {
 }
 
 export default function ReportDayList({
-  rows = [], tab = 'active', manage = false, acting = '', q = '',
+  rows = [], tab = 'active', acting = '', q = '',
   onOpen, onEdit, onBlob, onDelete, onRestore, onPurge,
   groupsPerPage = 7,
 }) {
   const [page, setPage] = useState(1)
-  const manageOn = manage && tab === 'active'   // r2 ③：回收站不渲染管理态
   const groups = useMemo(() => groupByDay(rows), [rows])
   const pageCount = Math.max(1, Math.ceil(groups.length / groupsPerPage))
   const safePage = Math.min(page, pageCount)
@@ -121,9 +119,12 @@ export default function ReportDayList({
                   const noOriginal = r.hasOriginal === false || !r.fileBlobId
                   const tags = secondaryTags(r)
                   return (
-                    <div className="rb-day-row" key={r.id} data-report-id={r.id}>
-                      {/* 主行：真实 button，内部纯文本 + sup（不嵌 Tag/图标/button） */}
-                      <button type="button" className="rb-day-main" onClick={() => onOpen?.(r.id)}
+                    <div className="rb-day-row" key={r.id} data-report-id={r.id}
+                      // 2026-11-17 UI 规格：整行可点（52px ≥44），不再只有 22px 的 .rb-day-main；
+                      // 操作区已 stopPropagation，按钮不误触。
+                      onClick={() => onOpen?.(r.id)}>
+                      {/* 主行：纯展示（整行已可点），保留 button 供键盘/读屏 */}
+                      <button type="button" className="rb-day-main" onClick={(e) => { e.stopPropagation(); onOpen?.(r.id) }}
                         aria-label={`查看报告 ${r.id}：${kindName(r)}`}>
                         <span className="rb-day-type">{kindName(r) || '—'}</span>
                         {inferred && <sup aria-hidden="true" className="rb-day-inferred">?</sup>}
@@ -134,19 +135,10 @@ export default function ReportDayList({
                         {g.key === '__none__' && <Text type="secondary" style={{ fontSize: 11 }}>入库 {fmtWhen(r.createdAt)}</Text>}
                       </div>
                       <div className="rb-day-actions" onClick={(e) => e.stopPropagation()}>
-                        <IconBtn icon={ICONS.view} label="查看" onClick={() => onOpen?.(r.id)} />
+                        {/* 2026-11-17：眼睛「查看」删掉（整行已可点，重复）；删除移到详情抽屉底部（防误触） */}
                         {r.fileBlobId && <IconBtn icon={ICONS.file} label="查看原件" onClick={() => onBlob?.(r)} />}
                         {tab === 'active' ? (
-                          <>
-                            <IconBtn icon={ICONS.edit} label="编辑" onClick={() => onEdit?.(r.id)} />
-                            {manageOn && (
-                              <Popconfirm title="删除这份报告？" description="删除后可在『回收站』恢复。"
-                                okText="移入回收站" cancelText="不删" okButtonProps={{ danger: true }}
-                                onConfirm={(e) => { e?.stopPropagation?.(); onDelete?.(r.id) }}>
-                                <IconBtn icon={ICONS.trash} label="删除" danger loading={acting === r.id} stop={false} />
-                              </Popconfirm>
-                            )}
-                          </>
+                          <IconBtn icon={ICONS.edit} label="编辑" onClick={() => onEdit?.(r.id)} />
                         ) : (
                           <>
                             <Popconfirm title="恢复到报告库？" okText="恢复" cancelText="取消" onConfirm={() => onRestore?.(r.id)}>
