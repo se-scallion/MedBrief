@@ -1,9 +1,10 @@
-# MedBrief 生产部署计划 —— 排雷与取舍 v0.5f（骨架已上线；数据上线挂起）
+# MedBrief 生产部署计划 —— 排雷与取舍 v0.6（报告库 UI 已上线；数据上线挂起）
 
 > 触发（用户原话，2026-11-17 10:34）：「完成以上任务之后，设计一个部署计划。服务器直接无密连接 ssh ubuntu@62.234.146.222」。
 > 状态：**骨架已上线（2026-11-17 17:30 运维报，我只读复核属实）**：`https://medbrief.shanhailingjing.top` HTTP 301→HTTPS 200、独立 Let's Encrypt EC-256 证书（CN/SAN=medbrief，有效期至 2027-02-15，admin 站点不串证）、systemd `medbrief.service` 绑 127.0.0.1:5174、MemoryCurrent≈82MB/上限 768M、`NRestarts=0`、`/opt/ops/verify-medbrief.sh` 11 项 PASS + 公网侧断言 4/4、用户已成功登录。**审核门 ✅／G6 ✅／拍板 ✅**；r7 判"只准哪几条"——骨架条件准予（三前置全满足）、**数据上线硬挂起**。
 > **数据上线解锁条件（r7 硬闸，全未完成不投 221M）**：6b③ 全机凭据轮换 + 重换 `MB_SESSION_SECRET` + 清空骨架期测试库并重跑哈希 + 未知 SSH 公钥处置闭环；用户当前"先不轮换"，运维不越过。解锁只需用户给时间窗（批 A 2 分钟 / 批 A+B 10 分钟）。
 > **已知偏离（r7/运维）**：站点以手工落 1Panel `conf.d` 站点层（面板无 API key 看不到此站），未改 openresty 裸配置、未碰 admin/www；纳管需面板 API key。**运维手册** `.agents/deploy-ops-runbook-1117.md`（运维一手产物、**当前未提交 `??`，由运维自己决定提交，我不替它提**）；服务器留档 `/root/ir/medbrief-releases.log`。
+> 版本 v0.6：**运维 19:1x 投递报告库三处 UI（同页 Modal 修手机白屏）上线验证通过**——mjs MIME 修复（`application/javascript`）、两个响应头实测（真 JPEG 141428B + `Content-Disposition:inline`+`nosniff`）、11 项验收 PASS、回滚点就位；产物 `index-CxLunOfc.js`。**新发现（我实测确认）：构建非确定性**——同一棵树连跑两次 `build:web` 产物名/字节都不同（`index-BYhYm4XH.js` vs `index-CxLunOfc.js`，sha 不同）⇒ `.deploy-commit.distSha256` 只能证明"线上当前是这个产物"，**不能靠重建复验**；如需字节可复现要另立线（固定 vite chunkFileNames/关随机源）。运维回报 commit `d14c304`，我实测生产 health=`4088098`（两者间仅 docs 差异，代码树一致），以 health 为准。
 > 版本 v0.5f：记骨架上线完成 + r7 分段放行（骨架准予/数据挂起）+ 已知偏离（1Panel conf.d 手工落站）+ runbook 路径与归属 + 验收入口升级为 11 项。
 > 版本 v0.5e：落 r6 两条 P1——**事实订正：Secure cookie 已实现**（`auth.mjs:57` `MB_COOKIE_SECURE=1`，运维已启用），零命中只剩 XFP/首登改密/口令策略；拍板 #10 措辞相应更正；6b 改"骨架/数据拆分"（①② 运维已完成→骨架上线→③ 轮换留数据前→数据上线）+ 六防点；阶段 4 加 `/opt/ops/verify-medbrief.sh` 8 项验收唯一入口。
 > 版本 v0.5d：按运维新事实订正——可移植 lock **已真提交 `c28a2aa`**（HEAD `8488494`，`link:true`=0、`../MedData`=0、工作树 clean；我先前报"没提交"是过期快照，认错）；`.deploy-commit` 现钉实际部署 HEAD `8488494`（distSha256 `757631a7…` 自 `83d1b99` 未变）；阶段 1 已验证项标绿。**教训：凡断言 HEAD/lock 状态，以 `git log -1`/`git show HEAD:<file>` 即时输出为准，不用几分钟前快照（本轮我自己栽过）。**
