@@ -62,6 +62,9 @@ export default function SourceModal({ open, target, card, onClose, onSaved }) {
   const [saving, setSaving] = useState(false)
   const urlRef = useRef('')
   // 2026-11-17 移动端版面：≤575 走整屏弹窗 + 单行横滑工具栏 + 8px 内距（桌面 12px）
+  const previewRef = useRef(null)
+  const [nat, setNat] = useState({ w: 0, h: 0 })          // 原件自然尺寸（旋转适配用）
+  const [boxSize, setBoxSize] = useState({ w: 0, h: 0 })  // 预览容器尺寸
   const [isNarrow, setIsNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 575px)').matches)
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 575px)')
@@ -148,11 +151,30 @@ export default function SourceModal({ open, target, card, onClose, onSaved }) {
   const zoomIn = () => { setFit('free'); setScale((s) => Math.min(4, +(s + 0.2).toFixed(2))) }
   const zoomOut = () => { setFit('free'); setScale((s) => Math.max(0.2, +(s - 0.2).toFixed(2))) }
 
+  // U23（审核 r1）：旋转 90° 后宽高互换，CSS transform 不进 layout/scroll 尺寸 ⇒ 实测左裁 73px。
+  // 解法：旋转时按**旋转后**包围盒重算宽高（wrapper 用 layout 尺寸承载，图片在内部居中旋转），
+  // 于是 scale=1 时必然落在容器内；zoom>1 时 wrapper 变大、容器双向可滚。
+  const rotated90 = rotate % 180 === 90
+  const fitRot = (nat.w && boxSize.w && boxSize.h)
+    ? Math.min(boxSize.w / nat.h, boxSize.h / nat.w)
+    : 0
+
   const imgStyle = fit === 'height'
     ? { maxHeight: '100%', maxWidth: 'none', objectFit: 'contain', transform: `rotate(${rotate}deg)`, transformOrigin: 'center center' }
     : fit === 'width'
       ? { width: '100%', height: 'auto', transform: `rotate(${rotate}deg)`, transformOrigin: 'center center' }
       : { width: `${scale * 100}%`, maxWidth: 'none', height: 'auto', transform: `rotate(${rotate}deg)`, transformOrigin: 'center center' }
+
+  // 预览容器尺寸（ResizeObserver）：旋转适配要按当前可视区重算
+  useEffect(() => {
+    const el = previewRef.current
+    if (!el) return undefined
+    const sync = () => setBoxSize({ w: el.clientWidth, h: el.clientHeight })
+    sync()
+    const ro = new ResizeObserver(sync)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [open, blobKind])
 
   const title = target?.name ? `原件溯源 · ${target.name}` : '原件溯源'
   // 每侧水平内距：统一 12（主理人 2026-11-17 改判，原「手机 8」作废）；改前是 body 12 + 左栏 8 = 20 双层
@@ -174,7 +196,9 @@ export default function SourceModal({ open, target, card, onClose, onSaved }) {
         // ⇒ 每侧内距 = 12（改前是 body 12 + 左栏 8 = 20 双层叠加），标题/工具栏/原件三缘同一条线
         // U4（2026-11-17 实测）：375 下改前弹窗总高 1598px（> 视口 812），整页跟着滚、体验碎片化。
         // 手机改为 body 内部滚动（maxHeight = 视口 − 头部/底部预算 140（实测 812−140 后弹窗总高收在视口内）），弹窗本身收在视口内。
-        body: isNarrow ? { padding: 0, maxHeight: 'calc(100vh - 140px)', overflowY: 'auto' } : { padding: 0 },
+        // L11（审核 r1）：dialog.h ≤ 视口 − 96 ⇒ body 上限 = 100dvh − 176（头部+footer ≈76 + 96 余量），
+        // 两档同一套；**禁 100vh**（iOS 地址栏会遮底部）。底部再让 safe-area。
+        body: { padding: 0, maxHeight: 'calc(100dvh - 176px)', overflowY: 'auto', ...(isNarrow ? { paddingBottom: 'env(safe-area-inset-bottom)' } : {}) },
         header: { paddingInline: EDGE },
       }}
       footer={[
@@ -187,8 +211,9 @@ export default function SourceModal({ open, target, card, onClose, onSaved }) {
     >
       <style>{`
         /* P0-2（AI 审核 r1）：antd 的 .ant-modal-container 自带 padding 20/24，实测把「标题/工具栏/原件」
-           左缘顶到距屏 32-36px。手机端容器 padding 归零 ⇒ 才是「贴边全屏 + 单层 12px」。 */
-        @media (max-width: 575px) { .mb-src-modal .ant-modal-container { padding: 0 !important; } }
+           左缘顶到距屏 32-36px。**两个视口都归零**：1440 实测 dlg.x=160/w=1120、leftCol.x=184、title.x=196
+           ⇒ container 24 也在吃内距，只清 375 会留下 1440 的 36px 假绿。 */
+        .mb-src-modal .ant-modal-container { padding: 0 !important; }
       `}</style>
       <div style={{ display: 'flex', gap: 12, alignItems: 'stretch', flexWrap: 'wrap' }}>
         {/* ---------- 左：原件预览器（~62%；窄屏由 CardPage 的 .mb-source-left 改 flex-basis:100% 堆叠） ---------- */}
@@ -216,10 +241,17 @@ export default function SourceModal({ open, target, card, onClose, onSaved }) {
             {blobKind === 'image' && <Text type="secondary" style={{ fontSize: 12 }}>{Math.round(scale * 100)}%</Text>}
           </Space>
           )}
-          <div style={{ flex: 1, minHeight: blobKind === 'none' ? 96 : (isNarrow ? IMG_H : 380), maxHeight: blobKind === 'none' ? 120 : (isNarrow ? IMG_H : 'calc(100dvh - 240px)'), overflow: 'auto', background: 'transparent', border: '1px solid #e5e7eb', borderRadius: 4, display: 'flex', alignItems: 'flex-start', justifyContent: 'center' }}>
+          <div ref={previewRef} style={{ flex: 1, minHeight: blobKind === 'none' ? 96 : (isNarrow ? IMG_H : 380), maxHeight: blobKind === 'none' ? 120 : (isNarrow ? IMG_H : 'calc(100dvh - 240px)'), overflow: 'auto', background: 'transparent', border: '1px solid #e5e7eb', borderRadius: 4, display: 'flex', alignItems: rotated90 ? 'flex-start' : 'flex-start', justifyContent: rotated90 ? 'flex-start' : 'center' }}>
             {loading ? <Spin style={{ marginTop: 80 }} />
               : err ? <Alert type="error" showIcon message={err} style={{ margin: 16 }} />
-                : blobKind === 'image' ? <img src={blobUrl} alt="原件" style={imgStyle} />
+                : blobKind === 'image' ? (rotated90 && fitRot > 0
+                  ? (
+                    <div style={{ width: nat.h * fitRot * scale, height: nat.w * fitRot * scale, position: 'relative', flex: '0 0 auto' }}>
+                      <img src={blobUrl} alt="原件" onLoad={(e) => setNat({ w: e.target.naturalWidth, h: e.target.naturalHeight })}
+                        style={{ position: 'absolute', left: '50%', top: '50%', width: nat.w * fitRot * scale, height: nat.h * fitRot * scale, maxWidth: 'none', maxHeight: 'none', transform: 'translate(-50%,-50%) rotate(90deg)' }} />
+                    </div>
+                  )
+                  : <img src={blobUrl} alt="原件" onLoad={(e) => setNat({ w: e.target.naturalWidth, h: e.target.naturalHeight })} style={imgStyle} />)
                   : blobKind === 'pdf' ? <iframe title="原件 PDF" src={`${blobUrl}#page=${page}&zoom=page-width`} style={{ width: '100%', height: '66vh', border: 'none' }} />
                     : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ margin: '12px 0' }} description="该报告没有存原件（仅结构化数据）" />}
           </div>

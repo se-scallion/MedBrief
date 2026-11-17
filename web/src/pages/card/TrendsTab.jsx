@@ -97,25 +97,39 @@ function TrendChart({ series, onOpenSource, height = 150 }) {
   for (let i = 1; i < xs.length; i++) minGap = Math.min(minGap, xs[i] - xs[i - 1])
   const twoRows = xs.length > 1 && minGap < 26
   const H = height + (twoRows ? 8 : 0)
-  // A1③（AI 审核 r1）：参考范围标签不得与点值标签叠字（1440 实测「3.5-9.5」压在「4.66」上）。
-  // 用与渲染同源的 user 单位估包围盒，重叠就丢弃该参考标签（虚线仍在，信息不丢）。
-  const valueBoxes = pts.map((p, i) => {
-    const txt = String(p.value ?? '')
-    const cx = x(i)
-    const cy = y(Number(p.num)) - 7
-    const halfW = (txt.length * 13 * 0.58) / 2
-    return { l: cx - halfW, r: cx + halfW, t: cy - 13, b: cy + 2 }
-  })
-  const refKept = refLabels.filter((l) => {
-    const halfW = l.text.length * 13 * 0.55
-    const box = { l: (w - pad.r - 4) - halfW, r: w - pad.r - 4, t: l.y - 13, b: l.y + 2 }
-    return !valueBoxes.some((v) => box.l < v.r && v.l < box.r && box.t < v.b && v.t < box.b)
-  })
+  // A3（AI 审核 r1②）：**任意两个 SVG text 包围盒都不许相交**。原先只比「参考刻度 × 点值」，
+  // 漏了点值标签彼此相交（实测量到 11 对）。这里统一成贪心规划：参考刻度先占位（信息密度低、靠右缘），
+  // 再点值标签（末点优先，其余按时间序），最后日期标签；撞位就丢弃那一个标签——圆点、hover tooltip
+  // 与卡下「共 N 次」点列表仍在，信息不丢，只是图上不叠字。
+  const FSL = 13
+  const boxAt = (cx, cy, txt, k = 0.58) => {
+    const hw = (String(txt).length * FSL * k) / 2 * 1.06
+    return { l: cx - hw, r: cx + hw, t: cy - FSL - 2, b: cy + 4 }
+  }
+  const hitB = (a, b) => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b
   const tooTight = xs.length > 1 && minGap < 13
   const keepLabel = (i) => {
     if (i === 0 || i === xs.length - 1) return true
     if (!tooTight) return true
     return String(pts[i].measuredAt || '').slice(0, 7) !== String(pts[i - 1].measuredAt || '').slice(0, 7)
+  }
+  const accepted = []
+  const tryAccept = (box) => { if (accepted.some((b) => hitB(b, box))) return false; accepted.push(box); return true }
+  const refKept = []
+  for (const l of refLabels) {
+    const y0 = Math.min(Math.max(l.y, 8), height - pad.b - 1)
+    if (tryAccept(boxAt(w - pad.r - 4, y0, l.text, 0.55))) refKept.push({ y: y0, text: l.text })
+  }
+  const order = [pts.length - 1, ...pts.map((_, i) => i).filter((i) => i !== pts.length - 1)]
+  const valueKept = new Set()
+  for (const i of order) {
+    if (tryAccept(boxAt(x(i), y(Number(pts[i].num)) - 7, String(pts[i].value ?? '')))) valueKept.add(i)
+  }
+  const dateKept = new Set()
+  for (let i = 0; i < pts.length; i++) {
+    if (!keepLabel(i)) continue
+    const yy = twoRows && i % 2 ? H - 10 : H - 2.5
+    if (tryAccept(boxAt(xs[i], yy, String(pts[i].measuredAt || '').slice(5)))) dateKept.add(i)
   }
   return (
     <svg viewBox={`0 0 ${w} ${H}`} width="100%" height={H} style={{ display: 'block' }}>
@@ -140,11 +154,11 @@ function TrendChart({ series, onOpenSource, height = 150 }) {
             {p.critical
               ? <><circle cx={x(i)} cy={y(Number(p.num))} r="5" fill="none" stroke="#111827" strokeWidth="1" /><circle cx={x(i)} cy={y(Number(p.num))} r="2.2" fill="#111827" /></>
               : <circle cx={x(i)} cy={y(Number(p.num))} r="3.2" fill={abnormal ? '#111827' : '#fff'} stroke="#111827" strokeWidth="1" />}
-            <text x={x(i)} y={y(Number(p.num)) - 7} fontSize="13" fill="#374151" textAnchor="middle">{p.value}</text>
+            {valueKept.has(i) && <text x={x(i)} y={y(Number(p.num)) - 7} fontSize="13" fill="#374151" textAnchor="middle">{p.value}</text>}
           </g>
         )
       })}
-      {pts.map((p, i) => (keepLabel(i) ? (
+      {pts.map((p, i) => (dateKept.has(i) ? (
         <text key={`d${i}`} x={xs[i]} y={twoRows && i % 2 ? H - 10 : H - 2.5} fontSize="13" fill="#9ca3af" textAnchor="middle">{String(p.measuredAt || '').slice(5)}</text>
       ) : null))}
     </svg>

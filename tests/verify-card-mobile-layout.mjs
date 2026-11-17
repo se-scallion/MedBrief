@@ -30,6 +30,7 @@
 // 证伪（--falsify=…，exit 1 = 真红；exit 0 = 判据恒绿 = 测试失效）：
 //   --falsify=grid     窄屏网格塞回 repeat(auto-fit,minmax(0,1fr)) ⇒ L1/L2/A3 必须红
 //   --falsify=padding  body 塞回 12 + 左栏 8 双层内距           ⇒ L5/L7 必须红
+//   --falsify=containerpad  只把 .ant-modal-container padding 改回 24 ⇒ L6b 必须红（判据是几何口径，不能靠求和蒙对）
 
 import fs from 'node:fs'
 import os from 'node:os'
@@ -111,9 +112,16 @@ const M_TRENDS = () => {
     h: +t.getBoundingClientRect().height.toFixed(1), r: t.getBoundingClientRect(), fill: t.getAttribute('fill'),
   }))
   let refVsVal = 0
+  let anyPair = 0
   const refs = texts.filter((x) => x.fill === '#6b7280').map((x) => x.r)
   const vals = texts.filter((x) => x.fill === '#374151').map((x) => x.r)
   for (const a of refs) for (const c of vals) if (a.left < c.right && c.left < a.right && a.top < c.bottom && c.top < a.bottom) refVsVal++
+  // A3②：**任意两个** svg text 包围盒都不许相交（含点值×点值、日期×日期、参考×日期）
+  const all = texts.map((x) => x.r)
+  for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
+    const A = all[i], C = all[j]
+    if (A.left < C.right - 0.5 && C.left < A.right - 0.5 && A.top < C.bottom - 0.5 && C.top < A.bottom - 0.5) anyPair++
+  }
   return {
     scrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth,
     gridW: g.clientWidth, tracks: nonEmpty, cardW: c0.clientWidth,
@@ -126,6 +134,7 @@ const M_TRENDS = () => {
     renderedPx: texts.length ? +(parseFloat(cs(svg.querySelector('text')).fontSize) * scale).toFixed(2) : 0,
     minTextH: texts.length ? Math.min(...texts.map((x) => x.h)) : 0,
     refVsValOverlaps: refVsVal,
+    anyTextPairOverlaps: anyPair,
     optTitleOverlap: (headTitle && headExtra) ? inter(headTitle.getBoundingClientRect(), headExtra.getBoundingClientRect()) : 0,
     optTitleW: headTitle ? Math.round(headTitle.getBoundingClientRect().width) : null,
     otherCardOverlaps: otherOverlaps,
@@ -152,6 +161,8 @@ const M_MODAL = () => {
   const px = (e, p) => parseFloat(cs(e)?.[p] || '0')
   const L = (e) => { const x = r(e); return x ? +x.left.toFixed(1) : null }
   const m = r(modal)
+  const dlgRect = r(dlg)           // [role=dialog]（.ant-modal 本体）
+  const leftRect = r(leftCol)
   const tbr = r(toolbar)
   const clipped = toolbar ? [...toolbar.querySelectorAll('button')].filter((x) => {
     const q = r(x); return q.left < tbr.left - 1 || q.right > tbr.right + 1
@@ -159,8 +170,15 @@ const M_MODAL = () => {
   const deltas = [L(title), L(toolbar), L(preview)].filter((v) => v !== null)
   return {
     modalW: Math.round(m.width), modalH: Math.round(m.height), vh: window.innerHeight,
+    dlgLeft: Math.round(dlgRect.left), dlgW: Math.round(dlgRect.width), dlgH: Math.round(dlgRect.height),
+    // 几何口径（不求和、不漏层）：**可见内容**左缘 − dialog 左缘（原件区/工具栏/标题），
+    // 另记「左栏盒子 − dialog」，用于证明 container/body 没有偷偷加内距（应为 0）。
+    insetGeom: L(preview) != null ? +(L(preview) - dlgRect.left).toFixed(1) : null,
+    titleInsetGeom: L(title) != null ? +(L(title) - dlgRect.left).toFixed(1) : null,
+    toolbarInsetGeom: L(toolbar) != null ? +(L(toolbar) - dlgRect.left).toFixed(1) : null,
+    layerGeom: leftRect ? +(leftRect.left - dlgRect.left).toFixed(1) : null,
+    bodyOverflowY: cs(bodyEl)?.overflowY,
     containerPad: px(container, 'paddingLeft'), bodyPad: px(bodyEl, 'paddingLeft'), leftPad: px(leftCol, 'paddingLeft'),
-    insetPerSide: +(px(bodyEl, 'paddingLeft') + px(leftCol, 'paddingLeft')).toFixed(1),
     titleLeftX: L(title), toolbarLeftX: L(toolbar), previewLeftX: L(preview),
     alignSpread: deltas.length ? +(Math.max(...deltas) - Math.min(...deltas)).toFixed(1) : null,
     toolbarRects: toolbar ? toolbar.getClientRects().length : null,
@@ -191,6 +209,21 @@ const M_TOUCH = () => {
 }
 
 // ============ 页面流程 ============
+// 证伪注入（必须在每个用到该判据的视口都执行，否则 1440 分支永远绿 = 假绿）
+async function injectFalsify(page) {
+  if (FALSIFY === 'grid') {
+    await page.addStyleTag({ content: '@media (max-width:575px){ .mb-trends-grid{ grid-template-columns: repeat(auto-fit, minmax(0,1fr)) !important; } }' })
+  }
+  if (FALSIFY === 'padding') {
+    await page.addStyleTag({ content: '[role="dialog"] .ant-modal-body{ padding: 12px 12px !important; } .mb-source-left{ padding: 8px !important; }' })
+  }
+  // 证伪注入要**严格高于**组件内 <style> 的优先级（同权重时后插入的组件样式会赢 ⇒ 假绿）：
+  // 组件是 .mb-src-modal .ant-modal-container（0,2,0），这里用三层类（0,3,0）
+  if (FALSIFY === 'containerpad') {
+    await page.addStyleTag({ content: '.mb-src-modal .ant-modal-wrap .ant-modal-container{ padding: 20px 24px !important; }' })
+  }
+}
+
 async function loginCtx(browser, w, h, phone, password) {
   const ctx = await browser.newContext({ viewport: { width: w, height: h } })
   const page = await ctx.newPage()
@@ -213,8 +246,7 @@ async function run(browser, results) {
     try {
       await page.goto(BASE + '/?tab=card', { waitUntil: 'networkidle' })
       await page.waitForTimeout(1500)
-      if (FALSIFY === 'grid') await page.addStyleTag({ content: '@media (max-width:575px){ .mb-trends-grid{ grid-template-columns: repeat(auto-fit, minmax(0,1fr)) !important; } }' })
-      if (FALSIFY === 'padding') await page.addStyleTag({ content: '[role="dialog"] .ant-modal-body{ padding: 12px 12px !important; } .mb-source-left{ padding: 8px !important; }' })
+      await injectFalsify(page)
       await page.locator('.ant-tabs-tab', { hasText: '动态趋势看板' }).first().click()
       await page.waitForTimeout(1600)
       const t = await page.evaluate(M_TRENDS)
@@ -232,7 +264,7 @@ async function run(browser, results) {
         if (!(t.toolbarScrollW <= t.toolbarClientW)) throw new Error(`工具组 scrollW ${t.toolbarScrollW} > clientW ${t.toolbarClientW}（内容被裁）`)
       })
       T('A2 点列表可见 2 行不外溢（scrollHeight≤clientHeight+1）', () => { if (!(t.pointScrollH <= t.pointClientH + 1)) throw new Error(`scrollH ${t.pointScrollH} > clientH ${t.pointClientH} + 1`) })
-      T('A3 SVG 文字渲染高 ≥9 且参考刻度与点值零叠字', () => { ge(t.minTextH, 9, '最小文字渲染高'); eq(t.refVsValOverlaps, 0, '参考刻度∩点值标签') })
+      T('A3 SVG 文字渲染高 ≥9 且**任意两个** text 零相交', () => { ge(t.minTextH, 9, '最小文字渲染高'); eq(t.refVsValOverlaps, 0, '参考刻度∩点值标签'); eq(t.anyTextPairOverlaps, 0, '任意两个 text 相交对数') })
       T('L10a 375 刻度渲染字号 ≥9px', () => { ge(t.renderedPx, 9, '渲染字号') })
 
       // A4：滚动到趋势卡后落盘截图（人眼可复核 U1）
@@ -253,11 +285,17 @@ async function run(browser, results) {
       const d = await page.evaluate(M_MODAL)
       fs.writeFileSync(path.join(SHOTS, '12-modal-source-375-with-blob.png'), await page.screenshot())
       T('L5a 375 弹窗贴边整屏（375±1）', () => { if (d.error) throw new Error(d.error); near(d.modalW, 375, 1, '弹窗宽') })
-      T('L5b 375 每侧内距 12±1（改前 20 + antd container 24）', () => { near(d.insetPerSide, 12, 1, '每侧内距') })
+      T('L5b 375 每侧内距 12±1（几何：原件区/工具栏/标题左缘−dialog 左缘）', () => {
+        near(d.insetGeom, 12, 1, '原件区内距'); near(d.toolbarInsetGeom, 12, 1, '工具栏内距'); near(d.titleInsetGeom, 12, 1, '标题内距')
+        eq(d.layerGeom, 0, '左栏盒子 − dialog（container/body 不许再加内距）')
+      })
       T('L5c 375 标题/工具栏/原件左缘极差 ≤1', () => { if (!(d.alignSpread <= 1)) throw new Error(`左缘极差 ${d.alignSpread}px`) })
       T('L5d 375 工具栏单行且无按钮被裁', () => { eq(d.toolbarRects, 1, '工具栏行数'); eq(d.clippedButtons, 0, '被裁按钮数'); if (!(d.toolbarScrollW <= d.toolbarClientW)) throw new Error(`工具栏 scrollW ${d.toolbarScrollW} > clientW ${d.toolbarClientW}`) })
-      T('L7 弹窗内距只有一层（container 0 + body 0 + 左栏 12）', () => { eq(d.containerPad, 0, 'container padding'); eq(d.bodyPad, 0, 'body padding'); eq(d.leftPad, 12, '左栏 padding') })
-      T('L11 375 弹窗总高 ≤ 视口且内容内部滚动', () => { if (!(d.modalH <= d.vh + 1)) throw new Error(`弹窗高 ${d.modalH} > 视口 ${d.vh}`); if (!(d.bodyScrollH > d.bodyClientH)) throw new Error(`内容未内部滚动 ${d.bodyScrollH}/${d.bodyClientH}`) })
+      T('L7 内距单层（computed：container 0 + body 0 + 左栏 12）', () => { eq(d.containerPad, 0, 'container padding'); eq(d.bodyPad, 0, 'body padding'); eq(d.leftPad, 12, '左栏 padding') })
+      T('L11a 375 dialog.h ≤ 视口−96 且 body overflowY:auto', () => {
+        if (!(d.dlgH <= d.vh - 96)) throw new Error(`dialog.h ${d.dlgH} > ${d.vh - 96}`)
+        eq(d.bodyOverflowY, 'auto', 'body overflowY'); if (!(d.bodyScrollH > d.bodyClientH)) throw new Error(`内容未内部滚动 ${d.bodyScrollH}/${d.bodyClientH}`)
+      })
       T('L13 有原件夹具：图片渲染宽 > 0 且原件区 > 0', () => { ge(d.imgW, 100, '原件渲染宽'); ge(d.previewH, 100, '原件区高') })
     } finally { await ctx.close() }
   }
@@ -296,15 +334,16 @@ async function run(browser, results) {
     try {
       await page.goto(BASE + '/?tab=card', { waitUntil: 'networkidle' })
       await page.waitForTimeout(1500)
+      await injectFalsify(page)
       await page.locator('.ant-tabs-tab', { hasText: '动态趋势看板' }).first().click()
       await page.waitForTimeout(1600)
       const t2 = await page.evaluate(M_TRENDS)
       await page.locator('tr.ant-table-row').first().click({ timeout: 6000 }).catch(() => {})
-      await page.waitForTimeout(300)
+      await page.waitForTimeout(2200)
       T('L6a 1440 仍 3 列且卡宽 ≥380（不退化）', () => { eq(t2.tracks, 3, '列数'); ge(t2.cardW, 380, '卡宽') })
       T('L4b 1440 文档无横向溢出', () => { if (!(t2.scrollWidth <= t2.innerWidth)) throw new Error(`scrollWidth ${t2.scrollWidth} > ${t2.innerWidth}`) })
       T('L10b 1440 刻度渲染字号 ≥9px（不得变小）', () => { ge(t2.renderedPx, 9, '渲染字号') })
-      T('A3b 1440 参考刻度与点值零叠字', () => { eq(t2.refVsValOverlaps, 0, '参考刻度∩点值标签'); ge(t2.minTextH, 9, '最小文字渲染高') })
+      T('A3b 1440 任意两个 text 零相交 + 渲染高 ≥9', () => { eq(t2.anyTextPairOverlaps, 0, '任意两个 text 相交对数'); eq(t2.refVsValOverlaps, 0, '参考刻度∩点值标签'); ge(t2.minTextH, 9, '最小文字渲染高') })
     } finally { await ctx.close() }
   }
 
@@ -314,11 +353,20 @@ async function run(browser, results) {
     try {
       await page.goto(BASE + '/?tab=card', { waitUntil: 'networkidle' })
       await page.waitForTimeout(1500)
+      await injectFalsify(page)
       await page.locator('tr.ant-table-row').first().click({ timeout: 6000 })
       await page.waitForTimeout(2200)
       const d2 = await page.evaluate(M_MODAL)
-      T('L6b 1440 弹窗每侧内距 12±1', () => { if (d2.error) throw new Error(d2.error); near(d2.insetPerSide, 12, 1, '每侧内距') })
+      T('L6b 1440 弹窗每侧内距 12±1（几何 + container 归零）', () => {
+        if (d2.error) throw new Error(d2.error)
+        near(d2.insetGeom, 12, 1, '原件区内距'); near(d2.toolbarInsetGeom, 12, 1, '工具栏内距'); near(d2.titleInsetGeom, 12, 1, '标题内距')
+        eq(d2.containerPad, 0, 'container padding'); eq(d2.layerGeom, 0, '左栏盒子 − dialog')
+      })
       T('L6c 1440 弹窗两栏并排', () => { if (!d2.twoCol) throw new Error('左右栏未并排') })
+      T('L11b 1440 dialog.h ≤ 视口−96 且 body overflowY:auto', () => {
+        if (!(d2.dlgH <= d2.vh - 96)) throw new Error(`dialog.h ${d2.dlgH} > ${d2.vh - 96}`)
+        eq(d2.bodyOverflowY, 'auto', 'body overflowY')
+      })
     } finally { await ctx.close() }
   }
 }
@@ -363,9 +411,9 @@ const main = async () => {
   console.log(`\n通过 ${pass} / 失败 ${fail}${stderr.trim() ? '\n[stderr] ' + stderr.trim().split('\n').slice(-2).join(' | ') : ''}`)
 
   if (FALSIFY) {
-    const expectedRed = FALSIFY === 'grid'
-      ? results.filter((r) => /^L[12] |^A3 /i.test(r.name) || /^L1 |^L2 /.test(r.name))
-      : results.filter((r) => /^L5b|^L5c|^L7/.test(r.name))
+    const expectedRed = FALSIFY === 'grid' ? results.filter((r) => /^L1 |^L2 |^L4a |^L10a /.test(r.name))
+      : FALSIFY === 'containerpad' ? results.filter((r) => /^L5b|^L6b|^L7/.test(r.name))
+        : results.filter((r) => /^L5b|^L5c|^L7/.test(r.name))
     const anyRed = expectedRed.some((r) => !r.ok)
     console.log(anyRed
       ? `\n[falsify=${FALSIFY}] 期望判据确实红了 → exit 1（真红，判据有分辨力）`
