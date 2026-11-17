@@ -1,4 +1,4 @@
-# 报告库三处 UI（手机查看原件 / 删除与编辑显隐 / 眼睛按钮）—— **数值与交互规格** v1.1（UI 设计师，2026-11-17）
+# 报告库三处 UI（手机查看原件 / 删除与编辑显隐 / 眼睛按钮）—— **数值与交互规格** v1.2（UI 设计师，2026-11-17）
 
 > 用户 2026-11-17 18:38 报三处；按硬约束「版面/图标找 UI 设计师」出规格，实现方不改版面。
 > 现状锚点：`web/src/pages/intake/ReportsPanel.jsx`（PC `Table` + 手机 `ReportDayList`）、`web/src/pages/intake/ReportDayList.jsx`、`web/src/pages/intake/shared.js`（`ICONS`）。
@@ -98,12 +98,43 @@
 | **P11** | 图片同页加载 | 375 与 1440 视口点 `查看原件`（jpeg/png 报告）：`page.on('popup')` 零触发；`.blob-modal img` 的 `naturalWidth > 0` 且 `currentSrc` 以 `/api/intake/blob/` 开头 | 全真 |
 | **P12** | **PDF 用 canvas 不用 iframe** | 打开 pdf 原件后：`.blob-modal iframe` 计数 === **0**；`.blob-modal canvas` 计数 ≥ **1** 且首个 canvas `width > 0`；`第 n / N 页` 文本存在 | 全真 |
 | **P13** | 401 不白屏且有指路 | 清 cookie 后点原件：`[data-blob-error]` 存在、文案含 **`登录`**、有 `重试` 按钮；模态框内 `innerText.length > 0` | 全真 |
+| **P15** | **门禁自检：`--falsify` 真的会红** | 依次跑 `--falsify=P1 P2 P4 P6 P12 P14 headers 401`：每次必须 **exit 1** 且输出里点名对应判据；全部跑完再跑一次无参模式必须 **exit 0** | 全真（任何一条 exit 0 = 判据恒绿，判不合格） |
 | **P14** | 服务端两个头 | `curl -sI <base>/api/intake/blob/<id>`（带登录 cookie）：`content-disposition` 匹配 `/^inline;/i` 且含 `filename*=UTF-8''`；`x-content-type-options` === `nosniff`；`content-type` ∈ {`image/jpeg`,`image/png`,`application/pdf`} | 全真 |
 | **P10** | 整行可点 + 按钮热区 44 | ① 375 视口点 `.rb-day-row` 的**空白区**（不落在按钮上）→ 详情打开；② `.rb-day-row` 的 `rect.height ≥ 44`；③ `.rb-day-actions` 内每个按钮：视觉 32×32，但 `document.elementFromPoint(cx±20, cy)` 与 `(cx, cy±20)` **四点都返回该按钮**（`::before` 扩展归宿主） | 全真 |
 
 **证伪（5 条，贴退出码 1）**：① 去掉 `onRow`（PC 退回只有按钮）⇒ **P1/P2 必红**；② 手机删除按钮放回列表 ⇒ **P4 必红**；③ 原件改回 `window.open` ⇒ **P6 必红**；④ PDF 改用 `<iframe>` ⇒ **P12 必红**；⑤ 去掉 `server.mjs` 的 `Content-Disposition` ⇒ **P14 必红**。
 
 ---
+
+## 5.1 证伪口径（v1.2 新增，回答「5 条证伪怎么做成可持续跑的脚本」）
+
+实现方如实说明：`--falsify` 的 sed 注入不稳、未命中，所以交付是「18/0 真跑」而**不是**「5 证伪真红」。**这条我接受如实标注**，但同时指出一个必须修的残留：**门禁文件头 `:8-10` 已经写了 5 个 `--falsify=` 开关，实际并不存在** —— 注释承诺不存在的功能，等于给下一任埋"看起来能跑"的假象。**二者必须一致：要么实现，要么删注释。**
+
+**定稿口径：分两层，别用 sed 改产品源码。**
+
+### Tier 1 判据灵敏度（**5 条全覆盖，稳定可复跑**）
+
+把每条判据写成**纯函数**：`checkP6(m)` 只吃一个「实测对象」。
+
+```
+node tests/verify-reports-panel-ui.mjs --falsify=P6
+# 内部：const m = {...真实实测}; m.popupCount = 1        // 模拟"改回 window.open"之后世界长什么样
+#       assert.throws(() => checkP6(m), /P6/)           // 必须抛错 ⇒ 证明这条判据不是恒绿
+```
+
+- 覆盖清单：`P1|P2|P4|P6|P12|P14`（按判据编号，一格一条）。
+- 判据通过 = **该 check 在"该红的世界"里确实红了**；未抛错 ⇒ 该判据**恒绿**，直接判不合格。
+- 优点：不碰产品、不碰源码、不依赖 sed/正则，跑 100 次结果一致。
+
+### Tier 2 真实回归（**只做能在网络层稳定模拟的**）
+
+- `--falsify=headers`：`page.route('**/api/intake/blob/**')` 把响应头**剥掉** `Content-Disposition` / `X-Content-Type-Options` 再喂给页面 ⇒ **P14 真红**（纯网络层，稳定）。
+- `--falsify=401`：`page.route` 强制回 401 JSON ⇒ **P8/P13 真红**（同上）。
+这两个是"改产品输入"而非"改产品代码"，可长期跑。
+
+### Tier 3 不做脚本化（写清理由）
+
+「删 `onRow`」「PDF 改 iframe」「手机放回删除按钮」这类要**改产品源码**的证伪，**不脚本化**：为证伪给产品加 debug 开关，本身就会成为新缺陷源（而且这些改动只会出现在 diff 里，靠 code-review 一眼可见）。这些由 **Tier 1 灵敏度** + 人工 review 覆盖。
 
 ## 6. 待你确认的 1 处（不影响开工，但影响"删除入口在哪"）
 
@@ -114,5 +145,5 @@
 ## 7. 条数统计（v1.0）
 
 - 规格条目：**§1 手机原件 13 条（v1.1 +4）/ §2 删除与编辑 5 条 / §3 眼睛与行点击 6 条 / §4 布局数值 4 条 = 28 条**
-- 判据：**P1–P14 共 14 条**（5 条带证伪），门禁 `test:reports-panel-ui` **待创建**
+- 判据：**P1–P15 共 15 条**（P15 = 门禁自检；证伪按 §5.1 分三层），门禁 `tests/verify-reports-panel-ui.mjs` **已存在**（`4197f5d`，我本机复跑 **18/0 exit 0**）
 - 待确认：**1 条**（§6）
