@@ -59,7 +59,11 @@
 
 ---
 
-## 5. 判据（可复跑；`/tmp/verify-trend-1117.mjs`，Playwright 量屏幕像素）
+## 5. 判据（**仓库内持久门禁**：`tests/verify-card-trends-layout.mjs`，`npm run test:card-layout`）
+
+> **v1.1 更正（2026-11-17，实现方指出）**：上一版写的是 `/tmp/verify-trend-1117.mjs` —— **`/tmp` 不是仓库产物，脚本会消失**，按我自己的标准这就是"写了但没判"（判据必须可复跑且**落地**）。已改为指向仓库门禁；实现方已把它落成 `tests/verify-card-trends-layout.mjs`（8,650 B）+ `package.json:20` 的 `test:card-layout`，我本机跑 **7 通过 / 0 失败，exit 0**。
+> 实现与我原文的两处差异，我核过**等价或更好**：① **T1 不以 `gridTemplateColumns` 拆字符串**（headless 下可能原样返回 `1fr 1fr` 不解析成 px），改用「**不同 x 起点的列数 = 2** + 两格宽差 ≤1px」；② 另加一条「CSS 合同」检查直接盯 `1fr 1fr` / `gap 6px 10px` / `padding 3px 5px` / `PAD 28/10/13/13` / 避让净距 `2` 的字面值 —— 这补上了我用"拆轨道"写法抓不到的情形（如写成 `1fr 1fr 1fr` 但只有两格）。
+> 证伪开关：`--falsify=columns`（改 `1fr`）⇒ **T1 + T2 红、exit 1**（单列后格宽 725px，T2 跟着红是正确的）；`--falsify=labels`（放宽避让阈值）⇒ **恰好 T4 红、exit 1**。
 
 前置：把 `svgTrend(11 点)` 的输出放进 `.trend-cell`（宽 357.8px）渲染；或直接对现有资料卡 HTML 取样。
 
