@@ -35,6 +35,14 @@ const record = {
   dirty: execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim().length > 0,
   distFileCount: files.length,
   distSha256: distSha,
+  // 关键文件内容指纹：服务器端可用 sha256sum -c 自证"跑的就是这个提交"
+  fileHashes: Object.fromEntries(
+    ['server.mjs', 'lib/auth.mjs', 'web/dist-next/index.html', 'vendor/package.json']
+      .map((f) => [f, createHash('sha256').update(fs.readFileSync(path.join(root, f))).digest('hex')])
+  ),
+  // 别线在途改动清单：服务器端断言"这些文件不得出现在部署包内" ⇒ 直接证明别线改动没上线
+  dirtyFiles: execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' })
+    .trim().split('\n').filter(Boolean).map((l) => l.slice(3).trim()),
   builtAt: new Date().toISOString(),
   builtBy: `${os.hostname()}@${os.userInfo().username}`,
   nodeVersion: process.version,
