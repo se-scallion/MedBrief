@@ -49,12 +49,12 @@ export default function AccountAdminPage() {
   }
 
   const columns = [
-    { title: '手机号', dataIndex: 'phone', key: 'phone', render: (p, u) => <Space><Text>{p}</Text>{u.role === 'admin' && <Tag color="red">管理员</Tag>}</Space> },
-    { title: '报告库', key: 'reports', render: (_, u) => <Switch size="small" checked disabled tooltip="登录用户均可管理自己的报告" /> },
-    { title: '导出/打印', key: 'card', render: (_, u) => <Switch size="small" checked={!!u.card_export} onChange={(v) => togglePerm(u, 'card_export', v)} /> },
-    { title: '挂号', key: 'gh', render: (_, u) => <Switch size="small" checked={!!u.guahao} onChange={(v) => togglePerm(u, 'guahao', v)} /> },
-    { title: '状态', key: 'disabled', render: (_, u) => u.disabled ? <Tag color="default">已停用</Tag> : <Tag color="green">正常</Tag> },
-    { title: '操作', key: 'op', render: (_, u) => (
+    { title: '手机号', dataIndex: 'phone', key: 'phone', width: 150, render: (p, u) => <Space><Text>{p}</Text>{u.role === 'admin' && <Tag color="red">管理员</Tag>}</Space> },
+    { title: '报告库', key: 'reports', width: 84, render: (_, u) => <Switch size="small" checked disabled tooltip="登录用户均可管理自己的报告" /> },
+    { title: '导出/打印', key: 'card', width: 104, render: (_, u) => <Switch size="small" checked={!!u.card_export} onChange={(v) => togglePerm(u, 'card_export', v)} /> },
+    { title: '挂号', key: 'gh', width: 76, render: (_, u) => <Switch size="small" checked={!!u.guahao} onChange={(v) => togglePerm(u, 'guahao', v)} /> },
+    { title: '状态', key: 'disabled', width: 88, render: (_, u) => u.disabled ? <Tag color="default">已停用</Tag> : <Tag color="green">正常</Tag> },
+    { title: '操作', key: 'op', width: 208, render: (_, u) => (
       <Space size={4}>
         <Button size="small" onClick={() => { setPhoneOpen(u); phoneForm.setFieldsValue({ phone: u.phone }) }}>改号</Button>
         <Popconfirm title="踢下线？该用户全部设备需重新登录" onConfirm={() => post('/kick', { id: u.id })}>
@@ -68,7 +68,16 @@ export default function AccountAdminPage() {
   ]
 
   return (
-    <div style={{ padding: 16, maxWidth: 1100 }}>
+    // U3（2026-11-17 实测）：375 下本页横向溢出 103px（scrollWidth 478 vs 375）——表格 6 列 + 操作按钮
+    // 撑破容器。修法：容器 minWidth:0 + 表格自身横向滚动（scroll.x='max-content'），页面不再溢出，
+    // 关键列按内容宽完整显示（不被截断），手机横滑看「操作」列。
+    <div style={{ padding: 16, maxWidth: 1100, minWidth: 0 }}>
+      <style>{`
+        /* U3（AI 审核 r1 P0-3）：只加 overflow-x:auto 不够 —— 手机端仍会把「手机号」压成 11 行竖排单字。
+           这里统一 nowrap（列宽见 columns.width），让表格内部横滑而不是压扁列。 */
+        .mb-acc-table .ant-table-thead th, .mb-acc-table .ant-table-tbody td { white-space: nowrap; }
+        .mb-acc-table .ant-table-content { overflow-x: auto; }
+      `}</style>
       <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 12 }}>
         <Title level={4} style={{ margin: 0 }}>账号管理</Title>
         <Space>
@@ -79,7 +88,8 @@ export default function AccountAdminPage() {
       <Alert type="info" showIcon style={{ marginBottom: 12 }}
         message="权限说明"
         description="登录用户均可增删改查自己的报告、看不到别人的。导出/打印资料卡、查看原件、挂号需逐人授权（右侧开关，改动立即生效）。管理员可管理所有人报告与全部功能。" />
-      <Table rowKey="id" size="small" loading={loading} dataSource={users} columns={columns} pagination={false} />
+      <Table rowKey="id" size="small" loading={loading} dataSource={users} columns={columns} pagination={false} className="mb-acc-table"
+        scroll={{ x: 'max-content' }} style={{ maxWidth: '100%' }} />
 
       <Modal title="新建账号" open={createOpen} onOk={doCreate} onCancel={() => { setCreateOpen(false); form.resetFields() }} okText="创建">
         <Form form={form} layout="vertical">
@@ -101,13 +111,14 @@ export default function AccountAdminPage() {
       {audit.length > 0 && (
         <div style={{ marginTop: 20 }}>
           <Title level={5}>最近操作审计</Title>
-          <Table rowKey="id" size="small" dataSource={audit} pagination={false}
+          <Table rowKey="id" size="small" dataSource={audit} pagination={false} className="mb-acc-table" scroll={{ x: 'max-content' }} style={{ maxWidth: '100%' }}
             columns={[
               // 存储是 UTC ISO（toISOString），展示必须转本地时区，否则比北京时间少 8 小时。
+              // U3：审计表同样不许把手机号/id 压成竖排单字 ⇒ 表头与单元格统一 nowrap + 列最小宽（见下方 <style>）。
               // 用内置 Intl（指定 Asia/Taipei），不依赖 dayjs 被 hoist——换 pnpm/hoister 也不会断。
-              { title: '时间', dataIndex: 'at', key: 'at', render: (v) => v ? new Date(v).toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Taipei' }) : '—' },
-              { title: '动作', dataIndex: 'action', key: 'action' },
-              { title: '目标', dataIndex: 'target_user_id', key: 'target', render: (id) => users.find((u) => u.id === id)?.phone || id || '—' },
+              { title: '时间', dataIndex: 'at', key: 'at', width: 168, render: (v) => v ? new Date(v).toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Taipei' }) : '—' },
+              { title: '动作', dataIndex: 'action', key: 'action', width: 128 },
+              { title: '目标', dataIndex: 'target_user_id', key: 'target', width: 150, render: (id) => users.find((u) => u.id === id)?.phone || id || '—' },
             ]} />
         </div>
       )}

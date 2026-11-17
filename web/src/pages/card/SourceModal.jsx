@@ -61,6 +61,15 @@ export default function SourceModal({ open, target, card, onClose, onSaved }) {
   const [editing, setEditing] = useState(null)   // { name, value, unit, refRange }
   const [saving, setSaving] = useState(false)
   const urlRef = useRef('')
+  // 2026-11-17 移动端版面：≤575 走整屏弹窗 + 单行横滑工具栏 + 8px 内距（桌面 12px）
+  const [isNarrow, setIsNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 575px)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 575px)')
+    const on = () => setIsNarrow(mq.matches)
+    on()
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
 
   const report = useMemo(
     () => (card?.timeline || []).find((r) => r.id === target?.reportId) || null,
@@ -146,15 +155,28 @@ export default function SourceModal({ open, target, card, onClose, onSaved }) {
       : { width: `${scale * 100}%`, maxWidth: 'none', height: 'auto', transform: `rotate(${rotate}deg)`, transformOrigin: 'center center' }
 
   const title = target?.name ? `原件溯源 · ${target.name}` : '原件溯源'
+  // 每侧水平内距：统一 12（主理人 2026-11-17 改判，原「手机 8」作废）；改前是 body 12 + 左栏 8 = 20 双层
+  const EDGE = 12
+  // 图片可视高：手机按可视视口（100dvh —— iOS 地址栏展开/收起都算准）扣头部/工具栏/footer 预算；
+  // 桌面 min380 + 扣 240。禁用 100vh：iOS Safari 会把地址栏算进去，底部按钮被遮。
+  const IMG_H = 'calc(100dvh - 220px)'
 
   return (
     <Modal
       open={open}
       onCancel={onClose}
       title={title}
-      width="92vw"
-      style={{ maxWidth: 1120, top: 24 }}
-      styles={{ body: { padding: 12 } }}
+      width={isNarrow ? '100vw' : '92vw'}
+      style={isNarrow ? { top: 0, maxWidth: '100vw', margin: 0, paddingBottom: 0 } : { maxWidth: 1120, top: 24 }}
+      rootClassName="mb-src-modal"
+      styles={{
+        // 内距只留一层（主理人 2026-11-17 改判：统一 12px）：body 0、左栏 12、header paddingInline 12
+        // ⇒ 每侧内距 = 12（改前是 body 12 + 左栏 8 = 20 双层叠加），标题/工具栏/原件三缘同一条线
+        // U4（2026-11-17 实测）：375 下改前弹窗总高 1598px（> 视口 812），整页跟着滚、体验碎片化。
+        // 手机改为 body 内部滚动（maxHeight = 视口 − 头部/底部预算 140（实测 812−140 后弹窗总高收在视口内）），弹窗本身收在视口内。
+        body: isNarrow ? { padding: 0, maxHeight: 'calc(100vh - 140px)', overflowY: 'auto' } : { padding: 0 },
+        header: { paddingInline: EDGE },
+      }}
       footer={[
         <Text key="hint" type="secondary" style={{ fontSize: 12, float: 'left', lineHeight: '24px' }}>
           原件来自导入时的原始图片 / PDF，只读；数值以原件为准
@@ -163,16 +185,24 @@ export default function SourceModal({ open, target, card, onClose, onSaved }) {
       ]}
       destroyOnClose={false}
     >
+      <style>{`
+        /* P0-2（AI 审核 r1）：antd 的 .ant-modal-container 自带 padding 20/24，实测把「标题/工具栏/原件」
+           左缘顶到距屏 32-36px。手机端容器 padding 归零 ⇒ 才是「贴边全屏 + 单层 12px」。 */
+        @media (max-width: 575px) { .mb-src-modal .ant-modal-container { padding: 0 !important; } }
+      `}</style>
       <div style={{ display: 'flex', gap: 12, alignItems: 'stretch', flexWrap: 'wrap' }}>
         {/* ---------- 左：原件预览器（~62%；窄屏由 CardPage 的 .mb-source-left 改 flex-basis:100% 堆叠） ---------- */}
-        <div className="mb-source-left" style={{ flex: '1 1 58%', minWidth: 0, background: '#f5f6f8', borderRadius: 8, padding: 8, display: 'flex', flexDirection: 'column' }}>
-          <Space size={4} wrap style={{ marginBottom: 8 }}>
-            <Button size="small" onClick={zoomOut} disabled={blobKind !== 'image'}>− 缩小</Button>
-            <Button size="small" onClick={zoomIn} disabled={blobKind !== 'image'}>＋ 放大</Button>
-            <Button size="small" type={fit === 'width' ? 'primary' : 'default'} onClick={() => { setFit('width'); setScale(1) }}>适应宽度</Button>
-            <Button size="small" type={fit === 'height' ? 'primary' : 'default'} onClick={() => { setFit('height'); setScale(1) }}>适应高度</Button>
+        <div className="mb-source-left" style={{ flex: '1 1 58%', minWidth: 0, background: 'transparent', borderRadius: 0, padding: EDGE, display: 'flex', flexDirection: 'column' }}>
+          {/* P0-2（AI 审核 r1）：①无原件时缩放/旋转无意义 ⇒ 整条工具栏隐藏，把首屏让给元数据与历史；
+              ②手机单行横滑但**不得裁按钮**：文案精简（适宽/适高/旋转）+ 横向滚动。 */}
+          {blobKind === 'none' ? null : (
+          <Space size={4} wrap={!isNarrow} style={isNarrow ? { marginBottom: 8, overflowX: 'auto', whiteSpace: 'nowrap', height: 32, width: '100%', flexWrap: 'nowrap' } : { marginBottom: 8 }}>
+            <Button size="small" onClick={zoomOut} disabled={blobKind !== 'image'}>{isNarrow ? '−' : '− 缩小'}</Button>
+            <Button size="small" onClick={zoomIn} disabled={blobKind !== 'image'}>{isNarrow ? '＋' : '＋ 放大'}</Button>
+            <Button size="small" type={fit === 'width' ? 'primary' : 'default'} onClick={() => { setFit('width'); setScale(1) }}>{isNarrow ? '适宽' : '适应宽度'}</Button>
+            <Button size="small" type={fit === 'height' ? 'primary' : 'default'} onClick={() => { setFit('height'); setScale(1) }}>{isNarrow ? '适高' : '适应高度'}</Button>
             <Tooltip title="PDF 由浏览器原生查看器渲染，不支持旋转（只能旋转图片）">
-              <Button size="small" disabled={blobKind !== 'image'} onClick={() => setRotate((r) => (r + 90) % 360)}>旋转 90°</Button>
+              <Button size="small" disabled={blobKind !== 'image'} onClick={() => setRotate((r) => (r + 90) % 360)}>{isNarrow ? '旋转' : '旋转 90°'}</Button>
             </Tooltip>
             {blobKind === 'pdf' && (
               <Space size={2}>
@@ -185,12 +215,13 @@ export default function SourceModal({ open, target, card, onClose, onSaved }) {
             )}
             {blobKind === 'image' && <Text type="secondary" style={{ fontSize: 12 }}>{Math.round(scale * 100)}%</Text>}
           </Space>
-          <div style={{ flex: 1, minHeight: 380, maxHeight: '68vh', overflow: 'auto', background: '#fff', borderRadius: 6, display: 'flex', alignItems: 'flex-start', justifyContent: 'center' }}>
+          )}
+          <div style={{ flex: 1, minHeight: blobKind === 'none' ? 96 : (isNarrow ? IMG_H : 380), maxHeight: blobKind === 'none' ? 120 : (isNarrow ? IMG_H : 'calc(100dvh - 240px)'), overflow: 'auto', background: 'transparent', border: '1px solid #e5e7eb', borderRadius: 4, display: 'flex', alignItems: 'flex-start', justifyContent: 'center' }}>
             {loading ? <Spin style={{ marginTop: 80 }} />
               : err ? <Alert type="error" showIcon message={err} style={{ margin: 16 }} />
                 : blobKind === 'image' ? <img src={blobUrl} alt="原件" style={imgStyle} />
                   : blobKind === 'pdf' ? <iframe title="原件 PDF" src={`${blobUrl}#page=${page}&zoom=page-width`} style={{ width: '100%', height: '66vh', border: 'none' }} />
-                    : <Empty style={{ margin: 24 }} description="该报告没有存原件（仅结构化数据）" />}
+                    : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ margin: '12px 0' }} description="该报告没有存原件（仅结构化数据）" />}
           </div>
         </div>
 

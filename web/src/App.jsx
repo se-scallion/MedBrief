@@ -72,6 +72,15 @@ export const useNav = () => useContext(NavContext)
 
 const TONE_COLOR = { info: 'default', ok: 'green', warn: 'orange', err: 'red' }
 
+// 触控热区（AI 审核 r1 U5/U13）：顶栏小按钮视觉尺寸不变，用 ::before 外扩可点区域到 ≥44×44。
+// 只扩命中区、不改视觉，`inset` 计算：small 按钮 24px 高 + 上下各 10px = 44px。
+const APP_TOUCH_CSS = `
+.mb-nav-trigger, .mb-logout, .mb-log-btn { position: relative; }
+.mb-nav-trigger::before, .mb-logout::before, .mb-log-btn::before {
+  content: ''; position: absolute; inset: -10px -8px; border-radius: 6px;
+}
+`
+
 export default function App() {
   const { message } = AntApp.useApp()
   const [logs, setLogs] = useState([])
@@ -147,6 +156,14 @@ export default function App() {
   const [collapsed, setCollapsed] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
 
+  // 触控热区样式：全宽度生效（手指目标不因断点缩水）
+  useEffect(() => {
+    const st = document.createElement('style')
+    st.id = 'mb-app-touch'
+    st.textContent = APP_TOUCH_CSS
+    document.head.appendChild(st)
+    return () => { st.remove() }
+  }, [])
   // ≤575px 才把窄屏样式挂到 head：与 CardPage 同款（useEffect 挂载 / 卸载即移除），不污染其它条件。
   useEffect(() => {
     const style = document.createElement('style')

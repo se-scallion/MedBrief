@@ -28,7 +28,14 @@ const { Text, Title } = Typography
 const CARD_MOBILE_CSS = `
 @media (max-width: 575px) {
   .ant-card-head { flex-wrap: wrap; height: auto; }
-  .ant-card-head .ant-card-extra { max-width: 100%; margin-inline-start: 0; overflow: hidden; }
+  /* P0-5（AI 审核 r1）：extra 上的 overflow:hidden 会把卡头里偏高的内容（如「生成中」状态行）
+     垂直裁掉下半截。改为可见 + 允许换行，宽度仍受 max-width:100% 约束（不会撑破页面）。 */
+  .ant-card-head .ant-card-extra { max-width: 100%; margin-inline-start: 0; overflow: visible; }
+  /* P0-1（AI 审核 r1）：extra 强排一行时会把标题挤成 15px 宽（只剩「可」字）⇒ 窄屏让 extra 独占一行 */
+  .ant-card-head .ant-card-head-wrapper { flex-wrap: wrap; row-gap: 6px; }
+  .ant-card-head .ant-card-head-title { flex: 1 1 100%; min-width: 0; overflow: visible; white-space: normal; }
+  .ant-card-head .ant-card-extra { flex: 1 1 100%; }
+  .ant-spin .ant-spin-text { line-height: 1.5; padding-top: 6px; white-space: nowrap; }
   .ant-card-head .ant-card-extra .ant-space { flex-wrap: wrap; }
   .ant-segmented { max-width: 100%; overflow-x: auto; }
   .ant-table table { table-layout: fixed; }
@@ -40,7 +47,11 @@ const CARD_MOBILE_CSS = `
   .mb-compact-grid { grid-template-columns: 1fr !important; }
   .mb-compact-row { grid-template-columns: 1fr auto 46px !important; }
   .mb-compact-row > span:nth-child(3) { display: none !important; }
-  .mb-trends-grid { grid-template-columns: repeat(auto-fit, minmax(0, 1fr)) !important; }
+  /* 2026-11-17 移动端趋势网格：**本行是 ≤575 的唯一真源（卡最小 320）**，桌面档由
+     TrendsTab.jsx 的内联 minmax(min(380px,100%),1fr) 决定，两者按断点分工、互不覆盖。
+     旧写法 repeat(auto-fit,minmax(0,1fr)) 会按卡片数量均分（9 张 ⇒ 每张 28.33px），
+     把人眼可见的「卡片」压成竖条；min() 保证容器不足 320 时退化为单列满宽。 */
+  .mb-trends-grid { grid-template-columns: minmax(min(320px, 100%), 1fr) !important; }
   .mb-source-left, .mb-source-right { min-width: 0 !important; flex-basis: 100% !important; }
   /* W13-A3：原件轴窄屏行块，摘要整行两行截断，不撑宽文档 */
   .mb-timeline-blocks { width: 100%; overflow: hidden; }

@@ -97,6 +97,20 @@ function TrendChart({ series, onOpenSource, height = 150 }) {
   for (let i = 1; i < xs.length; i++) minGap = Math.min(minGap, xs[i] - xs[i - 1])
   const twoRows = xs.length > 1 && minGap < 26
   const H = height + (twoRows ? 8 : 0)
+  // A1③（AI 审核 r1）：参考范围标签不得与点值标签叠字（1440 实测「3.5-9.5」压在「4.66」上）。
+  // 用与渲染同源的 user 单位估包围盒，重叠就丢弃该参考标签（虚线仍在，信息不丢）。
+  const valueBoxes = pts.map((p, i) => {
+    const txt = String(p.value ?? '')
+    const cx = x(i)
+    const cy = y(Number(p.num)) - 7
+    const halfW = (txt.length * 13 * 0.58) / 2
+    return { l: cx - halfW, r: cx + halfW, t: cy - 13, b: cy + 2 }
+  })
+  const refKept = refLabels.filter((l) => {
+    const halfW = l.text.length * 13 * 0.55
+    const box = { l: (w - pad.r - 4) - halfW, r: w - pad.r - 4, t: l.y - 13, b: l.y + 2 }
+    return !valueBoxes.some((v) => box.l < v.r && v.l < box.r && box.t < v.b && v.t < box.b)
+  })
   const tooTight = xs.length > 1 && minGap < 13
   const keepLabel = (i) => {
     if (i === 0 || i === xs.length - 1) return true
@@ -111,8 +125,8 @@ function TrendChart({ series, onOpenSource, height = 150 }) {
         </g>
       ))}
       {refLines}
-      {refLabels.map((l, i) => (
-        <text key={`rl${i}`} x={w - pad.r - 4} y={Math.min(Math.max(l.y, 8), height - pad.b - 1)} fontSize="7" fill="#6b7280" textAnchor="end" stroke="#fff" strokeWidth="1.6" paintOrder="stroke">{l.text}</text>
+      {refKept.map((l, i) => (
+        <text key={`rl${i}`} x={w - pad.r - 4} y={Math.min(Math.max(l.y, 8), height - pad.b - 1)} fontSize="13" fill="#6b7280" textAnchor="end" stroke="#fff" strokeWidth="1.6" paintOrder="stroke">{l.text}</text>
       ))}
       <path d={path} fill="none" stroke="#2563eb" strokeWidth="1.6" />
       {pts.map((p, i) => {
@@ -126,12 +140,12 @@ function TrendChart({ series, onOpenSource, height = 150 }) {
             {p.critical
               ? <><circle cx={x(i)} cy={y(Number(p.num))} r="5" fill="none" stroke="#111827" strokeWidth="1" /><circle cx={x(i)} cy={y(Number(p.num))} r="2.2" fill="#111827" /></>
               : <circle cx={x(i)} cy={y(Number(p.num))} r="3.2" fill={abnormal ? '#111827' : '#fff'} stroke="#111827" strokeWidth="1" />}
-            <text x={x(i)} y={y(Number(p.num)) - 7} fontSize="9" fill="#374151" textAnchor="middle">{p.value}</text>
+            <text x={x(i)} y={y(Number(p.num)) - 7} fontSize="13" fill="#374151" textAnchor="middle">{p.value}</text>
           </g>
         )
       })}
       {pts.map((p, i) => (keepLabel(i) ? (
-        <text key={`d${i}`} x={xs[i]} y={twoRows && i % 2 ? H - 10 : H - 2.5} fontSize="9" fill="#9ca3af" textAnchor="middle">{String(p.measuredAt || '').slice(5)}</text>
+        <text key={`d${i}`} x={xs[i]} y={twoRows && i % 2 ? H - 10 : H - 2.5} fontSize="13" fill="#9ca3af" textAnchor="middle">{String(p.measuredAt || '').slice(5)}</text>
       ) : null))}
     </svg>
   )
@@ -153,16 +167,18 @@ export default function TrendsTab({ card, onOpenSource }) {
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      {/* P0-1（AI 审核 r1）：antd Card.extra 强排一行会盖住「可选指标」标题 ⇒ 标题与工具组都改成可换行
+          flex、extra 允许收缩（minWidth:0），窄屏自动落到第二行，零遮挡。 */}
       <Card
         size="small"
-        title={<Space>可选指标 <Text type="secondary" style={{ fontSize: 12 }}>（{all.length} 项有 ≥2 次记录 · 已选 {selected.length}）</Text></Space>}
+        title={<div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', minWidth: 0 }}>可选指标 <Text type="secondary" style={{ fontSize: 12 }}>（{all.length} 项有 ≥2 次记录 · 已选 {selected.length}）</Text></div>}
         extra={
-          <Space>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'flex-end', maxWidth: '100%', minWidth: 0 }}>
             <Segmented size="small" value={mode} onChange={setMode} options={['网格', '对比']} />
             <Button size="small" onClick={() => setPicked(defaults)}>恢复默认 8 项</Button>
             <Button size="small" onClick={() => setPicked(all.map((t) => t.key))}>全选</Button>
             <Button size="small" onClick={() => setPicked([])}>清空</Button>
-          </Space>
+          </div>
         }
       >
         <Checkbox.Group
@@ -182,24 +198,38 @@ export default function TrendsTab({ card, onOpenSource }) {
         />
       </Card>
 
+      {/* 2026-11-17 移动端：下限用 min(…,100%) —— 手机可用宽小于下限时退化为单列满宽，
+          不再被 auto-fit 按卡片数量均分成几十 px 的竖条（旧写法 380px 硬下限 + 窄屏 !important 覆盖
+          实测得到 9 条 × 28.33px、卡宽 26px、svg 2px）。桌面档仍 380，移动档 320 由 CardPage 媒体查询负责。 */}
       {!shown.length ? <Empty description="一个都没选" /> : (
-        <div className="mb-trends-grid" style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit,minmax(${cols === 1 ? 560 : 380}px,1fr))`, gap: 12 }}>
-          {shown.map((t) => (
+        <div className="mb-trends-grid" style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit,minmax(min(${cols === 1 ? 560 : 380}px, 100%),1fr))`, gap: 12 }}>
+          {shown.map((t) => {
+            const pointsText = t.points.map((p) => `${String(p.measuredAt).slice(5)} ${p.value}`).join(' · ')
+            return (
             <Card
               key={t.key}
               size="small"
-              title={<Space>{t.name}<Text type="secondary" style={{ fontSize: 12 }}>{t.unit}</Text>
-                {t.core ? null : <Tag style={{ marginInlineEnd: 0 }}>次要</Tag>}</Space>}
+              style={{ minWidth: 0 }}
+              title={<div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>{t.name}<Text type="secondary" style={{ fontSize: 12 }}>{t.unit}</Text>
+                {t.core ? null : <Tag style={{ marginInlineEnd: 0 }}>次要</Tag>}</div>}
               extra={<Text type="secondary" style={{ fontSize: 12 }}>参考 {t.refRange || '—'}</Text>}
             >
-              <TrendChart series={t} onOpenSource={onOpenSource} />
-              <div style={{ marginTop: 4, fontSize: 11, color: '#6b7280' }}>
-                {t.points.map((p) => `${String(p.measuredAt).slice(5)} ${p.value}`).join(' · ')}
-                <Badge status="processing" style={{ marginInlineStart: 8 }} />
-                <Text type="secondary" style={{ fontSize: 11 }}>点圆点看原件</Text>
+              {/* 图表可读下限：卡被 grid 压窄时图表容器不许跟着缩到不可读（配 minWidth:0 的格子） */}
+              <div style={{ minWidth: 280 }}>
+                <TrendChart series={t} onOpenSource={onOpenSource} />
+              </div>
+              {/* 点列表：固定行高 + 2 行截断，全文放 title（信息不删只折叠），避免窄屏一字符一行 */}
+              <div style={{ marginTop: 4, fontSize: 11, color: '#6b7280', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <div title={pointsText} style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: '17px', minWidth: 0, flex: 1 }}>
+                  {pointsText}
+                </div>
+                <Text type="secondary" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>共 {t.points.length} 次</Text>
+                <Badge status="processing" />
+                <Text type="secondary" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>点圆点看原件</Text>
               </div>
             </Card>
-          ))}
+            )
+          })}
         </div>
       )}
     </Space>

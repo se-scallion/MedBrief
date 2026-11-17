@@ -10,13 +10,23 @@
 //   · 快捷键 Cmd/Ctrl+P 由 JS 拦截后转发给 iframe；弹窗没开时按快捷键 → 不打印工作台，
 //     而是自动打开本弹窗并提示「请在此打印」；
 //   · 兜底始终保留「新窗口打开」（不依赖任何 CSS 技巧）。
-import React, { useCallback, useEffect, useRef } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Modal, Space, Spin, Switch, Tag, Typography } from 'antd'
 
 const { Text } = Typography
 
 export default function CardPreview({ open, onClose, card, embedHtml, loading, mask, onMaskChange, iframeRef, onNotify }) {
   const innerRef = useRef(null)
+  // U6（AI 审核 r1）：打印预览窄屏双侧共浪费 72px（36px/侧），把 A4 双栏时间挤到孤立折行。
+  // 手机：外壳贴边全屏 + body padding 0，12px 交给内容容器一层；桌面维持原样。
+  const [isNarrow, setIsNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 575px)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 575px)')
+    const on = () => setIsNarrow(mq.matches)
+    on()
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
   const frame = iframeRef || innerRef
   // 弹窗 iframe 只吃 embed=1 版（无浮动打印条）。服务进程仍是旧模块时会返回带条的 html，
   // 这里做一次幂等剥离兜底，保证「右下角没有浮动打印条」而不依赖重启。
@@ -54,8 +64,8 @@ export default function CardPreview({ open, onClose, card, embedHtml, loading, m
     <Modal
       open={open}
       onCancel={onClose}
-      width="90vw"
-      style={{ maxWidth: 960, top: 16 }}
+      width={isNarrow ? '100vw' : '90vw'}
+      style={isNarrow ? { maxWidth: '100vw', margin: 0, top: 0, paddingBottom: 0 } : { maxWidth: 960, top: 16 }}
       title={
         <Space wrap>
           <span>打印预览（3 页 A4）</span>
@@ -65,7 +75,10 @@ export default function CardPreview({ open, onClose, card, embedHtml, loading, m
           </Text>
         </Space>
       }
-      styles={{ body: { background: '#eef1f4', padding: 12, borderRadius: 6 } }}
+      styles={{
+        container: isNarrow ? { padding: 0 } : {},
+        body: isNarrow ? { background: '#eef1f4', padding: 0, borderRadius: 0, paddingBottom: 'env(safe-area-inset-bottom)' } : { background: '#eef1f4', padding: 12, borderRadius: 6 },
+      }}
       footer={[
         <Space key="l" size={8} onClick={() => onMaskChange(!mask)}
           style={{ float: 'left', minHeight: 32, alignItems: 'center', cursor: 'pointer',
@@ -85,12 +98,12 @@ export default function CardPreview({ open, onClose, card, embedHtml, loading, m
           <Spin tip="生成中…" />
         </div>
       ) : card?.html ? (
-        <div style={{ background: 'transparent' }}>
+        <div style={{ background: 'transparent', padding: isNarrow ? 12 : 0 }}>
           <iframe
             ref={frame}
             title="问诊资料卡打印预览"
             srcDoc={frameHtml}
-            style={{ width: '100%', height: 'calc(100vh - 240px)', minHeight: 420, border: 'none', display: 'block' }}
+            style={{ width: '100%', height: isNarrow ? 'calc(100dvh - 200px)' : 'calc(100vh - 240px)', minHeight: 420, border: 'none', display: 'block' }}
           />
         </div>
       ) : (
