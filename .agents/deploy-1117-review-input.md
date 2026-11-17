@@ -2,7 +2,7 @@
 
 - 计划：`.agents/deploy-1117-plan.md`（v0.1，作者：代诊-Manager）
 - 项目根：`/Users/scallion/Documents/projects/MedBrief`
-- 代码/测试 HEAD = `6deaa99`（本笔只有计划 .md，**未对服务器做任何变更**，只做了 SSH 只读取证）
+- 代码/测试 HEAD = `adbafc9`（v0.1a 更新：账号线 admin/users 已全闭环入库，见下攻击点 3；原 `6deaa99` 快照过期）。本笔只有计划 .md，**未对服务器做任何变更**，只做了 SSH 只读取证。
 - 审核者：独立 Bot「代诊-报告」（不在本会话上下文）；只读，不改计划/代码/不碰服务器；只许写 `.agents/deploy-1117-review-r1.md`
 - 完成标准：§8.3 三块（总判三档之一 / 逐条闭环核对表 / 特别攻击点逐条回答 + 复跑命令清单）
 
@@ -15,7 +15,7 @@
 
 1. **A1/A6 依赖缺口是否判对**：服务器**无 Node**（实测 `node -v` 失败、无 nvm），且 MedBrief 强依赖本机 8008 OCR / 8011 MedRecognition / 8045 视觉（证据 `server.mjs:1708`、`lib/captchaSolver.mjs:14`），服务器三者全无。请核：C2「三识别服务上云」判"延后+触发条件"（而非 MVP 必做）是否正确？有没有可能"只读版"其实根本不可用（比如卡面渲染也依赖某个服务）？请给可复跑核验命令。
 2. **A2/A3 部署形态与资源**：80/443 被 1Panel-openresty 容器占、iptables INPUT 默认 DROP、可用内存仅 **1.0G**、磁盘剩 8.2G。请攻击"1Panel 站点 + 反代 127.0.0.1:5174 + systemd"这套形态：内存 1.0G 够不够 Node + 现有 MySQL8.4/ES9.4/Redis 共存？有没有我漏的端口/反代/证书雷（如 1Panel 站点是否只能绑域名、能否纯 IP）？
-3. **B5 认证必修是不是硬门**：主理人已指出账号线 `server.mjs` 有 `!AUTH_ENABLED` 时无鉴权返回手机号+审计的后门、恒真式 `(AUTH_ENABLED || !AUTH_ENABLED)`、5196 测试残留假红，三条归「代诊-账号」修（尚未闭环）。计划把它列为 C6 硬门"必修闭环前不许部署"——请判这个门对不对，以及部署计划是否还漏了别的 auth 相关雷（SECRET 管理、cookie domain、公网 CSRF 等）。
+3. **B5 认证必修是不是硬门**：主理人曾指出账号线 `server.mjs` 有 `!AUTH_ENABLED` 无鉴权后门、恒真式 `(AUTH_ENABLED || !AUTH_ENABLED)`、5196 测试残留假红三条——**这些现已闭环**（`395156d`/`2b32096`/`adbafc9`；我实测：恒真式消除、`git show HEAD:server.mjs|grep -c api/admin/users`=3、工作树干净、5174 head=`adbafc9` auth=on、`node tests/verify-auth.mjs` **43/0 exit 0**）。计划把它列为 C6 硬门"必修闭环前不许部署"——请判这个门对不对（现是否满足），以及部署计划是否还漏了别的 auth 相关雷（SECRET 管理、cookie domain、公网 CSRF 等）。
 4. **A4/A5 配置无来源 + 数据隐私**：项目无 Dockerfile/compose/.env 样例，端口/数据路径全是本地默认；data/ 221M 含 98 份未脱敏姓名报告 + medbrief.db（blobs 82MB）。请攻击：计划里的"候选默认"（Node22/5174/`/opt/medbrief`）有没有凭空发明的部分？公网 + auth on 是否足够，还是必须加 IP 白名单/VPN？数据迁移步骤（rsync --checksum）够不够防损坏/泄露？
 5. **阶段 0"完成以上任务之后"的边界**：我把用户这句话理解为"D0-1~4 全闭环才部署"，但同时又写了"若用户明确先上只读版可降 D0 优先级"——请判：这是不是自相矛盾/给自己开后门？正确处置是什么？
 6. **四段结构 + 留砍延后**：A/B/C/D 顺序、证据锚点（命令/实测）、延后项触发条件是否齐全？有没有该砍没砍、该延后没写触发条件的项？
