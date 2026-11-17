@@ -1,4 +1,4 @@
-// 报告库三处 UI 门禁（P1–P14，规格 .agents/reports-panel-ui-1117-spec.md v1.1）
+// 报告库三处 UI 门禁（P1–P15，规格 .agents/reports-panel-ui-1117-spec.md v1.2；P15=门禁自检 tests/verify-reports-panel-ui-selfcheck.mjs）
 //
 // 用户 2026-11-17 报三处：①手机点原件白屏 ②删除按钮显隐反了+图标错 ③眼睛（查看）可省。
 // 本测试起独立服务（端口 5191）+ 临时库 + 造图片/PDF 各一份原件 + 两账号登录，真浏览器两视口跑 P1–P14。
