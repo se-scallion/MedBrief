@@ -6,6 +6,10 @@ export async function jfetch(path, opts = {}) {
     const err = new Error(body?.error || body?.message || `HTTP ${res.status}`)
     err.body = body
     err.status = res.status
+    // 会话失效：通知 App 跳登录页（登录接口自身的 401 不触发，避免登录页自己把自己踢走）
+    if (res.status === 401 && !path.startsWith('/api/auth/login')) {
+      try { window.dispatchEvent(new CustomEvent('mb:unauthorized')) } catch {}
+    }
     throw err
   }
   return body

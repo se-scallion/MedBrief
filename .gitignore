@@ -30,3 +30,4 @@ data/backups/
 # 收尾：一次性探针/旧状态快照（只取证不回灌）与挂号开关
 .agents/_backup/
 data/guahao-browser.flag
+.mb-secret

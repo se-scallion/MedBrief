@@ -46,7 +46,7 @@ import {
   sha256Bytes, findDuplicate, stitchVertically,
   parseLabRows, buildReportFingerprint, groupForDoctorCard, summarizeForCard, dedupeStitchRows, mergeChunkRows,
 } from './lib/reportIntake.mjs'
-import { loadPatient, savePatient, buildCard } from './lib/intakeCard.js'
+import { loadPatient, savePatient, loadPatientFor, savePatientFor, buildCard } from './lib/intakeCard.js'
 import { saveBlob, saveBlobIfAbsent, getBlob, listBlobs, linkBlobToReport, deleteBlob, blobStats } from './lib/blobStore.mjs'
 import { appendCorrections, listCorrections, correctionsStats } from './lib/correctionsStore.mjs'
 import { readStore, writeStore } from './lib/reportStore.mjs'
@@ -67,9 +67,34 @@ import { isService as medrecOn, extractImage as medrecExtractImage, extractText 
 import { bump as bumpRecognitionHit, summary as recognitionSummary } from './lib/recognitionHits.mjs'
 import { createGuahao114Service } from './lib/guahao114Service.js'
 import { mountMedData } from './meddata/mount.mjs'
+import * as accounts from './lib/accounts.mjs'
+import * as authn from './lib/auth.mjs'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+
+// 会话密钥：优先环境变量；否则读本地 .mb-secret（600，gitignore，绝不落 data/）
+if (!process.env.MB_SESSION_SECRET) {
+  try {
+    const sf = path.join(__dirname, '.mb-secret')
+    if (fs.existsSync(sf)) {
+      for (const line of fs.readFileSync(sf, 'utf8').split('\n')) {
+        const m = line.match(/^\s*MB_SESSION_SECRET\s*=\s*(.+?)\s*$/)
+        if (m) { process.env.MB_SESSION_SECRET = m[1]; break }
+      }
+    }
+  } catch {}
+}
+// 会话依赖启动自检（q1 Q1-G5：缺 SESSION_SECRET → 立即退出，不静默降级）
+try {
+  const raw = String(process.env.MB_SESSION_SECRET || '')
+  const list = raw.split(',').map((s) => s.trim()).filter(Boolean)
+  if (!list.length || list.some((s) => s.length < 32)) throw new Error('MB_SESSION_SECRET 必须设置且每段 ≥32 字符')
+} catch (e) {
+  console.error(`[MedBrief] 会话依赖不可用：${e.message}`)
+  process.exit(1)
+}
+accounts.cleanupOldAttempts(7)
 
 const PORT = parseInt(process.env.PORT || '5174', 10)
 // 进程启动信息：用于判断「长驻进程是否落后于代码」（配合 /api/health.head 比对 git HEAD）
@@ -160,14 +185,24 @@ function runBridge(payload) {
   })
 }
 
-function setCors(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*')
+function setCors(_req, res) {
+  // 带 cookie 的会话不能用 `*`；回显同源 Origin（无 Origin 头时不设，同源浏览器请求不需要）
+  const req = _req || res.__mbReq
+  const origin = req?.headers?.origin
+  const host = req?.headers?.host
+  if (origin && host) {
+    try {
+      const u = new URL(origin)
+      if (u.host === host) res.setHeader('Access-Control-Allow-Origin', origin)
+    } catch {}
+  }
+  res.setHeader('Access-Control-Allow-Credentials', 'true')
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, DELETE')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
 }
 
 function sendJson(res, statusCode, data) {
-  setCors(res)
+  setCors(null, res)
   res.statusCode = statusCode
   res.setHeader('Content-Type', 'application/json; charset=utf-8')
   res.end(JSON.stringify(data))
@@ -192,7 +227,7 @@ function serveStatic(req, res, filePath) {
   }
 
   const contentType = mimeMap[ext] || 'application/octet-stream'
-  setCors(res)
+  setCors(null, res)
   res.statusCode = 200
   res.setHeader('Content-Type', contentType)
   fs.createReadStream(filePath).pipe(res)
@@ -211,7 +246,8 @@ if (process.env.MEDBRIEF_REPORTS_FILE && !fs.existsSync(REPORTS_FILE)) {
 }
 
 const server = http.createServer(async (req, res) => {
-  setCors(res)
+  res.__mbReq = req // setCors 从 res 反查同源判定（sendJson 只拿得到 res）
+  setCors(req, res)
 
   if (req.method === 'OPTIONS') {
     res.statusCode = 204
@@ -221,6 +257,112 @@ const server = http.createServer(async (req, res) => {
 
   const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`)
   const pathname = parsedUrl.pathname
+
+  // ==================== 鉴权守卫（账号系统方案 v0.8 §1）====================
+  // 放在 pathname 解析之后、OBSERVED bump / 任何业务路由之前；默认拒绝，公开路由白名单。
+  const AUTH_ENABLED = process.env.MEDBRIEF_AUTH !== 'off'
+  const isLoopback = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket?.remoteAddress)
+
+  // --- /api/auth/* 登录态接口（公开，自带限流）---
+  if (AUTH_ENABLED && pathname === '/api/auth/login' && req.method === 'POST') {
+    try {
+      // 登录守卫在 body 统一收集（下方）之前，自己读一次流
+      const chunks = []
+      for await (const c of req) chunks.push(c)
+      let body = {}
+      try { body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') } catch {}
+      req.__rawBody = Buffer.concat(chunks).toString('utf8') // 防止下游再读
+      const result = await authn.login(req, body?.phone, body?.password)
+      if (result.backoff > 0) await new Promise((r) => setTimeout(r, result.backoff * 1000))
+      if (!result.ok) {
+        res.setHeader('Retry-After', String(result.retryAfter || Math.ceil(result.backoff || 1)))
+        return sendJson(res, result.status, { ok: false, error: result.error })
+      }
+      res.setHeader('Set-Cookie', result.cookie)
+      return sendJson(res, 200, { ok: true, user: result.user })
+    } catch (e) { return sendJson(res, 500, { ok: false, error: `登录失败：${e.message}` }) }
+  }
+  if (AUTH_ENABLED && pathname === '/api/auth/logout' && req.method === 'POST') {
+    res.setHeader('Set-Cookie', authn.clearSessionCookie())
+    return sendJson(res, 200, { ok: true })
+  }
+
+  // --- 公开路由：health / auth / 静态页面资源；其余 /api/** 都要登录 ---
+  const PUBLIC_PATHS = (p) => p === '/api/health' || p.startsWith('/api/auth/') ||
+    !p.startsWith('/api/') // 非 /api 走静态白名单（见 9c-gate），不在此处拦
+
+  let mbUser = null // 当前登录用户（handler 里做 owner 校验时用）
+  // 测试专用身份：仅 loopback + 设置了 MB_TEST_BEARER + 请求带匹配 Bearer。
+  // 这是给硬编码 5174 的回归测试用的（D3 认证故事）；生产不设该变量即完全无效。
+  const testBearer = process.env.MB_TEST_BEARER
+  if (testBearer && isLoopback && req.headers?.authorization === `Bearer ${testBearer}`) {
+    mbUser = accounts.listUsers().find((u) => u.phone === '13228372097') || null
+  }
+  if (AUTH_ENABLED && pathname.startsWith('/api/') && !PUBLIC_PATHS(pathname)) {
+    if (!mbUser) {
+      const session = await authn.readSession(req)
+      mbUser = authn.currentUser(session)
+    }
+    if (!mbUser) return sendJson(res, 401, { ok: false, error: '请先登录' })
+    // MEDBRIEF_TEST_USER：仅 loopback + 非 production 的测试注入（D3 P1-1）
+    // 若设置且当前无有效会话，用该手机号的 user 作为主体（只在测试进程设）。
+  }
+  if (!AUTH_ENABLED && pathname.startsWith('/api/')) {
+    // off 旁路：仅 loopback 允许；LAN 仍要登录
+    if (!isLoopback) {
+      const session = await authn.readSession(req)
+      if (!authn.currentUser(session)) return sendJson(res, 401, { ok: false, error: '请先登录' })
+    }
+  }
+  req.mbUser = mbUser // 供下游 handler 做 owner 校验
+
+  // --- 功能权限判定（精确 > 最长前缀 > 默认拒绝；admin 全通）---
+  // 只在 AUTH_ENABLED 时生效。card_export / guahao 是逐人授权位。
+  if (AUTH_ENABLED && mbUser && mbUser.role !== 'admin') {
+    const p = pathname
+    const m = req.method
+    let need = null
+    // guahao：全部挂号/监控/114 会话接口
+    if (p.startsWith('/api/guahao/')) need = 'guahao'
+    // card_export：导出/打印/出卡/摘要/交换包读、原件
+    else if (p === '/api/intake/card' ||
+             p.startsWith('/api/intake/blob/') || p === '/api/brief/visit-summary' ||
+             p === '/api/brief/bundle' || p === '/api/meddata/summary') need = 'card_export'
+    // patient 档案：登录用户各自读写自己那份（r6-add P0-2 分桶后已隔离，不再要求 card_export）
+    // admin-only：报告写以外的管理面、OCR 打爆面、病历导入
+    else if (p === '/api/recognition-hits' || p === '/api/intake/parse' ||
+             p === '/api/intake/ocr' || p === '/api/ai-docread' || p === '/api/intake/stitch' ||
+             p === '/api/brief/import' || p === '/api/guahao/reset' ||
+             (p.startsWith('/api/guahao/114/') && m === 'POST') ||
+             p.startsWith('/api/admin/')) need = 'admin'
+    if (need === 'admin') return sendJson(res, 403, { ok: false, error: '需要管理员权限' })
+    if (need && !authn.can(mbUser, need)) return sendJson(res, 403, { ok: false, error: '功能未授权，请联系管理员开通' })
+
+    // owner 校验：报告详情/写路径，user 只能碰自己的；admin 豁免（守卫层提前拦，handler 不必再判）
+    const rm = pathname.match(/^\/api\/intake\/reports\/([^/]+)/)
+    if (rm && mbUser.role !== 'admin') {
+      const reportId = decodeURIComponent(rm[1])
+      if (!authn.owns(mbUser, reportId)) return sendJson(res, 403, { ok: false, error: '无权访问此报告' })
+    }
+    // corrections 子路由（/reports/:id/corrections）已被上面正则覆盖
+  }
+
+  // /api/auth/me（在守卫之后，能拿到 mbUser）
+  if (pathname === '/api/auth/me' && req.method === 'GET') {
+    if (!AUTH_ENABLED) {
+      let u = authn.currentUser(await authn.readSession(req))
+      // auth=off + 本机回环：注入测试管理员身份（全权限），让前端 UI 回归测试能正常渲染。
+      // LAN 请求不走这里（守卫层已要求登录）；生产不设 off 则此分支永不可达。
+      if (!u && isLoopback) {
+        const adm = accounts.listUsers().find((x) => x.role === 'admin')
+        if (adm) u = accounts.publicUser(adm)
+      }
+      return sendJson(res, 200, { ok: !!u, user: u, auth: 'off', permissions: u ? { card_export: true, guahao: true, role: u.role } : null })
+    }
+    const u = mbUser || authn.currentUser(await authn.readSession(req))
+    if (!u) return sendJson(res, 401, { ok: false, error: '请先登录' })
+    return sendJson(res, 200, { ok: true, user: u, permissions: { role: u.role, card_export: !!u.card_export, guahao: !!u.guahao } })
+  }
 
   // M3 前置观测：记录「这条识别请求走的是 legacy 还是 8011」。
   // 只 bump 一次、不进入任何判定；异常由 bump 内部吞掉，绝不影响响应。
@@ -251,6 +393,7 @@ const server = http.createServer(async (req, res) => {
       startedAt: SERVER_STARTED_AT,
       app: 'medbrief',
       name: 'MedBrief Standalone Workbench',
+      auth: process.env.MEDBRIEF_AUTH === 'off' ? 'off' : 'on',
       port: PORT,
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
@@ -543,7 +686,7 @@ function getNextReleaseCountdown() {
         sendJson(res, 404, { ok: false, error: '验证码图片不存在或已过期' })
         return
       }
-      setCors(res)
+      setCors(req, res)
       res.statusCode = 200
       res.setHeader('Content-Type', 'image/png')
       res.setHeader('Cache-Control', 'no-store')
@@ -987,6 +1130,12 @@ function getNextReleaseCountdown() {
   //     数据只来自用户导入；不读 MedData 任何库（MedData 只当 OCR 引擎）。
   if (req.method === 'GET' && pathname === '/api/intake/reports') {
     const store = readReports()
+    // 账号系统 v0.8：user 只能看自己 owner 的报告；admin 豁免。列表与回收站都过滤。
+    const viewer = req.mbUser
+    const ownedSet = viewer && viewer.role !== 'admin' ? new Set(accounts.listOwners().filter((o) => o.user_id === viewer.id).map((o) => o.report_id)) : null
+    const visible = (arr) => ownedSet ? arr.filter((r) => ownedSet.has(r.id)) : arr
+    const reportsView = visible(store.reports)
+    const trashedView = visible(store.trashed)
     // ?trash=1 → 只列**回收站**里的（软删除）；默认只列活报告。两边的行形状完全一致（同一套清洗/原件反查），
     // 回收站里看到的就是「恢复后原样回来」的那一份。
     const wantTrash = parsedUrl.searchParams.get('trash') === '1'
@@ -1002,11 +1151,11 @@ function getNextReleaseCountdown() {
     }
     sendJson(res, 200, {
       ok: true,
-      total: (wantTrash ? store.trashed : store.reports).length,
-      trashCount: store.trashed.length,
+      total: (wantTrash ? trashedView : reportsView).length,
+      trashCount: trashedView.length,
       trash: wantTrash,
       normalized,
-      reports: attachBlobIds(wantTrash ? store.trashed : store.reports).map((r) => ({
+      reports: attachBlobIds(wantTrash ? trashedView : reportsView).map((r) => ({
         ...r, rows: shape(r), images: undefined, text: undefined,
         // hasImage 必须是**真判据**：此前写的是 `!!r.sha256`（有指纹就算有图），
         // 而 rep_mwg22hwaloc 正是 sha256 有、字节不在 —— 这个假信号让「能不能回看原件」判不出来。
@@ -1319,14 +1468,21 @@ function getNextReleaseCountdown() {
 
   // 10a. 病友档案（资料卡的抬头）：只收非身份字段，身份类一律不收
   if (req.method === 'GET' && pathname === '/api/intake/patient') {
-    sendJson(res, 200, { ok: true, patient: loadPatient() })
+    // 账号系统：按当前用户读自己那份档案（admin 读 owner 的）；无登录时兼容单文件
+    const viewer = req.mbUser
+    const patient = viewer ? loadPatientFor(viewer.role === 'admin' ? (viewer.id) : viewer.id) : loadPatient()
+    // admin 默认没自己的档案 → 退回 owner 那份（第一份），便于管理员核对
+    const shown = (viewer && viewer.role === 'admin' && !patient.name) ? loadPatient() : patient
+    sendJson(res, 200, { ok: true, patient: shown })
     return
   }
 
   if (req.method === 'POST' && pathname === '/api/intake/patient') {
     const body = await readJsonBody(req)
     try {
-      const patient = savePatient(body || {})
+      // 账号系统：只写自己那份档案（隔离：A 改后 B 读不变）
+      const viewer = req.mbUser
+      const patient = viewer ? savePatientFor(viewer.id, body || {}) : savePatient(body || {})
       // savePatient 内部已 delete idCard/phone/address；这里回执明确告知，避免前端以为存进去了
       sendJson(res, 200, { ok: true, patient, notStored: ['idCard', 'phone', 'address'] })
     } catch (e) {
@@ -1375,8 +1531,24 @@ function getNextReleaseCountdown() {
       // embed=1：给「打印预览弹窗」里的 iframe 用 —— 不输出浮动打印条（避免与弹窗底部按钮重复、压住表格）。
       // 默认不带，纯净页/新窗口打开仍是完整可打印版本。
       const embed = parsedUrl.searchParams.get('embed') === '1'
-      const { reports } = readReports()
-      const card = buildCard({ reports: attachBlobIds(reports), mask, embed })
+      const { reports: allReports } = readReports()
+      // 账号系统：user 只出自己 owner 的报告 + 注入自己的档案；admin ?owner= 指定或用全库
+      const viewer = req.mbUser
+      let reports = allReports
+      let patient = null
+      if (viewer && viewer.role !== 'admin') {
+        const owned = new Set(accounts.listOwners().filter((o) => o.user_id === viewer.id).map((o) => o.report_id))
+        reports = allReports.filter((r) => owned.has(r.id))
+        patient = loadPatientFor(viewer.id)
+      } else if (viewer && viewer.role === 'admin') {
+        const ownerParam = parsedUrl.searchParams.get('owner')
+        if (ownerParam) {
+          const owned = new Set(accounts.listOwners().filter((o) => o.user_id === ownerParam).map((o) => o.report_id))
+          reports = allReports.filter((r) => owned.has(r.id))
+          patient = loadPatientFor(ownerParam)
+        }
+      }
+      const card = buildCard({ reports: attachBlobIds(reports), mask, embed, patient })
       sendJson(res, 200, card) // { ok, masked, patient, counts, summary, groups, html }
     } catch (e) {
       sendJson(res, 500, { ok: false, error: `生成资料卡失败：${e.message}` })
@@ -1408,6 +1580,8 @@ function getNextReleaseCountdown() {
       const buf = Buffer.from(m ? m[2] : raw, 'base64')
       if (!buf.length) return sendJson(res, 400, { ok: false, error: '解码后为空' })
       const saved = saveBlob(buf, { kind: body.kind || 'original', type: mime, originPath: body.originPath || '', width: body.width || null, height: body.height || null })
+      // r6-add P0-1：上传者归属（刚上传尚未被报告引用时也能取回自己的原件）
+      try { if (req.mbUser?.id) accounts.setBlobOwner(saved.id, req.mbUser.id) } catch (e) { console.error('[auth] 写 blob 归属失败', e.message) }
       sendJson(res, 200, { ok: true, ...saved })
     } catch (e) {
       sendJson(res, 500, { ok: false, error: `存原件失败：${e.message}` })
@@ -1428,6 +1602,10 @@ function getNextReleaseCountdown() {
     const id = decodeURIComponent(pathname.slice('/api/intake/blob/'.length))
     const row = getBlob(id)
     if (!row) return sendJson(res, 404, { ok: false, error: 'blob 不存在' })
+    // r6-add P0-1：非 admin 只能取自己的（被本人报告引用 或 本人上传）
+    if (process.env.MEDBRIEF_AUTH !== 'off' && req.mbUser && !authn.ownsBlob(req.mbUser, id)) {
+      return sendJson(res, 403, { ok: false, error: '无权访问此原件' })
+    }
     res.writeHead(200, { 'content-type': row.type || 'application/octet-stream', 'content-length': row.data.length, 'cache-control': 'no-store' })
     res.end(row.data)
     return
@@ -1738,6 +1916,11 @@ function getNextReleaseCountdown() {
       }
       store.reports.push(rec)
       writeReports(store)
+      // 账号系统：新报告归属 = 导入者（admin 导入也记自己，便于一致过滤；MCP 走 token 绑定主体）
+      try {
+        const ownerUid = req.mbUser?.id || accounts.getUserByPhone('13200000000')?.id
+        if (ownerUid) accounts.setOwner(rec.id, ownerUid, { source: 'ingest', reason: 'user import', actorUserId: req.mbUser?.id || null })
+      } catch (e) { console.error('[auth] 写报告归属失败', e.message) }
       // 新报告会改变「本库历史」：类型项目集索引与已知医院名单都要失效，否则下一张报告还按旧库判。
       _typeRowIndexCache = null
       _knownHospitalsCache = null
@@ -1763,7 +1946,9 @@ function getNextReleaseCountdown() {
   if (req.method === 'GET' || req.method === 'HEAD') {
     const distDir = path.join(__dirname, 'web', 'dist-next')
     const legacyHtml = path.join(__dirname, 'index.html')
-    const rel = pathname === '/' ? '' : decodeURIComponent(pathname).replace(/^\//, '')
+    // r6 §1.4：rel 解码容错（畸形 %zz 不能把请求打成 500 噪音）
+    let rel = ''
+    try { rel = pathname === '/' ? '' : decodeURIComponent(pathname).replace(/^\//, '') } catch { rel = '\0bad-encoding' }
 
     // 9a. 新壳的静态资源（/assets/*.js 等）必须先命中，否则会误落到 SPA 回退返回 HTML
     if (rel && !rel.startsWith('..')) {
@@ -1774,7 +1959,7 @@ function getNextReleaseCountdown() {
       }
     }
 
-    // 9b. 旧工作台兜底入口
+    // 9b. 旧工作台兜底入口（admin 鉴权在守卫层完成；此处只做静态服务）
     if (pathname === '/legacy' || pathname.startsWith('/legacy/')) {
       if (fs.existsSync(legacyHtml)) {
         serveStatic(req, res, legacyHtml)
@@ -1782,12 +1967,22 @@ function getNextReleaseCountdown() {
       }
     }
 
-    // 9c. 项目内其它真实静态文件（如 docs 里的图片）
+    // 9c【已删除】—— 原「项目内其它真实静态文件」会把仓库里任意文件（/data/reports.json、
+    //   83MB 原件库、/.git/config、/.agents/MEMORY.md）直接送出。v0.8 方案 §1.4 强制删除。
+
+    // 9c-gate. 静态边界（账号系统方案 §1.4）：只服务 dist-next 与显式公开入口；
+    //   仓库内真实存在但不在 dist-next 的文件一律 403（判在解析后的真实路径上，
+    //   realpathSync 解大小写/中段 ..；解码后的 rel 解 %64ata；黑名单只是解释器不是边界）。
+    if (rel === '\0bad-encoding') return sendJson(res, 403, { ok: false, error: 'forbidden' })
     if (rel && !rel.startsWith('..')) {
-      const filePath = path.join(__dirname, rel)
-      if (filePath.startsWith(__dirname) && fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
-        serveStatic(req, res, filePath)
-        return
+      const resolved = path.resolve(__dirname, rel)
+      let real = resolved
+      try { real = fs.realpathSync(resolved) } catch {}
+      const inDist = real === distDir || real.startsWith(distDir + path.sep)
+      const denyExt = /\.(db|json|mjs|cjs|ts|tsx|md|log)$/i.test(real)
+      const denyDir = /(^|\/)(data|docs|tests|lib|mcp|tools|\.git|\.agents|node_modules)\//.test(real)
+      if ((!inDist && fs.existsSync(real) && fs.statSync(real).isFile()) || denyExt || denyDir) {
+        return sendJson(res, 403, { ok: false, error: 'forbidden' })
       }
     }
 
@@ -1809,6 +2004,7 @@ function getNextReleaseCountdown() {
 })
 
 server.listen(PORT, '0.0.0.0', () => {
+  if (process.env.MEDBRIEF_AUTH === 'off') console.error('[MedBrief] ⚠️ 鉴权已全局关闭（MEDBRIEF_AUTH=off），仅本机回环可裸访问；不要在生产/局域网这样运行！')
   console.log(`[MedBrief] 服务已在独立端口 ${PORT} 启动: http://127.0.0.1:${PORT}`)
   // 一眼看出这次跑的是真库还是副本（测试进程会设 MEDBRIEF_REPORTS_FILE 指向 /tmp 的副本）
   console.log(`[MedBrief] reportsFile=${REPORTS_FILE}${process.env.MEDBRIEF_REPORTS_FILE ? '（MEDBRIEF_REPORTS_FILE 覆盖，非真实库）' : ''}`)

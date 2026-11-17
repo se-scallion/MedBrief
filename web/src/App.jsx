@@ -17,6 +17,8 @@ import SessionPage from './pages/SessionPage.jsx'
 import IntakePage from './pages/IntakePage.jsx'
 import ReportsPanel from './pages/intake/ReportsPanel.jsx'
 import CardPage from './pages/CardPage.jsx'
+import LoginPage from './pages/LoginPage.jsx'
+import { jfetch, jget } from './api.js'
 
 const { Header, Content, Footer, Sider } = Layout
 const { Text } = Typography
@@ -41,6 +43,10 @@ const APP_MOBILE_CSS = `
   .mb-header-left > .ant-space-item:nth-child(2) { display: none !important; }
   .mb-header-left { margin-left: 36px; }
   .mb-nav-trigger { display: inline-flex !important; }
+  /* 账号系统：窄屏隐藏手机号文字，压缩右侧按钮，防止 header 变高打断 375 布局断言 */
+  .mb-user-phone { display: none !important; }
+  .mb-header-right { gap: 4px !important; }
+  .mb-logout, .mb-log-btn { padding-inline: 6px !important; font-size: 12px !important; }
   .ant-layout-content { padding: 12px !important; }
   .ant-card-head { flex-wrap: wrap; height: auto; }
   .ant-card-head .ant-card-extra { max-width: 100%; margin-inline-start: 0; overflow: hidden; }
@@ -69,6 +75,17 @@ export default function App() {
   const { message } = AntApp.useApp()
   const [logs, setLogs] = useState([])
   const [logOpen, setLogOpen] = useState(false)
+  // 账号系统：null=加载中，false=未登录，{user,permissions}=已登录
+  const [me, setMe] = useState(null)
+  const loadMe = useCallback(() => {
+    jget('/api/auth/me').then((j) => setMe({ user: j.user, permissions: j.permissions || {} })).catch(() => setMe(false))
+  }, [])
+  useEffect(() => { loadMe() }, [loadMe])
+  useEffect(() => {
+    const onUnauthorized = () => setMe(false)
+    window.addEventListener('mb:unauthorized', onUnauthorized)
+    return () => window.removeEventListener('mb:unauthorized', onUnauthorized)
+  }, [])
 
   const pushLog = useCallback((msg, tone = 'info') => {
     const time = new Date().toLocaleTimeString('zh-CN', { hour12: false })
@@ -90,21 +107,27 @@ export default function App() {
       return u.searchParams.get('sub') === want || u.searchParams.get('tab') === want ? want : undefined
     } catch { return undefined }
   }
-  const PAGES = [
-    { key: 'intake', label: '资料录入', group: '资料', node: <IntakePage /> },
-    { key: 'reports', label: '报告库', group: '资料', node: <ReportsPanel /> },
-    { key: 'card', label: '资料卡', group: '资料', node: <CardPage /> },
-    { key: 'brief', label: '病历交换包', group: '资料', node: <BriefPage /> },
-    { key: 'monitor', label: '出诊监控', group: '出诊', node: <MonitorPage /> },
+  const ALL_PAGES = [
+    { key: 'intake', label: '资料录入', group: '资料', node: <IntakePage />, perm: null },
+    { key: 'reports', label: '报告库', group: '资料', node: <ReportsPanel />, perm: null },
+    { key: 'card', label: '资料卡', group: '资料', node: <CardPage />, perm: 'card_export' },
+    { key: 'brief', label: '病历交换包', group: '资料', node: <BriefPage />, perm: 'card_export' },
+    { key: 'monitor', label: '出诊监控', group: '出诊', node: <MonitorPage />, perm: 'guahao' },
     // 发起挂号 + 预约记录 = 同一件事的前后半段，合并成一项（页内两段），见 pages/BookingPage.jsx
-    { key: 'booking', label: '挂号与预约', group: '出诊', node: <BookingPage initialSub={subOf('orders')} /> },
-    { key: 'session', label: '114 会话', group: '出诊', node: <SessionPage /> },
+    { key: 'booking', label: '挂号与预约', group: '出诊', node: <BookingPage initialSub={subOf('orders')} />, perm: 'guahao' },
+    { key: 'session', label: '114 会话', group: '出诊', node: <SessionPage />, perm: 'guahao' },
   ]
+  const perms = (me && me.permissions) || {}
+  const isAdmin = perms.role === 'admin'
+  // 账号系统：按权限过滤菜单；隐藏≠安全，后端守卫仍会 403
+  const PAGES = ALL_PAGES.filter((p) => !p.perm || isAdmin || perms[p.perm])
   const readKeyFromUrl = () => {
     const u = new URL(window.location.href)
     const raw = u.searchParams.get('tab') || u.hash.replace('#', '') || (u.searchParams.has('merged') ? 'guahao' : '')
     const k = KEY_ALIAS[raw] || raw
-    return PAGES.some((p) => p.key === k) ? k : 'intake'
+    // 用 ALL_PAGES 判断（而非按权限过滤后的 PAGES）：登录态还在加载时 PAGES 尚未包含需授权页，
+    // 否则 ?tab=card 会被误判成 intake 并锁死（账号系统回归实测踩到）。
+    return ALL_PAGES.some((p) => p.key === k) ? k : 'intake'
   }
   const [active, setActive] = useState(readKeyFromUrl)
   const [collapsed, setCollapsed] = useState(false)
@@ -137,6 +160,15 @@ export default function App() {
   }))
   const current = PAGES.find((p) => p.key === active) || PAGES[0]
 
+  // 账号系统：登录态守卫（加载中 / 未登录 → 登录页）
+  if (me === null) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>正在加载…</div>
+  if (me === false) return <LoginPage onLogged={loadMe} />
+
+  const doLogout = async () => {
+    try { await jfetch('/api/auth/logout', { method: 'POST' }) } catch {}
+    setMe(false)
+  }
+
   return (
     <NavContext.Provider value={{ go, active }}>
     <LogContext.Provider value={logValue}>
@@ -162,12 +194,11 @@ export default function App() {
             <span style={{ color: '#fff', fontSize: 18, fontWeight: 700, letterSpacing: 1 }}>MedBrief</span>
             <Text style={{ color: '#94a3b8', fontSize: 12 }}>挂号与问诊资料整理工作台</Text>
           </Space>
-          <Space>
-            <Button
-              size="small"
-              onClick={() => setLogOpen(true)}
-            >
-              事件日志
+          <Space className="mb-header-right">
+            <Text className="mb-user-phone" style={{ color: '#94a3b8', fontSize: 12 }}>{me.user?.phone || ''}{isAdmin ? '（管理员）' : ''}</Text>
+            <Button className="mb-logout" size="small" onClick={doLogout}>退出</Button>
+            <Button className="mb-log-btn" size="small" onClick={() => setLogOpen(true)}>
+              日志
               <Badge count={logs.length} size="small" style={{ marginLeft: 6 }} showZero={false} />
             </Button>
           </Space>

@@ -1,0 +1,2 @@
+{ "name": "medbrief-vendor", "private": true, "type": "module",
+  "dependencies": { "iron-session": "9.1.0" } }
