@@ -15,6 +15,8 @@ data/meddata-mirror/
 data/intake/
 # 用户导入的报告原件索引与结构化结果（本机数据，不入库）
 data/reports.json
+# 阶段 0 D0-5⑦：构建机产出的部署凭证（含构建机主机名/用户，不入库；随 dist-next 投递）
+.deploy-commit
 # 报告原件 SQLite（本机数据，不入库）
 data/medbrief.db
 data/medbrief.db-journal

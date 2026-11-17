@@ -97,6 +97,9 @@ try {
 accounts.cleanupOldAttempts(7)
 
 const PORT = parseInt(process.env.PORT || '5174', 10)
+// 生产只允许绑 loopback（反代与 Node 同宿主机，反代打 127.0.0.1:5174）。
+// 默认保持 0.0.0.0 以免破坏本地开发；生产由 systemd 注入 MEDBRIEF_BIND=127.0.0.1（D0-5②，v0.5a）
+const BIND = process.env.MEDBRIEF_BIND || '0.0.0.0'
 // 进程启动信息：用于判断「长驻进程是否落后于代码」（配合 /api/health.head 比对 git HEAD）
 const SERVER_STARTED_AT = new Date().toISOString()
 const SERVER_GIT = (() => {
@@ -106,9 +109,12 @@ const SERVER_GIT = (() => {
     // head 会落后于实际加载的代码（2026-11-12 实测踩到：行为已是新版，head 却显示旧提交）。
     const dirty = execFileSync('git', ['status', '--porcelain'], { cwd: __dirname, encoding: 'utf8' }).trim()
     const dirtyCount = dirty ? dirty.split('\n').filter(Boolean).length : 0
-    return { head, dirty: dirtyCount > 0, dirtyCount }
+    return { head, source: 'git', dirty: dirtyCount > 0, dirtyCount }
   } catch {
-    return { head: 'unknown', dirty: null, dirtyCount: null }
+    // 服务器不带 .git（投递不含）：回退到构建机注入的 MEDBRIEF_COMMIT。
+    // 注意：env 可被伪造，所以 source 必须如实回显，禁止把它当唯一真相（r5 P1-1）。
+    const envHead = String(process.env.MEDBRIEF_COMMIT || '').trim()
+    return { head: envHead || 'unknown', source: envHead ? 'env' : 'none', dirty: null, dirtyCount: null }
   }
 })()
 const SERVER_HEAD = SERVER_GIT.head
@@ -386,6 +392,8 @@ const server = http.createServer(async (req, res) => {
     sendJson(res, 200, {
       ok: true,
       head: SERVER_HEAD,
+      bind: BIND,
+      commitSource: SERVER_GIT.source,
       // 判据：head ≠ git HEAD 时先看 dirty —— dirty:true 表示「启动时工作树有未提交改动」，
       // 那种情况下 head 会落后于实际加载的代码，属无害错位；dirty:false 且仍不一致才是进程真的落后。
       dirty: SERVER_GIT.dirty,
@@ -2047,7 +2055,7 @@ function getNextReleaseCountdown() {
   sendJson(res, 404, { ok: false, error: 'Not Found' })
 })
 
-server.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, BIND, () => {
   if (process.env.MEDBRIEF_AUTH === 'off') console.error('[MedBrief] ⚠️ 鉴权已全局关闭（MEDBRIEF_AUTH=off），仅本机回环可裸访问；不要在生产/局域网这样运行！')
   console.log(`[MedBrief] 服务已在独立端口 ${PORT} 启动: http://127.0.0.1:${PORT}`)
   // 一眼看出这次跑的是真库还是副本（测试进程会设 MEDBRIEF_REPORTS_FILE 指向 /tmp 的副本）
