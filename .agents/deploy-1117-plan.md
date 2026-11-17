@@ -87,7 +87,7 @@ MedBrief 本地开发时 `MEDREC_BACKEND=8011` 由 launchd 守护 `com.user.medr
 | C4 data/ 221M 加密传输 + 权限收紧 + 备份 | 数据丢失/泄露 | 中 | 解 A5 | 无 | **留（MVP）** |
 | C5 systemd unit（或 1Panel 托管）管 node 进程 | 进程崩了没人拉起 | 低 | 可运维 | 用 1Panel 的"进程守护"若可用 | **留（形态待定）** |
 | C6 认证强制 on + SECRET + B5 必修闭环 | 公网裸奔/好友情提示 | 低（配置+等账号线修） | 解 B5 | 无 | **留（MVP，硬门）** |
-| C7 域名/DNS | 无域名就没有 HTTPS/证书，病历明文公网不可接受 | 低（用户提供） | B4/A9 | IP+自签不安全 | **前置（用户必答，不可延后）**：有域名→1Panel 站点+公信证书；无域名→**不上公网**（仅 SSH 隧道 / 来源白名单内网访问） |
+| C7 域名/DNS | 无域名就没有 HTTPS/证书，病历明文公网不可接受 | 低（需用户加解析） | B4/A9 | IP+自签不安全 | **前置（用户已定 2026-11-17）**：用**新子域名 `medbrief.shanhailingjing.top`**（不碰现存生产站点 `admin.shanhailingjing.top`，实测它是活着的另一系统后台：HTTPS 200/独立证书/有外部访问）。用户加 A 记录指向 62.234.146.222 → 1Panel 建独立站点+公信证书。 |
 | C8 监控/日志/告警 | 崩了不知道 | 中 | 可观测 | 1Panel 自带日志页 | **延后（触发：上线后观测到异常）** |
 | C9 多机/负载均衡 | 单机够用 | 高 | 无 | 无 | **砍**（当前规模无意义） |
 | C10 数据库从 data/reports.json 迁到 MySQL | 无此需求 | 高 | 与现有 MySQL 无关 | 保持文件库 | **砍**（数据形状/查重键全基于文件库，迁移是另一条线） |
@@ -116,7 +116,7 @@ MedBrief 本地开发时 `MEDREC_BACKEND=8011` 由 launchd 守护 `com.user.medr
 
 **阶段 3 — 进程与反代：**
 7. 进程守护：systemd unit（推荐，`Restart=on-failure`）或 1Panel 进程守护；**必须写 `WorkingDirectory=<部署目录>`**（项目内 `path.resolve('data',…)` 相对 CWD，不设会去 `/data` 找库——审核 r1 P1）；**加 `MemoryMax=`**（swap 已用 2.3G）；`Environment=MEDBRIEF_BIND=127.0.0.1`。
-8. **C7 分支（前置，用户必答）**：有域名 → 1Panel 建站点 + 反代 `http://127.0.0.1:5174` + 公信证书（避开现存 3 站点 server_name）；**无域名 → 不上公网**，只开 SSH 隧道 / 来源白名单内网访问，禁止明文 HTTP 暴露病历。
+8. **C7 分支（用户已定）**：用新子域名 **`medbrief.shanhailingjing.top`**——用户在 DNS 加 A 记录指向 `62.234.146.222` → 1Panel 建**独立站点** + 反代 `http://127.0.0.1:5174` + 公信证书（Let's Encrypt，复用 1Panel 的 ACME）。**绝不覆盖/改动现存 `admin.shanhailingjing.top` 站点**（实测是活着的生产后台）。若新域名解析/证书失败 → 不上公网，不回退到占 admin 站点。
 9. 防火墙/暴露面：`ss -tlnp | grep 5174` 必须是 **`127.0.0.1:5174`**（验证 A7 bind 生效）；确认 8011/8008 不对公网开放；openresty WAF 已在 include 中、`client_max_body_size 50m` 已设（上传不 413）。
 9b. 权限面：`sudo -n` 免密可用 ⇒ 部署脚本等于 root，脚本与 SECRET 文件权限 600、只许 ubuntu 读写，审计留痕。
 
@@ -132,7 +132,7 @@ MedBrief 本地开发时 `MEDREC_BACKEND=8011` 由 launchd 守护 `com.user.medr
 
 **无法自解、需用户拍板：**
 1. **部署范围**：全功能（含 OCR/识别三服务，重）还是只读版（报告库+卡面，轻）？——**若选只读版，验收清单同步收窄**（不验 OCR 链路、关上传/识别入口），不以全功能清单量只读版。
-2. **域名/证书**：有域名吗？（无域名 = 不上公网，走 SSH 隧道/来源白名单；明文 HTTP 暴露病历不可接受）
+2. **域名/证书（已定）**：新子域名 `medbrief.shanhailingjing.top`，用户加 A 记录 → 62.234.146.222；不碰现存 admin/www/test 三站点。
 3. **数据迁移**：221M 真库是否原样上生产？（含未脱敏姓名；**API 原始 JSON 不脱敏**，掩码只在打印渲染——公网是否接受 或 需脱敏上生产？）
 4. **资源**：三识别服务若同机，1.0G 可用内存 + 已用 2.3G swap 明显不够——加内存、独立小机、还是砍 OCR（只读版）？
 5. **重启纪律**：systemd 还是 1Panel 面板托管？主理人说"走面板"，需确认 1Panel 是否有进程守护能力。
