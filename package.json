@@ -17,6 +17,7 @@
     "test:ui": "node tests/verify-ui.mjs",
     "test:intake": "node tests/verify-intake.mjs && node tests/verify-card.mjs && node tests/verify-chunker.mjs && node tests/verify-deskew.mjs && node tests/verify-labclean.mjs && node tests/verify-codealias.mjs && node tests/verify-checklist.mjs && node tests/verify-rowpatch.mjs && node tests/verify-workbench.mjs && node tests/verify-pdf.mjs && node tests/verify-import-report.mjs && node tests/verify-reportsort.mjs && node tests/verify-classify.mjs",
     "test:card": "node tests/verify-card.mjs",
+    "test:card-layout": "node tests/verify-card-trends-layout.mjs",
     "test:checklist": "node tests/verify-checklist.mjs",
     "test:workbench": "node tests/verify-workbench.mjs",
     "test:cardpdf": "node tools/card-pdf.mjs",
