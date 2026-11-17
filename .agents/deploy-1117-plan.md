@@ -1,8 +1,9 @@
-# MedBrief 生产部署计划 —— 排雷与取舍 v0.5c（阶段 1 进行中）
+# MedBrief 生产部署计划 —— 排雷与取舍 v0.5d（阶段 1 已验证通过）
 
 > 触发（用户原话，2026-11-17 10:34）：「完成以上任务之后，设计一个部署计划。服务器直接无密连接 ssh ubuntu@62.234.146.222」。
-> 状态：**阶段 1 已在服务器实测推进**（Node v22.20.0/依赖/`GET /` 与 assets 200/bind 生效均通过）。**审核门 ✅／G6 ✅／拍板 ✅** 三门齐（2026-11-17 16:2x，运维转述）。阶段 2 硬闸（凭据轮换）与阶段 3 建站（DNS A 记录）待用户。
-> 版本 v0.5c：补运维阶段 1 实测发现的 3 缺口——vendor/ 也要 npm ci、可移植 lock（link:true=0）、.deploy-commit 与实际部署 commit 一致+dirty 口径。v0.5b 归档 10 拍板；v0.5a 折进 r5 的 2 P1+4 P2。
+> 状态：**阶段 1 已在服务器实测通过**（Node v22.20.0/`node:sqlite`/`npm ci`+`cd vendor && npm ci`/投递 sha256 双端一致/`GET /` 与 assets 200/`bind=127.0.0.1`/`commitSource=env`）。**审核门 ✅／G6 ✅／拍板 ✅** 三门齐。阶段 2 硬闸（凭据轮换三选）与阶段 3 建站（DNS A 记录）待用户。
+> 版本 v0.5d：按运维新事实订正——可移植 lock **已真提交 `c28a2aa`**（HEAD `8488494`，`link:true`=0、`../MedData`=0、工作树 clean；我先前报"没提交"是过期快照，认错）；`.deploy-commit` 现钉实际部署 HEAD `8488494`（distSha256 `757631a7…` 自 `83d1b99` 未变）；阶段 1 已验证项标绿。**教训：凡断言 HEAD/lock 状态，以 `git log -1`/`git show HEAD:<file>` 即时输出为准，不用几分钟前快照（本轮我自己栽过）。**
+> 版本 v0.5c：补运维阶段 1 实测 3 缺口（vendor/ npm ci、可移植 lock 判据、.deploy-commit 一致+dirty 口径）。v0.5b 归档 10 拍板；v0.5a 折进 r5 的 2 P1+4 P2。
 > 版本 v0.5：吸收 **r4 实测型审核（代诊-挂号）5 P0**（`.agents/deploy-1117-review-r4.md`，186 行）：P0-1 前端产物构建机投递、P0-3 data/ 白名单、P0-4 CWD 隔离订正、P0-5 入侵史主机前置、P0-2 运维误报纠正（8090 白名单效应，非漏洞）；+ 3 修正（GUAHO_BROWSER 可跳过 Chromium、MemoryMax 统一 768M、MEDBRIEF_COMMIT 三方比对）。v0.4 吸收 r1~r3；v0.3 及以前见历史。
 > **审核方式（用户 2026-11-17 口径：必须走 AI Studio 工具）**：已用 `ai_scheme_review.py --session-key MedBrief/deploy-1117` 绑定 session 并拿到逻辑预审（因该端无本地/SSH 能力，经用户选"把取证材料嵌进 prompt"）。判词为**逻辑预审非独立实测**；可证伪条由实现方实测订正：openresty `NetworkMode=host`（实测）排除 P0-1 的 502 死锁；Secure cookie/XFP/首登改密代码 grep 零命中 ⇒ P0-4 成立。
 > 作者：代诊-Manager。代码/测试 HEAD：本地 `4aae991`（部署文档）；账号线最终代码态 `6c3e424`（5174 实际加载，主理人结案；`adbafc9`/`c55234d` 均为中间快照）。
@@ -117,7 +118,7 @@ MedBrief 本地开发时 `MEDREC_BACKEND=8011` 由 launchd 守护 `com.user.medr
    - **`cd vendor && npm ci`（缺口1，P0）**：`lib/auth.mjs:3` 依赖 vendored `iron-session 9.1.0`，`vendor/node_modules` 被 `.gitignore:1` 忽略、仓库只有 `vendor/package.json`+lock ⇒ 不执行即启动 `ERR_MODULE_NOT_FOUND`。
    - **前端产物（r4 P0-1）**：`web/dist-next/` 被 gitignore、`package.json.dependencies` 只有 playwright、vite/react/antd 在 `medbriefFrontendDeps`（不参与 npm install）⇒ 服务器装不出前端。**构建机（本地）跑 `npm run build:web` 产出 dist-next + 整目录 sha256 随投递**，服务器只接收不构建。
    - **chromium（r4 修正）**：只读版设 **`GUAHO_BROWSER=off`**（开关 `server.mjs:127-141`，守卫实为 6 处 `:564/:596/:612/:633/:862/:972`），两处 `chromium.launch`（`:983` 挂号 / `lib/bjcyhScraper.js:31` 出诊监控）全短路 ⇒ `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` 完全不装 Chromium。
-4. rsync 投递阶段 0 钉死的 commit 产物 + **构建机的 `web/dist-next`（含 sha256）**，不含工作树在途项。**版本凭证（缺口3）**：`.deploy-commit` 的 `commit` 必须 == **实际部署的 commit**（判据 `python3 -c "import json;print(json.load(open('.deploy-commit'))['commit'])"`）；`dirty` 口径写清——只允许别线在 `lib/`/`.agents/` 的改动，**`web/` 与 `server.mjs` 必须干净**；构建机写 `.deploy-commit`（有 .git），服务器只两方比对 + commitSource（见 D0-5⑥）。**运维阶段 1 实测已过**：Node v22.20.0、`node:sqlite` OK、`/opt/medbrief` 750、包 sha256 双端一致、`GET /` 与 `/assets/index-CXQ0PPDQ.js` 均 200、`ss` 见 `127.0.0.1:5199`（bind 生效）、health `head=83d1b99 commitSource=env`（无 .git）。
+4. rsync 投递阶段 0 钉死的 commit 产物 + **构建机的 `web/dist-next`（含 sha256）**，不含工作树在途项。**版本凭证（缺口3）**：`.deploy-commit` 的 `commit` 必须 == **实际部署的 commit**（判据 `python3 -c "import json;print(json.load(open('.deploy-commit'))['commit'])"`）；`dirty` 口径写清——只允许别线在 `lib/`/`.agents/` 的改动，**`web/` 与 `server.mjs` 必须干净**；构建机写 `.deploy-commit`（有 .git），服务器只两方比对 + commitSource（见 D0-5⑥）。**运维阶段 1 实测已过**：Node v22.20.0、`node:sqlite` OK、`/opt/medbrief` 750、包 sha256 双端一致、`GET /` 与 `/assets/index-CXQ0PPDQ.js` 均 200、`ss` 见 `127.0.0.1:5199`（bind 生效）、health 初次冒烟 `head=83d1b99 commitSource=env`（无 .git），**后续 .deploy-commit 已对齐当前部署 HEAD `8488494`**（distSha256 `757631a7…` 自 `83d1b99` 未变）——即 `.deploy-commit` 钉的是**部署时的实际 HEAD**，不是固定某个号。
 
 **阶段 2 — 数据与配置：**
 5. **data/ 白名单投递（P0-3，禁止整目录 rsync）**：只传必要文件——`data/reports.json` + `data/medbrief.db`(blobs) + `data/intake/**`(病友档案)（`data/gt**` 实测不存在，已从白名单删）；**明确排除** `114-auth.json`(114票据/cookie)、`data/tmp`(48M)、`data/backups`(46M)、`data/114-flow`(2.1M)、`data/meddata-mirror`、`*.log`。先 `--dry-run` + `--checksum`，目标目录 700 / 文件 600。
