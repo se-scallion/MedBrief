@@ -794,6 +794,20 @@ function getNextReleaseCountdown() {
     return
   }
 
+  // ===== 管理员账号管理：列表（GET，body 收集块外）=====
+  if (AUTH_ENABLED && pathname === '/api/admin/users' && req.method === 'GET') {
+    if (!mbUser || mbUser.role !== 'admin') return sendJson(res, 403, { ok: false, error: '需要管理员权限' })
+    try {
+      sendJson(res, 200, { ok: true, users: accounts.listUsers(), audit: accounts.listAuthz(50) })
+    } catch (e) { sendJson(res, 500, { ok: false, error: e.message }) }
+    return
+  }
+  if (!AUTH_ENABLED && pathname === '/api/admin/users' && req.method === 'GET') {
+    try { sendJson(res, 200, { ok: true, users: accounts.listUsers(), audit: accounts.listAuthz(50) }) }
+    catch (e) { sendJson(res, 500, { ok: false, error: e.message }) }
+    return
+  }
+
   // 读取 POST/PUT 请求体（v0.6 第 4 段：PUT /reports/:id 也要读体；
   // 原本只判 POST，导致 PUT 的 readJsonBody 恒空 → 400「缺 rowsReplace」）
   let bodyBuffer = []
@@ -810,6 +824,37 @@ function getNextReleaseCountdown() {
     } catch (e) {
       sendJson(res, 400, { ok: false, error: '无效的 JSON 请求体: ' + e.message })
       return
+    }
+
+    // ===== 管理员账号管理：建号/改号/授权/停用/踢下线（POST，body 已收集）=====
+    if (pathname.startsWith('/api/admin/users') && (AUTH_ENABLED || !AUTH_ENABLED)) {
+      const admin = mbUser || (req.headers?.cookie ? authn.currentUser(await authn.readSession(req)) : null)
+      if (AUTH_ENABLED && (!admin || admin.role !== 'admin')) return sendJson(res, 403, { ok: false, error: '需要管理员权限' })
+      const actor = admin?.id || null
+      const action = pathname === '/api/admin/users' ? 'create' : pathname.split('/').pop()
+      try {
+        if (action === 'create') {
+          // 建号一律 ≥8 位：不开放 allowWeak 后门（弱密码只存在于 bootstrap 的一次性历史特例）
+          const u = accounts.createUser({ phone: payload.phone, password: payload.password, role: payload.role === 'admin' ? 'admin' : 'user', cardExport: !!payload.card_export, guahao: !!payload.guahao, actorUserId: actor })
+          return sendJson(res, 200, { ok: true, user: u })
+        }
+        const target = accounts.getUserById(payload.id)
+        if (!target) return sendJson(res, 404, { ok: false, error: '用户不存在' })
+        if (action === 'permissions') {
+          const patch = {}
+          for (const k of ['card_export', 'guahao', 'role', 'disabled']) if (k in payload) patch[k] = payload[k]
+          return sendJson(res, 200, { ok: true, user: accounts.setPermissions(target.id, patch, actor) })
+        }
+        if (action === 'phone') {
+          const u = accounts.changePhone(target.id, payload.phone, actor)
+          return sendJson(res, 200, { ok: true, user: u, note: '改号已使该用户全部会话失效，需重新登录' })
+        }
+        if (action === 'kick') {
+          const u = accounts.bumpSessionVersion(target.id, 'admin_kick', actor)
+          return sendJson(res, 200, { ok: true, user: u, note: '已踢下线（该用户全部设备需重新登录）' })
+        }
+        return sendJson(res, 404, { ok: false, error: '未知操作：' + action })
+      } catch (e) { return sendJson(res, 400, { ok: false, error: e.message }) }
     }
 
     // ===== 114 真实浏览器挂号：动作类接口 =====

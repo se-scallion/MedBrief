@@ -9,7 +9,8 @@ import path from 'node:path'
 import { spawn } from 'node:child_process'
 import assert from 'node:assert/strict'
 
-const PORT = 5196
+// 每次随机端口，避开连续跑时的 TIME_WAIT / 孤儿进程竞态
+const PORT = 5200 + Math.floor(Math.random() * 300)
 const ROOT = path.join(import.meta.dirname, '..')
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'medbrief-auth-'))
 const REPORTS = path.join(TMP, 'reports.json')
@@ -156,12 +157,31 @@ async function main() {
     const locked = await login('13900000009', 'wrongpw')
     T('第11次锁定 429', locked.status === 429)
 
+    // ---- 管理员账号管理接口（端到端）----
+    const adminHeaders = { cookie: adminCookie, 'content-type': 'application/json' }
+    const userList = await req('/api/admin/users', { headers: { cookie: adminCookie } })
+    T('admin GET /api/admin/users 200', userList.status === 200 && (userList.body.users?.length || 0) >= 3)
+    T('非 admin GET 管理列表 403', (await req('/api/admin/users', { headers: { cookie: otherCookie } })).status === 403)
+    const created = await req('/api/admin/users', { method: 'POST', headers: adminHeaders, body: JSON.stringify({ phone: '13900000005', password: 'newpass88', role: 'user', card_export: false, guahao: true }) })
+    T('admin 建号 200', created.status === 200 && created.body.user?.phone === '13900000005')
+    const newId = created.body.user?.id
+    const perm = await req('/api/admin/users/permissions', { method: 'POST', headers: adminHeaders, body: JSON.stringify({ id: newId, card_export: true }) })
+    T('admin 授权 card_export 生效', perm.status === 200 && perm.body.user?.card_export === 1)
+    const chg = await req('/api/admin/users/phone', { method: 'POST', headers: adminHeaders, body: JSON.stringify({ id: newId, phone: '13900000006' }) })
+    T('admin 改号 + sessionVersion+1', chg.status === 200 && chg.body.user?.phone === '13900000006' && chg.body.user?.sessionVersion === 1)
+    const kick = await req('/api/admin/users/kick', { method: 'POST', headers: adminHeaders, body: JSON.stringify({ id: newId }) })
+    T('admin 踢下线 sessionVersion+1', kick.status === 200 && kick.body.user?.sessionVersion === 2)
+
     console.log(`\n==========\n通过 ${pass} / 失败 ${fail}`)
     if (fail) process.exitCode = 1
   } finally {
-    srv.kill('SIGTERM')
+    srv.kill('SIGKILL')
+    // 等进程真正退出再删临时库，避免 sqlite 句柄残留导致下一次跑拿到半删的库
+    if (srv.exitCode === null && srv.signalCode === null) {
+      await new Promise((r) => { srv.once('exit', r); setTimeout(r, 500) })
+    }
     if (stderr && process.env.AUTH_TEST_DEBUG) console.error('server stderr:', stderr.slice(-2000))
-    fs.rmSync(TMP, { recursive: true, force: true })
+    try { fs.rmSync(TMP, { recursive: true, force: true }) } catch {}
   }
 }
 

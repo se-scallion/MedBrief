@@ -18,6 +18,7 @@ import IntakePage from './pages/IntakePage.jsx'
 import ReportsPanel from './pages/intake/ReportsPanel.jsx'
 import CardPage from './pages/CardPage.jsx'
 import LoginPage from './pages/LoginPage.jsx'
+import AccountAdminPage from './pages/AccountAdminPage.jsx'
 import { jfetch, jget } from './api.js'
 
 const { Header, Content, Footer, Sider } = Layout
@@ -116,11 +117,12 @@ export default function App() {
     // 发起挂号 + 预约记录 = 同一件事的前后半段，合并成一项（页内两段），见 pages/BookingPage.jsx
     { key: 'booking', label: '挂号与预约', group: '出诊', node: <BookingPage initialSub={subOf('orders')} />, perm: 'guahao' },
     { key: 'session', label: '114 会话', group: '出诊', node: <SessionPage />, perm: 'guahao' },
+    { key: 'accounts', label: '账号管理', group: '系统', node: <AccountAdminPage />, perm: 'admin' },
   ]
   const perms = (me && me.permissions) || {}
   const isAdmin = perms.role === 'admin'
   // 账号系统：按权限过滤菜单；隐藏≠安全，后端守卫仍会 403
-  const PAGES = ALL_PAGES.filter((p) => !p.perm || isAdmin || perms[p.perm])
+  const PAGES = ALL_PAGES.filter((p) => !p.perm || (p.perm === 'admin' ? isAdmin : (isAdmin || perms[p.perm])))
   const readKeyFromUrl = () => {
     const u = new URL(window.location.href)
     const raw = u.searchParams.get('tab') || u.hash.replace('#', '') || (u.searchParams.has('merged') ? 'guahao' : '')
@@ -152,7 +154,7 @@ export default function App() {
     } catch { /* file:// 等场景忽略 */ }
   }, [])
 
-  const menuItems = ['资料', '出诊'].map((group) => ({
+  const menuItems = ['资料', '出诊', '系统'].map((group) => ({
     key: group,
     type: 'group',
     label: group,
