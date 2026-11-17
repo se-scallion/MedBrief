@@ -136,6 +136,18 @@
 - 再触发条件：主理人分派后开工；或 `node tools/type-coverage-report.mjs` 的 `C 不符` 数不再是 4。
 - 防改崩：本台账**只立账，不动词表**（改 `LAB_PANELS` 顺序/补小类会影响入库 `reportType` 与历史 95 份的筛选口径，须先过计划流程）；`data/reports.json` 是 gitignore 的，改前备份到 `data/backups/`。
 
+## Bug 12 【待修·2026-11-17】`criticalOf()` 把定性阴性数值化成假危急（粪便「白细胞 阴性」→ WBC 0 危急）
+
+- **症状**：`criticalOf({code:'WBC', value:'阴性', num:0, status:'normal', flag:'negative'})` 返回 `{label:'WBC', range:'<1.0 或 >50', value:0}`。库里 **2026-08-03 / 08-04 两份粪便常规「白细胞 阴性」**正是这个形状（`code=WBC, num=0, flag=negative, status=normal`）。今天被「每项只看最近一次」的折叠掩盖（`p0rows` 无 WBC 行），模块①新增「当前危急值（单次事件）」若全库扫就会把「粪便白细胞阴性」渲染成「WBC 0 危急」——**呈现层误报（F4）的现成样本**。
+- **根因**：`lib/cardPolicy.mjs` `criticalOf()` 直接 `Number(row.num ?? row.value)`，`num=0` 是 OCR 把定性「阴性」数值化的产物，却当真值进了 `<1.0` 阈值。
+- **修法（A-数据层，未编码）**：`criticalOf` 取 num 之前加 `if (!/^[+-]?(\d|\.\d)/.test(String(row.value ?? '').trim())) return null`。
+  - 不用 `Number.isFinite(Number(value))`：它把 `'0.5×10^9'` 带单位值判 NaN 也漏掉（r4）。
+  - 不用 `/^-?\d/`：它漏 `'+0.5'`/`'.5'` 两个真值（r4，假阴性比误报更危险）。
+  - 定稿正则五态实测：阴性→null ✅ / `0.71`→报 ✅ / 真 `0`→仍报 ✅ / ` 0.5`→报 ✅ / `1e-3`→报 ✅；`+0.5`/`.5`→报 ✅。
+- **断言要求**：构造测试必须用**真实形状**（`flag:'negative', status:'normal', value:'阴性', num:0`），不能用 `status:'negative'`——后者是错的形状，按其写断言会「成功≠修好」（审核 r3 实测踩过）。补假阴性回归位 `+0.5`/`.5`/带空格。
+- **归属**：模块①分层计划 A-数据层（`.agents/card-risk-appendix-1117-plan.md` v0.5 D-4b）；审核 r2 首报、r3 修正修法、r4 定稿正则。
+- **再触发条件**：用户「按以上计划执行」授权后随 A-数据层落 `lib/cardPolicy.mjs` + `tests/verify-card-module1.mjs` 断言。
+
 ## 收尾终态（2026-11-15，session-wrap-up Step 3）
 
 以下 6 项在本次收尾时逐项裁到终态，**不再挂账给用户**；每条都有证据与再触发条件，
