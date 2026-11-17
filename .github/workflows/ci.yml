@@ -1,0 +1,89 @@
+name: CI 门禁
+
+# 只做「能不能上线」的判定，不碰服务器。
+# 三条硬规矩（都是踩过的事故）：
+#   1) data/ 与 web/dist-next 都不入库 ⇒ CI 必须自造夹具、自己构建，不能假设本地目录存在
+#   2) 每条关键判据都要跑「证伪」：断言必须会红，否则"全绿"是假的
+#   3) 门禁失败即失败，不许 continue-on-error 把红灯洗成绿灯
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    name: 门禁（auth / 卡面 / 报告库 / 移动端版面）
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: 检出
+        uses: actions/checkout@v4
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: 依赖（根 + vendored）
+        run: |
+          set -e
+          npm ci
+          # vendor/node_modules 被 gitignore，lib/auth.mjs 依赖它，必须在 CI 里装
+          (cd vendor && npm ci)
+
+      - name: 浏览器（UI 门禁用）
+        run: npx playwright install --with-deps chromium
+
+      - name: 合成数据夹具
+        run: |
+          set -e
+          # data/reports.json 被 gitignore（真实病历），但三个门禁会 copyFileSync 它 → 干净环境必崩。
+          # 夹具全为编造数据（合成数据医院/测试甲…），只为满足门禁所需的"形状"。
+          mkdir -p data
+          node tests/fixtures/gen-ci-reports.mjs > data/reports.json
+          node -e "const d=require('./data/reports.json');console.log('reports='+d.reports.length)"
+
+      - name: 构建前端
+        run: npm run build:web
+
+      - name: 门禁（正向）
+        run: |
+          set -e
+          node tests/verify-auth.mjs
+          node tests/verify-card-inject.mjs
+          node tests/verify-card.mjs
+          node tests/verify-reports-panel-ui.mjs
+          node tests/verify-card-mobile-layout.mjs
+
+      - name: 门禁（证伪：断言必须会红）
+        run: |
+          # 每条都必须 EXIT=1；哪天某条突然 EXIT=0，说明判据被写弱了（这才是真事故）
+          set +e
+          fail=0
+          for f in grid padding containerpad collapsed tabs; do
+            node tests/verify-card-mobile-layout.mjs --falsify=$f > /tmp/falsify-$f.log 2>&1
+            rc=$?
+            echo "----- --falsify=$f → EXIT=$rc -----"
+            tail -5 /tmp/falsify-$f.log
+            if [ $rc -ne 1 ]; then
+              echo "::error::--falsify=$f 期望 EXIT=1（真红），实际 $rc"
+              fail=1
+            fi
+          done
+          exit $fail
+
+      - name: 截图留档
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-shots
+          path: .agents/ui-audit-1117/shots/verify-mobile/
+          if-no-files-found: ignore
+          retention-days: 7

@@ -1,0 +1,131 @@
+name: 发布到生产（手动触发）
+
+# 与「CI 门禁」分开：CI 只判定能不能上；这个工作流**真的动服务器**。
+# 设计口径（每条对应一次真实事故）：
+#   * 只手动触发，不做 push 即发 —— 上线是人的决定，不是提交的副作用
+#   * 构建在 CI 里做；产物与凭证一起投递，`entrySha`/`distAggSha` 两行都记进发布日志
+#   * 服务器侧动作全集中在 .github/scripts/deploy-remote.sh（可审计、可本地 --dry-run）
+#   * 验收红 ⇒ 远端脚本自动回滚三件套（代码 / dist / 凭证），绝不留在半截状态
+#
+# 需要的仓库配置：
+#   Secrets:   DEPLOY_SSH_KEY  （能登录 ubuntu@<host> 的私钥）
+#   Variables: HOST = 62.234.146.222
+#   Environment: production（建议开启 required reviewers 人工审批）
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '只校验不落盘'
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: 发布到生产
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - name: 检出
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 工作树自检（CI 里必须干净）
+        run: |
+          set -e
+          echo "commit=$(git rev-parse --short HEAD)"
+          test "$(git status --porcelain | wc -l)" = "0" || { echo '::error::工作树不干净'; exit 1; }
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: 依赖（根 + vendored）
+        run: |
+          set -e
+          npm ci
+          (cd vendor && npm ci)
+
+      - name: 构建前端
+        run: npm run build:web
+
+      - name: 生成部署凭证（建包即断言 HEAD == 凭证 commit）
+        id: cred
+        run: |
+          set -e
+          node tools/write-deploy-commit.mjs
+          C=$(python3 -c "import json;print(json.load(open('.deploy-commit'))['commit'])")
+          H=$(git rev-parse --short HEAD)
+          AGG=$(python3 -c "import json;print(json.load(open('.deploy-commit'))['distSha256'])")
+          echo "凭证 commit=$C / HEAD=$H / distAgg=$AGG"
+          test "$C" = "$H" || { echo '::error::建包即断言失败：凭证 commit ≠ HEAD'; exit 1; }
+          ENTRY=$(cd web/dist-next && ls assets/index-*.js | head -1)
+          ENTRY_SHA=$(shasum -a 256 "web/dist-next/$ENTRY" | cut -d' ' -f1)
+          echo "entry=$ENTRY entrySha=$ENTRY_SHA"
+          echo "$ENTRY_SHA" > /tmp/entrySha.txt
+          echo "commit=$C" >> "$GITHUB_OUTPUT"
+          echo "dist_agg=$AGG" >> "$GITHUB_OUTPUT"
+          echo "entry=$ENTRY" >> "$GITHUB_OUTPUT"
+          echo "entry_sha=$ENTRY_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: 三条拒收条件自检 + 打两个包
+        run: |
+          set -e
+          C=${{ steps.cred.outputs.commit }}
+          # ① 产物文件存在
+          test -f "web/dist-next/${{ steps.cred.outputs.entry }}" || { echo '::error::产物文件不存在'; exit 1; }
+          # ② entrySha 可复算（与上一步一致）
+          test "$(shasum -a 256 "web/dist-next/${{ steps.cred.outputs.entry }}" | cut -d' ' -f1)" = "${{ steps.cred.outputs.entry_sha }}" || { echo '::error::entrySha 复算不一致'; exit 1; }
+          # ③ 产物是本 commit 构建的（CI 内构建 ⇒ 天然成立；留一行显式断言防将来改成"复用旧产物"）
+          test "$C" = "$(git rev-parse --short HEAD)" || { echo '::error::commit 标记与 HEAD 不一致'; exit 1; }
+          git archive --format=tar.gz -o "/tmp/medbrief-$C.tar.gz" HEAD
+          tar czf "/tmp/medbrief-dist-$C.tar.gz" -C web/dist-next .
+          shasum -a 256 "/tmp/medbrief-$C.tar.gz" "/tmp/medbrief-dist-$C.tar.gz"
+
+      - name: 上传（代码包 + 产物包 + 凭证 + 远端脚本）
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ vars.HOST }}
+          username: ubuntu
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: "medbrief-*.tar.gz,.deploy-commit,.github/scripts/deploy-remote.sh"
+          target: /tmp
+          overwrite: true
+          timeout: "300s"
+
+      - name: 远端发布（备份 → 投递 → 只重启一次 → 14 项 + 字节断言 → 红则自动回滚）
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ vars.HOST }}
+          username: ubuntu
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script_stop: true
+          timeout: "25m"
+          script: |
+            set -e
+            C=${{ steps.cred.outputs.commit }}
+            ENTRY_SHA=$(cat /tmp/entrySha.txt)
+            # scp 把脚本落在 /tmp/deploy-remote.sh 与 /tmp/.github/scripts/ 两处，取存在的那个
+            S=/tmp/deploy-remote.sh
+            for cand in /tmp/deploy-remote.sh /tmp/.github/scripts/deploy-remote.sh /tmp/scripts/deploy-remote.sh; do
+              [ -f "$cand" ] && S="$cand" && break
+            done
+            [ -f "$S" ] || { echo "找不到远端脚本"; exit 1; }
+            sudo bash "$S" "$C" "$ENTRY_SHA" "${{ steps.cred.outputs.dist_agg }}" ${{ inputs.dry_run && '--dry-run' || '' }}
+
+      - name: 汇总（回执两行指纹 + 回滚点）
+        if: always()
+        run: |
+          echo "commit      = ${{ steps.cred.outputs.commit }}"
+          echo "entrySha    = ${{ steps.cred.outputs.entry_sha }}"
+          echo "distAggSha  = ${{ steps.cred.outputs.dist_agg }}"
+          echo "dry_run     = ${{ inputs.dry_run }}"
+          echo "留痕        = 服务器 /root/ir/medbrief-releases.log"
