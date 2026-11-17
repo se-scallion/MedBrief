@@ -1,6 +1,7 @@
 // 管理员账号管理页（2026-11-17 补做）：建号 / 授权 / 撤销 / 改号 / 停用 / 踢下线
 // 后端：GET /api/admin/users、POST /api/admin/users[/permissions|/phone|/kick]
 import React, { useCallback, useEffect, useState } from 'react'
+import dayjs from 'dayjs'
 import { Alert, Button, Form, Input, Modal, Popconfirm, Space, Switch, Table, Tag, Typography, message } from 'antd'
 import { jfetch, jget } from '../api.js'
 
@@ -103,7 +104,8 @@ export default function AccountAdminPage() {
           <Title level={5}>最近操作审计</Title>
           <Table rowKey="id" size="small" dataSource={audit} pagination={false}
             columns={[
-              { title: '时间', dataIndex: 'at', key: 'at' },
+              // 存储是 UTC ISO（toISOString），展示必须转本地时区，否则比北京时间少 8 小时
+              { title: '时间', dataIndex: 'at', key: 'at', render: (v) => v ? dayjs(v).format('YYYY-MM-DD HH:mm:ss') : '—' },
               { title: '动作', dataIndex: 'action', key: 'action' },
               { title: '目标', dataIndex: 'target_user_id', key: 'target', render: (id) => users.find((u) => u.id === id)?.phone || id || '—' },
             ]} />
