@@ -1,9 +1,9 @@
-# MedBrief 生产部署计划 —— 排雷与取舍 v0.2（未执行）
+# MedBrief 生产部署计划 —— 排雷与取舍 v0.3（未执行）
 
 > 触发（用户原话，2026-11-17 10:34）：「完成以上任务之后，设计一个部署计划。服务器直接无密连接 ssh ubuntu@62.234.146.222」。
 > 状态：**只做了 SSH 只读取证，未改服务器任何东西、未部署**。用户要的是"设计计划"，不是立即部署。
-> 版本 v0.2：吸收独立审核 r1 的 4 P0 + 9 P1（`.agents/deploy-1117-review-r1.md`）中**我独立复算属实**的部分。
-> **审核方式（用户 2026-11-17 口径：必须走 AI Studio 工具）**：已用 `ai_scheme_review.py --session-key MedBrief/deploy-1117` 实跑 → `MODEL_ERROR_TEXT / 权限遭拒`（exit 5、无判词、台账未回写）——**该路待用户修 AI Studio 账号权限后重跑，是正式审核门**。Bot 判词只作技术输入，不替代用户指定审核路。
+> 版本 v0.3：吸收 **AI Studio 工具审核 r1**（`.agents/deploy-1117-review-r1.md`，逻辑预审 4 P0 + 6 P1）并逐条实测订正；v0.2 曾吸收 Bot 判词的实测项。
+> **审核方式（用户 2026-11-17 口径：必须走 AI Studio 工具）**：已用 `ai_scheme_review.py --session-key MedBrief/deploy-1117` 绑定 session 并拿到逻辑预审（因该端无本地/SSH 能力，经用户选"把取证材料嵌进 prompt"）。判词为**逻辑预审非独立实测**；可证伪条由实现方实测订正：openresty `NetworkMode=host`（实测）排除 P0-1 的 502 死锁；Secure cookie/XFP/首登改密代码 grep 零命中 ⇒ P0-4 成立。
 > 作者：代诊-Manager。代码/测试 HEAD：本地 `4aae991`（部署文档）；账号线最终代码态 `6c3e424`（5174 实际加载，主理人结案；`adbafc9`/`c55234d` 均为中间快照）。
 > 定制层：**无**（§7 反查，文件头声明 0 命中）。仅通用排雷。
 
@@ -96,34 +96,37 @@ MedBrief 本地开发时 `MEDREC_BACKEND=8011` 由 launchd 守护 `com.user.medr
 
 ## D. 简化后的方案（只列留下的项）+ 延后触发条件
 
-**阶段 0 — 前置闭环（用户说"完成以上任务之后"，这是那批任务的清单）：**
-- D0-1 ~~账号线 admin/users 三条必修闭环 + 四文件同批提交~~ **✅ 已闭环（v0.1a，2026-11-17）**：`395156d`(管理界面)+`2b32096`(审计时间)+`adbafc9`(堵 auth=off 后门)；实测恒真式消除、`git show HEAD:server.mjs|grep -c api/admin/users`=3、工作树干净、5174 head=`adbafc9` auth=on、`node tests/verify-auth.mjs` **43/0 exit 0**。归「代诊-账号」，已全部入库。
+**阶段 0 — 前置闭环（全部"改代码"的动作都收口在此，commit 在此钉死——AI 审核 P0-2）：**
+- D0-1 ~~账号线 admin/users 三条必修闭环 + 四文件同批提交~~ **✅ 已闭环（v0.1a）**：`395156d`/`2b32096`/`adbafc9`/`6c3e424`（账号线最终态）；实测恒真式消除、auth=off 下 admin 接口 503、verify-auth 43/0、verify-card-inject 12/0、verify-card 62/0，5174 加载 `6c3e424` auth=on。归「代诊-账号」，已入库。
 - D0-2 Bug12 `criticalOf` 假危急修（A-数据层，等用户「按以上计划执行」）。
 - D0-3 模块① 6 格分层证据区（A-渲染层，等 UI v2 + 用户授权）。
 - D0-4 打印附页 B 线（等用户授权）。
-- **只有 D0-2~4 闭环（或用户显式写"本版裁剪"并同步收窄验收）+ 部署 commit 钉死，才进入阶段 1。** "若用户明确先上只读版可降 D0 优先级"这句话是给自己开后门（审核 r1 认定），已删除——正确形式是把"降级范围"作为带范围的选项写进下面"需用户拍板"清单：降级则验收清单同步收窄（不验 OCR 链路），否则必然红→被人放宽。
+- D0-5 **部署前置代码改动（原误放阶段 1，现收回）**：① 生成并提交 `package-lock.json`（无 lock 不可复现）；② `server.mjs:2050` 加 `MEDBRIEF_BIND` 开关（否则绑不了 127.0.0.1）；③ 只读版若采用，关上传/识别入口（需 UI 规格，**归口到"待拍板"清单**）；④ 若代码侧要支持 `Secure cookie`/`X-Forwarded-Proto`/首登改密（AI 审核 P0-4，grep 零命中 ⇒ **代码未实现**），要么归账号线补代码，要么书面接受"仅 HTTPS 传输层+auth、不做会话加固"的风险；⑤ 全部 `verify-*` 在此复测（副本库）。**单写者、显式 pathspec commit，不 git add -A。**
+- **只有 D0-1~5 闭环（或用户显式写"本版裁剪 D0-2~4"并同步收窄验收）+ 部署 commit 钉死，才进入阶段 1。** "可降 D0 优先级"的开后门句已删；降级范围作为带范围选项进"需用户拍板"，降级则验收同步收窄。
 
-**阶段 1 — 环境与前提（只读验证 → 变更）：**
-1. 装固定版本 Node（**必须 ≥22.5**：`lib/blobStore.mjs` 用 `node:sqlite` 的 `DatabaseSync`；`apt install nodejs` 在 Ubuntu 22.04 给旧版 ⇒ 走 **NodeSource/nvm**，记录版本）。审核 r1 更正我原写"Node 22 LTS 与本地一致"——本地版本需实测，但下限 22.5 是硬的。
-2. 建部署目录（如 `/opt/medbrief` 或 `/home/ubuntu/medbrief`，用户定），权限 750，owner ubuntu。
-3. **先在仓库生成并提交 `package-lock.json`**（当前无 lock，审核 r1 P0-3）；`npm ci` 装**全依赖含 playwright**（顶层 import，不能 `--omit=dev`）；`npm run build:web` 产物随代码上来。**先只读版则关上传/识别入口**（P1-6：入口可点会 500——纯前端隐藏或后端返回明确"未启用"，需 UI 规格）。
-4. **代码改动（须单独 commit、单写者）**：`server.mjs:2050` 加 bind 开关 `MEDBRIEF_BIND`（A7 P0-2），否则"只绑 127.0.0.1"做不到。
+**阶段 1 — 环境与前提（纯环境/投递，不再改仓库代码）：**
+1. 装固定版本 Node（**必须 ≥22.5**：`lib/blobStore.mjs` 用 `node:sqlite` 的 `DatabaseSync`；apt 旧版不行 ⇒ NodeSource/nvm，记录版本）。
+2. 建部署目录（如 `/opt/medbrief`，用户定），权限 750，owner ubuntu。
+3. `npm ci`（用阶段 0 生成的 lock）装**全依赖含 playwright**（顶层 import）；`npm run build:web` 产物随代码投递。**playwright 浏览器二进制**：本地只读版出卡/打印是否调 `chromium.launch()` 未核实（AI 审核 P1-3）——若不调，设 `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` 省 8.2G 磁盘；若调，补系统依赖与浏览器并重估内存。
+4. rsync 投递阶段 0 钉死的 commit 产物（不含工作树在途项）。
 
 **阶段 2 — 数据与配置：**
-4. `data/` 221M 用 rsync + ssh 加密传（先 `--dry-run`、后 `--checksum` 核对），目标目录单独放、不覆盖现有业务数据；落盘权限 600。
+5. `data/` 221M 用 rsync + ssh 加密传（先 `--dry-run`、后 `--checksum` 核对），目标目录单独放、不覆盖现有业务数据；**目录 700 / 文件 600**（P1-1：目录若设 600 无 +x 会 EACCES）。
 5. 环境变量：`PORT=5174`、**`MEDBRIEF_BIND=127.0.0.1`**（配合阶段 1 的代码改动）、`MEDBRIEF_AUTH=on`、`MB_SESSION_SECRET=<强随机>`、`MEDREC_BACKEND=8011`（若 C2 落地）或 `legacy`（只读版）；**SECRET 不进代码库**（生成/存放/轮转有规程）；生产 cookie `Secure` + 反代传 `X-Forwarded-Proto`。
 6. 备份：上传前对生产目标目录打 tar.gz 快照；记录回滚点。
 
 **阶段 3 — 进程与反代：**
-7. 进程守护：systemd unit（推荐，`Restart=on-failure`）或 1Panel 进程守护；**必须写 `WorkingDirectory=<部署目录>`**（项目内 `path.resolve('data',…)` 相对 CWD，不设会去 `/data` 找库——审核 r1 P1）；**加 `MemoryMax=`**（swap 已用 2.3G）；`Environment=MEDBRIEF_BIND=127.0.0.1`。
-8. **C7 分支（用户已定）**：用新子域名 **`medbrief.shanhailingjing.top`**——用户在 DNS 加 A 记录指向 `62.234.146.222` → 1Panel 建**独立站点** + 反代 `http://127.0.0.1:5174` + 公信证书（Let's Encrypt，复用 1Panel 的 ACME）。**绝不覆盖/改动现存 `admin.shanhailingjing.top` 站点**（实测是活着的生产后台）。若新域名解析/证书失败 → 不上公网，不回退到占 admin 站点。
+7. 进程守护：systemd unit 或 1Panel 进程守护（**二选一待拍板 #5**，主理人要求"走面板"）；**必须写 `WorkingDirectory=<部署目录>`**（`path.resolve('data',…)` 相对 CWD，不设会去 `/data` 找库）；**`MemoryMax=` 给具体值**（建议 512M，只读版 RSS~130M，swap 已用 2.3G——P1-2）；`Environment=MEDBRIEF_BIND=127.0.0.1`；1Panel 是否具备 Node 进程托管能力需先核实（未取证）。
+7b. **反代连通性已实测（订正 AI 审核 P0-1）**：`1Panel-openresty-p1ke` 的 `NetworkMode=host`（`docker inspect` 实测）⇒ 容器内 `127.0.0.1` 即宿主机 loopback，反代 `http://127.0.0.1:5174` **不会 502**；无网桥死锁。仍以 `ss -tlnp` 断 bind 生效为准。
+8. **C7 分支（用户已定）**：新子域名 **`medbrief.shanhailingjing.top`**——用户加 A 记录指向 `62.234.146.222` → 1Panel 建**独立站点** + 反代 `http://127.0.0.1:5174` + 公信证书（Let's Encrypt）。**绝不覆盖现存 `admin.shanhailingjing.top`**。补（P1-5）：核 `*.shanhailingjing.top` 是否有通配符/AAAA/CDN 代理；ACME HTTP-01 路径 `/.well-known/acme-challenge/` 须避开反代/不被 WAF 拦；**medbrief 证书独立于 admin 证书**；反代须转发 `X-Forwarded-Proto https`（配合 Secure cookie，代码侧若实现——见 D0-5④）。若解析/证书失败 → 不上公网。
 9. 防火墙/暴露面：`ss -tlnp | grep 5174` 必须是 **`127.0.0.1:5174`**（验证 A7 bind 生效）；确认 8011/8008 不对公网开放；openresty WAF 已在 include 中、`client_max_body_size 50m` 已设（上传不 413）。
 9b. 权限面：`sudo -n` 免密可用 ⇒ 部署脚本等于 root，脚本与 SECRET 文件权限 600、只许 ubuntu 读写，审计留痕。
 
 **阶段 4 — 验收与回滚：**
-10. 冒烟：`curl https://<域名>/api/health` → `ok:true, auth:on, head=<部署commit>`；登录 → 建报告 → 出卡 → 打印预览；**识别链路验 8008/8011/8045 各一条**（若 C2 落地）。
-11. 门禁：服务器上 `node tests/verify-card.mjs`（62/0）、`verify-card-module1`（9/0）、`verify-auth`（43/0）——用副本库，不碰生产 data；**只读版降级时验收同步收窄**（不验 OCR 链路、隐藏上传/识别入口），不以全功能清单量只读版。
-12. **暴露面/数据断言**：API 原始 JSON **不脱敏**（`mask=1` 只在打印渲染），确认生产经 HTTPS + auth；`ss` 断 5174 仅本地绑；首登改密与口令策略生效。
+10. **只读冒烟（不写生产库，订正 AI 审核 P0-3）**：`curl https://medbrief.shanhailingjing.top/api/health` → `ok:true, auth:on, head=<部署commit>`（head 取不到则须部署时带 `.git` 或注入版本环境变量——P1-4）；登录页可达、用**只读端点**（报告列表/资料卡）确认出卡与打印预览渲染；**不在生产域名建报告/导入**（那会写脏数据，违反 B6/G7）。写类操作只在阶段 4.11 的副本库环境验。识别链路 8008/8011/8045 的验证同样放副本库，不写生产。
+10b. **只读版入口断言**（P1-6）：若本版裁剪为只读，验收须断"上传/识别入口不可点或返回明确'未启用'"，不以全功能清单量它。
+11. 门禁：服务器上 `node tests/verify-card.mjs`（62/0）、`verify-card-module1`（9/0）、`verify-auth`（43/0）——**独立端口（避开 5174）+ 独立 `MEDBRIEF_DATA_DIR`（绝不指向生产 data/）**；只读版降级时验收同步收窄，不以全功能清单量只读版。
+12. **暴露面/数据断言**：API 原始 JSON **不脱敏**（`mask=1` 只在打印渲染），确认生产经 HTTPS + auth；`ss` 断 5174 仅本地绑。**会话加固（Secure cookie/XFP/首登改密）代码未实现**（grep 零命中，AI 审核 P0-4）——部署侧配不出来；若拍板要加固，归阶段 0 D0-5④ 补代码；否则书面接受"仅 HTTPS 传输层+auth"风险，不在本计划假称已做。
 13. 回滚点：systemd stop + 恢复上一版目录/数据快照 + 1Panel 反代指回；**每步可独立回滚**。
 
 **延后项的触发条件：**
@@ -138,6 +141,8 @@ MedBrief 本地开发时 `MEDREC_BACKEND=8011` 由 launchd 守护 `com.user.medr
 5. **重启纪律**：systemd 还是 1Panel 面板托管？主理人说"走面板"，需确认 1Panel 是否有进程守护能力。
 6. **暴露面（审核 r1 新增）**：公网直连 + auth，还是叠加来源白名单/VPN？SECRET 的生成/存放/轮转由谁管？
 7. **AI Studio 审核权限**：用户须修好 AI Studio 账号权限，用 `ai_scheme_review.py --session-key MedBrief/deploy-1117` 重跑 r1（当前 Bot 判词只作技术输入，不算用户指定的审核门）。
+8. **本版裁剪表态（AI 审核 P1-6）**：D0-2~4（Bug12/A-数据层、A-渲染层、B 线附页）本版是**全等闭环**还是**显式裁剪**？裁剪则验收同步收窄，不裁剪则等用户「按以上计划执行」全做。
+9. **只读版入口关闭的实现与归属（AI 审核 P1-6）**：若选只读版，上传/识别入口是纯前端隐藏还是后端返回"未启用"？需 UI 规格，归口到 UI 设计师 + 哪个 commit 做。
 
 **回退与门禁（G7）**：每阶段独立回滚点；验收命令在上；生产库零写入直到阶段 2 的备份+rsync 完成；测试用副本库。
 
