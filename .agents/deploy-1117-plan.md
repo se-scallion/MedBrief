@@ -1,8 +1,8 @@
-# MedBrief 生产部署计划 —— 排雷与取舍 v0.3（未执行）
+# MedBrief 生产部署计划 —— 排雷与取舍 v0.4（未执行）
 
 > 触发（用户原话，2026-11-17 10:34）：「完成以上任务之后，设计一个部署计划。服务器直接无密连接 ssh ubuntu@62.234.146.222」。
 > 状态：**只做了 SSH 只读取证，未改服务器任何东西、未部署**。用户要的是"设计计划"，不是立即部署。
-> 版本 v0.3：吸收 **AI Studio 工具审核 r1**（`.agents/deploy-1117-review-r1.md`，逻辑预审 4 P0 + 6 P1）并逐条实测订正；v0.2 曾吸收 Bot 判词的实测项。
+> 版本 v0.4：吸收 **AI Studio r2**（2 P0：A9/B5/阶段2 正文口径未同步 + `MEDBRIEF_DATA_DIR` 隔离未取证）。P0-A 三处正文已统一为"代码未实现→补代码或书面接受风险"；P0-B **实测排除**：`MEDBRIEF_DATA_DIR` 确被 `lib/accounts.mjs:18`/`blobStore.mjs:13`/`correctionsStore.mjs:23` 读取，测试已在用（见阶段 4.11）。v0.3 吸收 r1（4P0+6P1）；v0.2 吸收 Bot 判词。
 > **审核方式（用户 2026-11-17 口径：必须走 AI Studio 工具）**：已用 `ai_scheme_review.py --session-key MedBrief/deploy-1117` 绑定 session 并拿到逻辑预审（因该端无本地/SSH 能力，经用户选"把取证材料嵌进 prompt"）。判词为**逻辑预审非独立实测**；可证伪条由实现方实测订正：openresty `NetworkMode=host`（实测）排除 P0-1 的 502 死锁；Secure cookie/XFP/首登改密代码 grep 零命中 ⇒ P0-4 成立。
 > 作者：代诊-Manager。代码/测试 HEAD：本地 `4aae991`（部署文档）；账号线最终代码态 `6c3e424`（5174 实际加载，主理人结案；`adbafc9`/`c55234d` 均为中间快照）。
 > 定制层：**无**（§7 反查，文件头声明 0 命中）。仅通用排雷。
@@ -49,7 +49,7 @@ MedBrief 本地开发时 `MEDREC_BACKEND=8011` 由 launchd 守护 `com.user.medr
 
 **A8【v0.2 新增，审核 r1 P0】依赖与 lock 缺失，生产不可复现。** `server.mjs:39` 顶层 `import { chromium } from 'playwright'`（在 `dependencies`）⇒ 不装就 `ERR_MODULE_NOT_FOUND`；仓库**无 package-lock.json**（实测）⇒ `npm ci` 报错、`npm install` 把 `^1.50.0` 解到最新 ⇒ 不可复现。阶段 0 必须**生成并提交 lock**、`npm ci` 装全依赖（含 playwright，不能省）。
 
-**A9【v0.2 新增，审核 r1 P0】公网真实病历只靠 auth on 不够。** `data/` 221M、98 份 `patientName` 未脱敏（`mask=1` **只在打印渲染时**脱敏，**API 原始 JSON 不脱敏**）。生产至少：HTTPS（依赖 C7）+ 来源限制/VPN + 首登改密与口令策略 + 文档明确"API 原始数据不脱敏"。
+**A9【v0.2 新增，审核 r1 P0；v0.4 口径统一】公网真实病历只靠 auth on 不够。** `data/` 221M、98 份 `patientName` 未脱敏（`mask=1` **只在打印渲染时**脱敏，**API 原始 JSON 不脱敏**）。**已证实的底座**：HTTPS（依赖 C7）+ `MEDBRIEF_AUTH=on` + 强 SECRET + API 不脱敏的事实写进文档。**会话加固（Secure cookie/X-Forwarded-Proto/首登改密/口令策略）代码 grep 零命中 ⇒ 代码未实现**，不能当"部署侧配置"假装配好——走 D0-5④ 的"补代码 or 书面接受风险"二选一（拍板 #10）。**来源限制/VPN 是叠加选项（拍板 #6），不是"至少必须有"**（原"A9 至少来源限制/VPN+首登改密"口径已废，与拍板 #6 统一）。
 
 **A10【v0.2 新增，审核 r1】资源/站点补证**：Swap 4.0G **已用 2.3G**（已在靠 swap 撑）；只读版本地 RSS ~130MB ⇒ 只读版可行、全功能不可行，systemd 加 `MemoryMax`；现存 3 站点（`admin.shanhailingjing.top`/`www.shanhailingjing.top`/`test`，新站点避开）；`sudo -n` 免密可用 ⇒ 部署脚本等于 root，权限面要收；4 核；openresty include 1Panel WAF、`client_max_body_size 50m` 已在 http 级设好（上传不会 413）。
 
@@ -65,7 +65,7 @@ MedBrief 本地开发时 `MEDREC_BACKEND=8011` 由 launchd 守护 `com.user.medr
 
 **B4 证书与域名。** 80/443 已有 openresty 在 termination，本站必须用独立域名/子域 + 证书，不能抢现有站点的 server_name；域名/DNS 由用户提供（当前未知）。
 
-**B5 认证开后门风险 —— v0.2 更新：必修已闭环，剩的是部署侧配置。** 账号线 `!AUTH_ENABLED` 无鉴权后门、恒真式 `(AUTH_ENABLED||!AUTH_ENABLED)` 已被主理人两轮打回修复（`395156d`/`adbafc9`/`6c3e424`；实测 `grep -c 'AUTH_ENABLED || !AUTH_ENABLED'`=0、`MEDBRIEF_AUTH=off` 下 GET/POST admin/users 均 503、`verify-auth` 43/0）。代码侧 `MEDBRIEF_AUTH` 默认 on（`:263` `!== 'off'`）、缺 `MB_SESSION_SECRET` 或任段 <32 字符 `exit(1)`（`:88-92`）。**部署侧仍必须**：`MEDBRIEF_AUTH=on` + 强 SECRET（生成/存放/轮转有规程）+ 生产 `Secure` cookie + 反代传 `X-Forwarded-Proto`（否则 cookie 不走 HTTPS）+ 首登改密。
+**B5 认证开后门风险 —— v0.2 更新：必修已闭环，剩的是部署侧配置。** 账号线 `!AUTH_ENABLED` 无鉴权后门、恒真式 `(AUTH_ENABLED||!AUTH_ENABLED)` 已被主理人两轮打回修复（`395156d`/`adbafc9`/`6c3e424`；实测 `grep -c 'AUTH_ENABLED || !AUTH_ENABLED'`=0、`MEDBRIEF_AUTH=off` 下 GET/POST admin/users 均 503、`verify-auth` 43/0）。代码侧 `MEDBRIEF_AUTH` 默认 on（`:263` `!== 'off'`）、缺 `MB_SESSION_SECRET` 或任段 <32 字符 `exit(1)`（`:88-92`）。**部署侧底座（已证实可做）**：`MEDBRIEF_AUTH=on` + 强 SECRET（生成/存放/轮转有规程）。**会话加固（生产 `Secure` cookie / `X-Forwarded-Proto` / 首登改密）代码 grep 零命中、未实现**——不能写成"部署侧必须配好"；按 D0-5④ 走"账号线补代码 or 书面接受仅 HTTPS+auth 风险"（拍板 #10）。反代层可免费补 HTTP 80→443 的 301 强制跳转（降低明文传输概率），但不冒充会话加固。
 
 **B6 测试污染。** 部署验收用副本库 + 非生产端口；**绝不拿生产库跑测试**；健康检查用 `/api/health`，不写库。
 
@@ -112,7 +112,7 @@ MedBrief 本地开发时 `MEDREC_BACKEND=8011` 由 launchd 守护 `com.user.medr
 
 **阶段 2 — 数据与配置：**
 5. `data/` 221M 用 rsync + ssh 加密传（先 `--dry-run`、后 `--checksum` 核对），目标目录单独放、不覆盖现有业务数据；**目录 700 / 文件 600**（P1-1：目录若设 600 无 +x 会 EACCES）。
-5. 环境变量：`PORT=5174`、**`MEDBRIEF_BIND=127.0.0.1`**（配合阶段 1 的代码改动）、`MEDBRIEF_AUTH=on`、`MB_SESSION_SECRET=<强随机>`、`MEDREC_BACKEND=8011`（若 C2 落地）或 `legacy`（只读版）；**SECRET 不进代码库**（生成/存放/轮转有规程）；生产 cookie `Secure` + 反代传 `X-Forwarded-Proto`。
+5. 环境变量：`PORT=5174`、**`MEDBRIEF_BIND=127.0.0.1`**（配合阶段 0 D0-5 的代码改动）、`MEDBRIEF_AUTH=on`、`MB_SESSION_SECRET=<强随机>`、`MEDREC_BACKEND=8011`（若 C2 落地）或 `legacy`（只读版）；**SECRET 不进代码库**（生成/存放/轮转有规程）。**不写 `Secure cookie`/`XFP`/首登改密为"已配"**——代码未实现，见 D0-5④/拍板 #10。
 6. 备份：上传前对生产目标目录打 tar.gz 快照；记录回滚点。
 
 **阶段 3 — 进程与反代：**
@@ -125,7 +125,7 @@ MedBrief 本地开发时 `MEDREC_BACKEND=8011` 由 launchd 守护 `com.user.medr
 **阶段 4 — 验收与回滚：**
 10. **只读冒烟（不写生产库，订正 AI 审核 P0-3）**：`curl https://medbrief.shanhailingjing.top/api/health` → `ok:true, auth:on, head=<部署commit>`（head 取不到则须部署时带 `.git` 或注入版本环境变量——P1-4）；登录页可达、用**只读端点**（报告列表/资料卡）确认出卡与打印预览渲染；**不在生产域名建报告/导入**（那会写脏数据，违反 B6/G7）。写类操作只在阶段 4.11 的副本库环境验。识别链路 8008/8011/8045 的验证同样放副本库，不写生产。
 10b. **只读版入口断言**（P1-6）：若本版裁剪为只读，验收须断"上传/识别入口不可点或返回明确'未启用'"，不以全功能清单量它。
-11. 门禁：服务器上 `node tests/verify-card.mjs`（62/0）、`verify-card-module1`（9/0）、`verify-auth`（43/0）——**独立端口（避开 5174）+ 独立 `MEDBRIEF_DATA_DIR`（绝不指向生产 data/）**；只读版降级时验收同步收窄，不以全功能清单量只读版。
+11. 门禁：服务器上 `node tests/verify-card.mjs`（62/0）、`verify-card-module1`（9/0）、`verify-auth`（43/0）——**隔离已实测可用**：`MEDBRIEF_DATA_DIR` 被 `lib/accounts.mjs:18`/`blobStore.mjs:13`/`correctionsStore.mjs:23` 读取（`process.env.MEDBRIEF_DATA_DIR || cwd/data`），且 verify-auth/card-inject 等测试已用它+独立端口跑通。要求：独立端口（避开 5174）+ `MEDBRIEF_DATA_DIR` 指向临时副本（绝不指向生产 data/）+ `MEDBRIEF_REPORTS_FILE` 指向副本库；只读版降级时验收同步收窄，不以全功能清单量只读版。
 12. **暴露面/数据断言**：API 原始 JSON **不脱敏**（`mask=1` 只在打印渲染），确认生产经 HTTPS + auth；`ss` 断 5174 仅本地绑。**会话加固（Secure cookie/XFP/首登改密）代码未实现**（grep 零命中，AI 审核 P0-4）——部署侧配不出来；若拍板要加固，归阶段 0 D0-5④ 补代码；否则书面接受"仅 HTTPS 传输层+auth"风险，不在本计划假称已做。
 13. 回滚点：systemd stop + 恢复上一版目录/数据快照 + 1Panel 反代指回；**每步可独立回滚**。
 
@@ -140,9 +140,10 @@ MedBrief 本地开发时 `MEDREC_BACKEND=8011` 由 launchd 守护 `com.user.medr
 4. **资源**：三识别服务若同机，1.0G 可用内存 + 已用 2.3G swap 明显不够——加内存、独立小机、还是砍 OCR（只读版）？
 5. **重启纪律**：systemd 还是 1Panel 面板托管？主理人说"走面板"，需确认 1Panel 是否有进程守护能力。
 6. **暴露面（审核 r1 新增）**：公网直连 + auth，还是叠加来源白名单/VPN？SECRET 的生成/存放/轮转由谁管？
-7. **AI Studio 审核权限**：用户须修好 AI Studio 账号权限，用 `ai_scheme_review.py --session-key MedBrief/deploy-1117` 重跑 r1（当前 Bot 判词只作技术输入，不算用户指定的审核门）。
+7. **AI Studio 审核进度**：已用 `--session-key MedBrief/deploy-1117` 跑完 r1（逻辑预审，4P0+6P1）与 r2（2P0）；r1/r2 判词在 `.agents/deploy-1117-review-r{1,2}.md`。待 r3 终判（P0 清零）。
 8. **本版裁剪表态（AI 审核 P1-6）**：D0-2~4（Bug12/A-数据层、A-渲染层、B 线附页）本版是**全等闭环**还是**显式裁剪**？裁剪则验收同步收窄，不裁剪则等用户「按以上计划执行」全做。
 9. **只读版入口关闭的实现与归属（AI 审核 P1-6）**：若选只读版，上传/识别入口是纯前端隐藏还是后端返回"未启用"？需 UI 规格，归口到 UI 设计师 + 哪个 commit 做。
+10. **会话加固二选一（AI 审核 P0-4 / D0-5④）**：Secure cookie / X-Forwarded-Proto / 首登改密 / 口令策略代码**零命中未实现**——是归账号线补代码后再部署，还是**书面接受"仅 HTTPS 传输层 + auth、不做会话加固"**的风险？二选一必须落文字，不许在部署文档假称已做。
 
 **回退与门禁（G7）**：每阶段独立回滚点；验收命令在上；生产库零写入直到阶段 2 的备份+rsync 完成；测试用副本库。
 
@@ -156,4 +157,4 @@ cd /Users/scallion/Documents/projects/MedBrief && node -e "const p=require('./pa
 grep -n "127.0.0.1:8008\|127.0.0.1:8045\|MEDREC_BACKEND\|VISION_ENDPOINT" server.mjs lib/*.mjs
 ```
 
-> 下一步（两个独立的门）：①**用户指定审核门**：修好 AI Studio 权限后用 `--session-key MedBrief/deploy-1117` 重跑 r1（Bot 判词 `.agents/deploy-1117-review-r1.md` 的技术修正已吸收进 v0.2，但不替代该门）；②**用户拍板门**：上面 7 项（范围/域名/数据/资源/重启/暴露面/权限）。两门都过 + 用户一句"按以上计划执行"才动服务器。
+> 下一步（两个独立的门）：①**审核门**：AI Studio 同 session 续跑 r3（r1/r2 判词已落盘，r2 两条 P0 已裁：P0-A 正文统一/P0-B 实测排除）；②**用户拍板门**：上面 10 项（范围/域名已定/数据/资源/重启/暴露面/审核进度/裁剪/只读入口/会话加固）。两门都过 + 用户一句"按以上计划执行"才动服务器。
