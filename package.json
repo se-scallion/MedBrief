@@ -20,6 +20,8 @@
     "test:card-layout": "node tests/verify-card-trends-layout.mjs",
     "test:card-module1": "node tests/verify-card-module1.mjs",
     "test:reports-panel-ui": "node tests/verify-reports-panel-ui.mjs",
+    "test:ui-audit": "node tests/verify-card-mobile-layout.mjs",
+    "test:card-mobile-layout": "node tests/verify-card-mobile-layout.mjs",
     "test:reports-panel-ui-selfcheck": "node tests/verify-reports-panel-ui-selfcheck.mjs",
     "test:checklist": "node tests/verify-checklist.mjs",
     "test:workbench": "node tests/verify-workbench.mjs",

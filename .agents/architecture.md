@@ -458,3 +458,14 @@ ego lite 的 Chromium（真实指纹 + 独立 profile）可通过。故 `lib/ego
   资料卡渲染分组全留项目侧；服务判不出类型时给 `kind=unknown|lab` + `extras.gaps.rows_reverse`，由调用方自己反推。
 - 退役门禁（M3）：两侧 `GET /api/recognition-hits?days=7` 只读汇总，`retireGate` 需连续 7 天
   legacy 全 0 + 每天有观测 + 样本 ≥50；物理删除前 dry-run + mv 到 `.agents/_backup/`（禁 rm）。
+
+## 移动端版面门禁（2026-11-17，L1–L13 + A1–A4）
+
+- **命令**：`npm run test:ui-audit`（= `npm run test:card-mobile-layout` = `node tests/verify-card-mobile-layout.mjs`）
+- **判据**：375×812 与 1440×900 两档真浏览器实测 —— 首卡宽≈轨道宽−2±1 且 ≥300（防「9 张卡各 28px 竖条」）、svg/点列表 ≥300、
+  点列表 2 行截断（clamp=2 + `共 N 次` + title 全文）、文档无横向溢出、弹窗贴边全屏 + 每侧内距 12±1 + 标题/工具栏/原件左缘极差 ≤1、
+  弹窗内距单层（antd `.ant-modal-container` padding 归零）、弹窗总高 ≤ 视口（`100dvh`）且内部滚动、
+  账号管理页无横向溢出且单元格 nowrap 内部横滑、顶栏触控热区 ≥44（`elementFromPoint` 验伪元素外扩）、
+  SVG 文字渲染高 ≥9px 且参考刻度与点值标签零相交、标题与工具组交集面积 = 0、趋势卡区截图落盘。
+- **证伪**：`--falsify=grid`（塞回 `repeat(auto-fit,minmax(0,1fr))`）⇒ L1/L2/L4/L10a 必红；
+  `--falsify=padding`（body 12 + 左栏 8 双层）⇒ L5b/L5c/L7 必红。exit 1 = 真红，exit 0 = 判据失效。
