@@ -26,11 +26,17 @@
 //   A2  point 行 scrollHeight <= clientHeight + 1（可见 2 行、不外溢）
 //   A3  所有 svg text 渲染高 ≥9px，且参考刻度 bbox 与点值标签 bbox 零相交
 //   A4  趋势卡 scrollIntoView 后额外落盘截图（.agents/ui-audit-1117/shots/）
+//   L17a 375 首屏（不滚动）第一张趋势卡 top < 视口×0.55（改前 ≈3200px）
+//   L17b 指标选择行收起态 ≤60px、选择器 ≤40px
+//   L17c showSearch 中文可用（输入「血红」选项数变少且结果都含该词）
+//   L18  页签文字 scrollWidth ≤ clientWidth+1，容器可滚时必须能滚到末项
 //
 // 证伪（--falsify=…，exit 1 = 真红；exit 0 = 判据恒绿 = 测试失效）：
 //   --falsify=grid     窄屏网格塞回 repeat(auto-fit,minmax(0,1fr)) ⇒ L1/L2/A3 必须红
 //   --falsify=padding  body 塞回 12 + 左栏 8 双层内距           ⇒ L5/L7 必须红
 //   --falsify=containerpad  只把 .ant-modal-container padding 改回 24 ⇒ L6b 必须红（判据是几何口径，不能靠求和蒙对）
+//   --falsify=collapsed 在选择行内塞 3200px 假列表（还原旧世界）⇒ L17a/L17b 必须红
+//   --falsify=tabs      把页签文字换成超长中文 ⇒ L18 必须红
 
 import fs from 'node:fs'
 import os from 'node:os'
@@ -85,25 +91,19 @@ const M_TRENDS = () => {
   const svg = c0.querySelector('svg')
   const cs = (e) => (e ? getComputedStyle(e) : null)
   const nonEmpty = getComputedStyle(g).gridTemplateColumns.split(' ').filter((v) => parseFloat(v) > 0).length
-  // 标题 vs 工具组
-  let optHead = null
-  for (const h of document.querySelectorAll('.ant-card-head')) if (/可选指标/.test(h.textContent || '')) { optHead = h; break }
-  const headTitle = optHead?.querySelector('.ant-card-head-title')
-  const headExtra = optHead?.querySelector('.ant-card-extra')
+  // 指标选择行（.mb-trend-opt）：文字 + Select + 模式切换 —— 零遮挡/零水平裁切 + 高度 + 首卡位置
+  const optRow = document.querySelector('.mb-trend-opt')
+  const optLabel = optRow ? optRow.firstElementChild : null
+  const optSelect = optRow ? optRow.querySelector('.ant-select') : null
   const inter = (a, c) => {
     const ox = Math.max(0, Math.min(a.right, c.right) - Math.max(a.left, c.left))
     const oy = Math.max(0, Math.min(a.bottom, c.bottom) - Math.max(a.top, c.top))
     return Math.round(ox * oy)
   }
-  let otherOverlaps = 0
-  for (const h of document.querySelectorAll('.ant-card-head')) {
-    const tt = h.querySelector('.ant-card-head-title'), ee = h.querySelector('.ant-card-extra')
-    if (tt && ee && inter(tt.getBoundingClientRect(), ee.getBoundingClientRect()) > 0) otherOverlaps++
-  }
-  const extraRect = headExtra?.getBoundingClientRect()
-  const clippedBtn = headExtra ? [...headExtra.querySelectorAll('button, .ant-segmented')].filter((x) => {
+  const rowRect = optRow ? optRow.getBoundingClientRect() : null
+  const clippedInRow = (optRow && rowRect) ? [...optRow.querySelectorAll('button, .ant-segmented, .ant-select')].filter((x) => {
     const r = x.getBoundingClientRect()
-    return extraRect && (r.left < extraRect.left - 1 || r.right > extraRect.right + 1)
+    return r.left < rowRect.left - 1 || r.right > rowRect.right + 1
   }).length : 0
   // svg 文字
   const vb = svg.getAttribute('viewBox').split(' ').map(Number)
@@ -135,11 +135,15 @@ const M_TRENDS = () => {
     minTextH: texts.length ? Math.min(...texts.map((x) => x.h)) : 0,
     refVsValOverlaps: refVsVal,
     anyTextPairOverlaps: anyPair,
-    optTitleOverlap: (headTitle && headExtra) ? inter(headTitle.getBoundingClientRect(), headExtra.getBoundingClientRect()) : 0,
-    optTitleW: headTitle ? Math.round(headTitle.getBoundingClientRect().width) : null,
-    otherCardOverlaps: otherOverlaps,
-    toolbarScrollW: headExtra?.scrollWidth ?? 0, toolbarClientW: headExtra?.clientWidth ?? 0,
-    clippedButtons: clippedBtn,
+    // L17：首张趋势卡在首屏（不滚动）的位置 + 选择行高度
+    gridTopAbs: Math.round(g.getBoundingClientRect().top + window.scrollY),
+    vh55: Math.round(window.innerHeight * 0.55), scrollY: window.scrollY,
+    optRowH: optRow ? Math.round(rowRect.height) : null,
+    optSelectH: optSelect ? Math.round(optSelect.getBoundingClientRect().height) : null,
+    optLabelW: optLabel ? Math.round(optLabel.getBoundingClientRect().width) : null,
+    optLabelOverlap: (optLabel && optSelect) ? inter(optLabel.getBoundingClientRect(), optSelect.getBoundingClientRect()) : 0,
+    optRowScrollW: optRow?.scrollWidth ?? 0, optRowClientW: optRow?.clientWidth ?? 0,
+    clippedInRow,
   }
 }
 
@@ -219,9 +223,30 @@ async function injectFalsify(page) {
   }
   // 证伪注入要**严格高于**组件内 <style> 的优先级（同权重时后插入的组件样式会赢 ⇒ 假绿）：
   // 组件是 .mb-src-modal .ant-modal-container（0,2,0），这里用三层类（0,3,0）
+  if (FALSIFY === 'tabs') {
+    // 还原「长页签被右缘截断」：把页签文字换成超长中文
+    await page.evaluate(() => {
+      document.querySelectorAll('.ant-tabs-tab .ant-tabs-tab-btn').forEach((el) => {
+        el.textContent = '临床指标总览与动态趋势看板全部原件时间轴'
+        el.style.minWidth = '0'
+      })
+    })
+  }
   if (FALSIFY === 'containerpad') {
     await page.addStyleTag({ content: '.mb-src-modal .ant-modal-wrap .ant-modal-container{ padding: 20px 24px !important; }' })
   }
+}
+
+// 依赖「趋势页已渲染」的证伪注入（.mb-trend-opt 只有切到趋势页才存在）
+async function injectAfterNav(page) {
+  if (FALSIFY !== 'collapsed') return
+  await page.evaluate(() => {
+    const row = document.querySelector('.mb-trend-opt')
+    if (!row) return
+    const box = document.createElement('div')
+    box.style.cssText = 'height:3200px;width:100%;background:#f6f6f6;flex:0 0 100%'
+    row.appendChild(box)
+  })
 }
 
 async function loginCtx(browser, w, h, phone, password) {
@@ -247,8 +272,28 @@ async function run(browser, results) {
       await page.goto(BASE + '/?tab=card', { waitUntil: 'networkidle' })
       await page.waitForTimeout(1500)
       await injectFalsify(page)
-      await page.locator('.ant-tabs-tab', { hasText: '动态趋势看板' }).first().click()
+      // L18：页签文字不许被压扁截断；容器若可滚必须能滚到末项
+      const tabs18 = await page.evaluate(() => {
+        const wrap = document.querySelector('.ant-tabs-nav-wrap')
+        const items = [...document.querySelectorAll('.ant-tabs-tab .ant-tabs-tab-btn')].map((el) => ({
+          text: el.textContent, scrollW: el.scrollWidth, clientW: el.clientWidth,
+        }))
+        const before = wrap ? wrap.scrollLeft : 0
+        if (wrap) wrap.scrollLeft = 99999
+        const after = wrap ? wrap.scrollLeft : 0
+        if (wrap) wrap.scrollLeft = before
+        return { items, canScroll: wrap ? wrap.scrollWidth > wrap.clientWidth + 1 : false, moved: after > before }
+      })
+      T('L18 页签文字不被截断（且可滚到末项）', () => {
+        if (!tabs18.items.length) throw new Error('未找到页签')
+        for (const it of tabs18.items) if (it.scrollW > it.clientW + 1) throw new Error(`页签「${it.text}」被截断（scrollW ${it.scrollW} > clientW ${it.clientW}）`)
+        if (tabs18.canScroll && !tabs18.moved) throw new Error('页签容器可滚但滚不到末项')
+      })
+      await page.locator('.ant-tabs-tab', { hasText: /趋势|动态趋势看板/ }).first().click()
       await page.waitForTimeout(1600)
+      await injectAfterNav(page)
+      await page.waitForTimeout(200)
+      await page.evaluate(() => window.scrollTo(0, 0))
       const t = await page.evaluate(M_TRENDS)
 
       T('L1 375 首卡满宽（轨道宽−2±1 且 ≥300）', () => { near(t.cardW, t.gridW - 2, 1, '卡宽/轨道宽'); ge(t.cardW, 300, '卡宽') })
@@ -258,11 +303,35 @@ async function run(browser, results) {
         ge(t.pointTitleLen, 20, 'title 全量'); if (!t.pointHasCount) throw new Error('缺「共 N 次」')
       })
       T('L4a 375 文档无横向溢出', () => { if (!(t.scrollWidth <= t.innerWidth)) throw new Error(`scrollWidth ${t.scrollWidth} > ${t.innerWidth}`) })
-      T('A1 标题与工具组零交集（含全部卡）', () => {
-        eq(t.optTitleOverlap, 0, '「可选指标」标题∩工具组面积'); eq(t.otherCardOverlaps, 0, '其它卡头重叠数')
-        ge(t.optTitleW, 120, '标题可见宽度'); eq(t.clippedButtons, 0, '被水平裁切的按钮数')
-        if (!(t.toolbarScrollW <= t.toolbarClientW)) throw new Error(`工具组 scrollW ${t.toolbarScrollW} > clientW ${t.toolbarClientW}（内容被裁）`)
+      T('A1 选择行零遮挡/零水平裁切', () => {
+        eq(t.optLabelOverlap, 0, '「可选指标」文字∩选择器面积'); ge(t.optLabelW, 60, '文字可见宽度')
+        eq(t.clippedInRow, 0, '被水平裁切的控件数')
+        if (!(t.optRowScrollW <= t.optRowClientW)) throw new Error(`选择行 scrollW ${t.optRowScrollW} > clientW ${t.optRowClientW}（内容被裁）`)
       })
+      T('L17a 375 首屏第一张趋势卡 top < 视口×0.55', () => {
+        if (!(t.gridTopAbs < t.vh55)) throw new Error(`首卡 top ${t.gridTopAbs} ≥ ${t.vh55}（开屏看不到趋势卡）`)
+      })
+      T('L17b 375 指标选择行收起态高度 ≤60px', () => { if (!(t.optRowH <= 60)) throw new Error(`选择行高 ${t.optRowH} > 60`); if (!(t.optSelectH <= 40)) throw new Error(`选择器高 ${t.optSelectH} > 40`) })
+
+      // L17c：showSearch 中文可用（输入「血红」选项数必须变少，且可见项都含该词）
+      {
+        const optSel = page.locator('.mb-trend-select')
+        await optSel.click()
+        await page.waitForTimeout(500)
+        const total = await page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option').count()
+        await page.keyboard.type('血红')
+        await page.waitForTimeout(700)
+        const opts = page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option')
+        const filtered = await opts.count()
+        const texts = filtered ? await opts.allTextContents() : []
+        await page.keyboard.press('Escape')
+        await page.waitForTimeout(300)
+        T('L17c 中文搜索可用（血红 74→更少）', () => {
+          if (!(total > 0)) throw new Error('下拉没有渲染任何选项')
+          if (!(filtered > 0 && filtered < total)) throw new Error(`筛选后 ${filtered} 项，未少于 ${total} 项`)
+          if (!texts.every((x) => x.includes('血红'))) throw new Error('筛选结果里混入不含「血红」的项: ' + texts.slice(0, 3).join(' / '))
+        })
+      }
       T('A2 点列表可见 2 行不外溢（scrollHeight≤clientHeight+1）', () => { if (!(t.pointScrollH <= t.pointClientH + 1)) throw new Error(`scrollH ${t.pointScrollH} > clientH ${t.pointClientH} + 1`) })
       T('A3 SVG 文字渲染高 ≥9 且**任意两个** text 零相交', () => { ge(t.minTextH, 9, '最小文字渲染高'); eq(t.refVsValOverlaps, 0, '参考刻度∩点值标签'); eq(t.anyTextPairOverlaps, 0, '任意两个 text 相交对数') })
       T('L10a 375 刻度渲染字号 ≥9px', () => { ge(t.renderedPx, 9, '渲染字号') })
@@ -278,7 +347,7 @@ async function run(browser, results) {
       })
 
       // 弹窗（含原件 blob 夹具）
-      await page.locator('.ant-tabs-tab', { hasText: '临床指标总览' }).first().click()
+      await page.locator('.ant-tabs-tab', { hasText: /总览|临床指标总览/ }).first().click()
       await page.waitForTimeout(1200)
       await page.locator('tr.ant-table-row').first().click({ timeout: 6000 })
       await page.waitForTimeout(2200)
@@ -335,7 +404,7 @@ async function run(browser, results) {
       await page.goto(BASE + '/?tab=card', { waitUntil: 'networkidle' })
       await page.waitForTimeout(1500)
       await injectFalsify(page)
-      await page.locator('.ant-tabs-tab', { hasText: '动态趋势看板' }).first().click()
+      await page.locator('.ant-tabs-tab', { hasText: /趋势|动态趋势看板/ }).first().click()
       await page.waitForTimeout(1600)
       const t2 = await page.evaluate(M_TRENDS)
       await page.locator('tr.ant-table-row').first().click({ timeout: 6000 }).catch(() => {})
@@ -412,8 +481,10 @@ const main = async () => {
 
   if (FALSIFY) {
     const expectedRed = FALSIFY === 'grid' ? results.filter((r) => /^L1 |^L2 |^L4a |^L10a /.test(r.name))
-      : FALSIFY === 'containerpad' ? results.filter((r) => /^L5b|^L6b|^L7/.test(r.name))
-        : results.filter((r) => /^L5b|^L5c|^L7/.test(r.name))
+      : FALSIFY === 'containerpad' ? results.filter((r) => /^L5b |^L6b |^L7 /.test(r.name))
+        : FALSIFY === 'collapsed' ? results.filter((r) => /^L17a|^L17b/.test(r.name))
+          : FALSIFY === 'tabs' ? results.filter((r) => /^L18/.test(r.name))
+            : results.filter((r) => /^L5b |^L5c |^L7 /.test(r.name))
     const anyRed = expectedRed.some((r) => !r.ok)
     console.log(anyRed
       ? `\n[falsify=${FALSIFY}] 期望判据确实红了 → exit 1（真红，判据有分辨力）`

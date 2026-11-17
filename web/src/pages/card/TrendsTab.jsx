@@ -5,8 +5,8 @@
 //   · **只做「网格并列」，不做双轴 / 归一化对比** —— IL-6 75240 是上限的 1 万倍，
 //     归一化会把 Hb/PLT 压成贴底直线，同样失真；双 Y 轴更容易造出假交叉；
 //   · 悬浮看该点完整信息（日期/数值/参考/医院），**点圆点直接打开原件溯源**。
-import React, { useMemo, useState } from 'react'
-import { Badge, Button, Card, Checkbox, Empty, Segmented, Space, Tag, Typography } from 'antd'
+import React, { useEffect, useMemo, useState } from 'react'
+import { Badge, Button, Card, Empty, Select, Segmented, Space, Tag, Typography } from 'antd'
 
 const { Text } = Typography
 
@@ -181,26 +181,27 @@ export default function TrendsTab({ card, onOpenSource }) {
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      {/* P0-1（AI 审核 r1）：antd Card.extra 强排一行会盖住「可选指标」标题 ⇒ 标题与工具组都改成可换行
-          flex、extra 允许收缩（minWidth:0），窄屏自动落到第二行，零遮挡。 */}
-      <Card
-        size="small"
-        title={<div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', minWidth: 0 }}>可选指标 <Text type="secondary" style={{ fontSize: 12 }}>（{all.length} 项有 ≥2 次记录 · 已选 {selected.length}）</Text></div>}
-        extra={
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'flex-end', maxWidth: '100%', minWidth: 0 }}>
-            <Segmented size="small" value={mode} onChange={setMode} options={['网格', '对比']} />
-            <Button size="small" onClick={() => setPicked(defaults)}>恢复默认 8 项</Button>
-            <Button size="small" onClick={() => setPicked(all.map((t) => t.key))}>全选</Button>
-            <Button size="small" onClick={() => setPicked([])}>清空</Button>
-          </div>
-        }
-      >
-        <Checkbox.Group
+      {/* 2026-11-17 用户口径：「这个图片是指标多选，用一个组件收起来」——74 个内联复选框把首屏吃光
+          （≈3200px、首张趋势卡在屏外），桌面与移动统一改成**一行收起态**：文字 + Select 多选 + 模式切换。
+          搜索/清空/多选都在下拉里，「恢复默认/全选/清空」收进下拉底部（不占行高）。 */}
+      <div className="mb-trend-opt" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Text strong style={{ whiteSpace: 'nowrap' }}>
+          可选指标 <Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>（已选 {selected.length} / 共 {all.length}）</Text>
+        </Text>
+        <Select
+          className="mb-trend-select"
+          mode="multiple"
+          size="small"
+          showSearch
+          allowClear
+          maxTagCount="responsive"
+          style={{ flex: '1 1 200px', minWidth: 0 }}
+          placeholder="搜索或选择指标（可多选）"
           value={selected}
           onChange={(v) => setPicked(v)}
-          style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}
           options={all.map((t) => ({
             value: t.key,
+            title: t.name,
             label: (
               <Space size={4}>
                 <span>{t.name}</span>
@@ -209,12 +210,22 @@ export default function TrendsTab({ card, onOpenSource }) {
               </Space>
             ),
           }))}
+          // 中文搜索：label 是 ReactNode，必须用 title（纯文本）自己判，不能靠 optionFilterProp
+          filterOption={(input, opt) => String(opt?.title || '').includes(input)}
+          popupRender={(menu) => (
+            <>
+              {menu}
+              <div style={{ borderTop: '1px solid #f0f0f0', padding: '6px 8px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <Button size="small" onClick={() => setPicked(defaults)}>恢复默认 8 项</Button>
+                <Button size="small" onClick={() => setPicked(all.map((t) => t.key))}>全选</Button>
+                <Button size="small" onClick={() => setPicked([])}>清空</Button>
+              </div>
+            </>
+          )}
         />
-      </Card>
+        <Segmented size="small" value={mode} onChange={setMode} options={['网格', '对比']} />
+      </div>
 
-      {/* 2026-11-17 移动端：下限用 min(…,100%) —— 手机可用宽小于下限时退化为单列满宽，
-          不再被 auto-fit 按卡片数量均分成几十 px 的竖条（旧写法 380px 硬下限 + 窄屏 !important 覆盖
-          实测得到 9 条 × 28.33px、卡宽 26px、svg 2px）。桌面档仍 380，移动档 320 由 CardPage 媒体查询负责。 */}
       {!shown.length ? <Empty description="一个都没选" /> : (
         <div className="mb-trends-grid" style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit,minmax(min(${cols === 1 ? 560 : 380}px, 100%),1fr))`, gap: 12 }}>
           {shown.map((t) => {

@@ -60,6 +60,9 @@ const CARD_MOBILE_CSS = `
      祖先链无 overflow:hidden；弹窗 zIndex=1000，此处 2 不会遮挡打印预览）。
      antd 的 CSS-in-JS 自带 .ant-tabs-nav{position:relative} 且层叠更高，实测不加 !important 不生效。 */
   .ant-tabs-nav { position: sticky !important; top: 0 !important; z-index: 2; background: #fff; }
+  /* L18：页签文字不许被压扁截断（短标签 + 容器可横滑） */
+  .ant-tabs-tab-btn { white-space: nowrap !important; }
+  .ant-tabs-nav-wrap { overflow-x: auto !important; }
 }
 `
 
@@ -81,6 +84,8 @@ export default function CardPage() {
   // 新窗口「新窗口打开纯净打印页」仍用 card.html 全量版（保留「打印 / 存 PDF」按钮）。
   const [embedHtml, setEmbedHtml] = useState('')
   const [mask, setMask] = useState(false)     // 默认不脱敏（给医生看）
+  // L18（用户真机）：375 下长页签被右缘截断（「全病…」）⇒ 移动档用短标签，桌面不动
+  const [isNarrow, setIsNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 575px)').matches)
 
   const [tab, setTab] = useState('overview')
   const [printOpen, setPrintOpen] = useState(false)
@@ -301,9 +306,9 @@ export default function CardPage() {
           activeKey={tab}
           onChange={setTab}
           items={[
-            { key: 'overview', label: '临床指标总览', children: <OverviewTab card={card} onOpenSource={openSource} onEditProfile={openProfile} /> },
-            { key: 'trends', label: `动态趋势看板${card?.trendAll?.length ? `（${card.trendAll.length}）` : ''}`, children: <TrendsTab card={card} onOpenSource={openSource} /> },
-            { key: 'timeline', label: `全病程原件轴${card?.timeline?.length ? `（${card.timeline.length}）` : ''}`, children: <TimelineTab card={card} onOpenSource={openSource} /> },
+            { key: 'overview', label: isNarrow ? '总览' : '临床指标总览', children: <OverviewTab card={card} onOpenSource={openSource} onEditProfile={openProfile} /> },
+            { key: 'trends', label: isNarrow ? `趋势${card?.trendAll?.length ? `（${card.trendAll.length}）` : ''}` : `动态趋势看板${card?.trendAll?.length ? `（${card.trendAll.length}）` : ''}`, children: <TrendsTab card={card} onOpenSource={openSource} /> },
+            { key: 'timeline', label: isNarrow ? '全病程' : `全病程原件轴${card?.timeline?.length ? `（${card.timeline.length}）` : ''}`, children: <TimelineTab card={card} onOpenSource={openSource} /> },
           ]}
         />
       )}
