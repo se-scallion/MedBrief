@@ -795,16 +795,13 @@ function getNextReleaseCountdown() {
   }
 
   // ===== 管理员账号管理：列表（GET，body 收集块外）=====
-  if (AUTH_ENABLED && pathname === '/api/admin/users' && req.method === 'GET') {
+  if (pathname === '/api/admin/users' && req.method === 'GET') {
+    // auth 关掉时账号管理整体不可用（不能因"没有登录"就默认免检）
+    if (!AUTH_ENABLED) return sendJson(res, 503, { ok: false, error: '账号管理需开启认证（MEDBRIEF_AUTH=on）' })
     if (!mbUser || mbUser.role !== 'admin') return sendJson(res, 403, { ok: false, error: '需要管理员权限' })
     try {
       sendJson(res, 200, { ok: true, users: accounts.listUsers(), audit: accounts.listAuthz(50) })
     } catch (e) { sendJson(res, 500, { ok: false, error: e.message }) }
-    return
-  }
-  if (!AUTH_ENABLED && pathname === '/api/admin/users' && req.method === 'GET') {
-    try { sendJson(res, 200, { ok: true, users: accounts.listUsers(), audit: accounts.listAuthz(50) }) }
-    catch (e) { sendJson(res, 500, { ok: false, error: e.message }) }
     return
   }
 
@@ -827,10 +824,12 @@ function getNextReleaseCountdown() {
     }
 
     // ===== 管理员账号管理：建号/改号/授权/停用/踢下线（POST，body 已收集）=====
-    if (pathname.startsWith('/api/admin/users') && (AUTH_ENABLED || !AUTH_ENABLED)) {
+    if (pathname.startsWith('/api/admin/users')) {
+      // auth 关掉时账号管理整体不可用；开启时必须 admin 本人
+      if (!AUTH_ENABLED) return sendJson(res, 503, { ok: false, error: '账号管理需开启认证（MEDBRIEF_AUTH=on）' })
       const admin = mbUser || (req.headers?.cookie ? authn.currentUser(await authn.readSession(req)) : null)
-      if (AUTH_ENABLED && (!admin || admin.role !== 'admin')) return sendJson(res, 403, { ok: false, error: '需要管理员权限' })
-      const actor = admin?.id || null
+      if (!admin || admin.role !== 'admin') return sendJson(res, 403, { ok: false, error: '需要管理员权限' })
+      const actor = admin.id
       const action = pathname === '/api/admin/users' ? 'create' : pathname.split('/').pop()
       try {
         if (action === 'create') {

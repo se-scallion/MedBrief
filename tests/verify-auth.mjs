@@ -172,6 +172,36 @@ async function main() {
     const kick = await req('/api/admin/users/kick', { method: 'POST', headers: adminHeaders, body: JSON.stringify({ id: newId }) })
     T('admin 踢下线 sessionVersion+1', kick.status === 200 && kick.body.user?.sessionVersion === 2)
 
+    // ---- 负例：auth=off 时账号管理整体不可用（防无鉴权后门）----
+    const offPort = 5400 + Math.floor(Math.random() * 300)
+    const offSrv = spawn(process.execPath, ['server.mjs'], {
+      cwd: ROOT,
+      env: { ...ENV, PORT: String(offPort), MEDBRIEF_AUTH: 'off' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    try {
+      let offReady = false
+      for (let i = 0; i < 80; i++) {
+        try { if ((await fetch(`http://127.0.0.1:${offPort}/api/health`)).ok) { offReady = true; break } } catch {}
+        await sleep(100)
+      }
+      T('auth=off 实例启动', offReady)
+      if (offReady) {
+        const offRes = await fetch(`http://127.0.0.1:${offPort}/api/admin/users`)
+        const offBody = await offRes.json().catch(() => ({}))
+        T('auth=off GET /api/admin/users ∈ {403,503}', offRes.status === 403 || offRes.status === 503)
+        T('auth=off 响应体不含 users', !('users' in offBody))
+        const offPost = await fetch(`http://127.0.0.1:${offPort}/api/admin/users`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ phone: '13800000001', password: 'x', role: 'admin' }),
+        })
+        T('auth=off POST 建号也被拒', offPost.status === 403 || offPost.status === 503)
+      }
+    } finally {
+      offSrv.kill('SIGKILL')
+      if (offSrv.exitCode === null && offSrv.signalCode === null) await new Promise((r) => { offSrv.once('exit', r); setTimeout(r, 500) })
+    }
+
     console.log(`\n==========\n通过 ${pass} / 失败 ${fail}`)
     if (fail) process.exitCode = 1
   } finally {
