@@ -1,4 +1,4 @@
-# 报告库三处 UI（手机查看原件 / 删除与编辑显隐 / 眼睛按钮）—— **数值与交互规格** v1.0（UI 设计师，2026-11-17）
+# 报告库三处 UI（手机查看原件 / 删除与编辑显隐 / 眼睛按钮）—— **数值与交互规格** v1.1（UI 设计师，2026-11-17）
 
 > 用户 2026-11-17 18:38 报三处；按硬约束「版面/图标找 UI 设计师」出规格，实现方不改版面。
 > 现状锚点：`web/src/pages/intake/ReportsPanel.jsx`（PC `Table` + 手机 `ReportDayList`）、`web/src/pages/intake/ReportDayList.jsx`、`web/src/pages/intake/shared.js`（`ICONS`）。
@@ -15,6 +15,14 @@
 
 ---
 
+## 1. ① 手机「查看原件」—— **裁定：走 B（同页 Modal），并把 A 的两个响应头作为防御一并补上**
+
+> **v1.1 依据（运维只读取证，2026-11-17，已核）**：白屏**与 nginx/WAF 无关** —— 站点配置只有 ACME/标准反代/HSTS 一条，无 proxy_cache/proxy_hide_header/blob 规则；WAF `state=off`、medbrief 不在站点列表、waf.lua 只做 access 阶段；`gzip_types` 不含 pdf。公网未登录打 `/api/intake/blob/*` → `HTTP/2 401, content-type: application/json`，**无 `Content-Disposition`、无 `X-Content-Type-Options`**；全仓这两个头 **0 命中**。
+> 两条失效路径：**① 新标签没带 session cookie（iOS in-app / 隐私模式常见）→ 401 JSON**；**② 带 cookie 但无 `Content-Disposition: inline` → 部分手机浏览器当下载/不渲染 → 白屏**。
+
+**为什么选 B 而不是只选 A**：**路径 ① 补头治不了** —— 401 是「没有身份」，不是「渲染方式」；只有**同页请求**才稳定带登录态。所以交互必须改成同页；两个响应头作为**防御层**一并补（成本 2 行，覆盖长按另存 / 将来别处直链的场景）。
+**运维提议在 nginx 加 nosniff 临时兜底 —— 我不同意**：那是用生产网关盖住应用自身缺陷，根因要走应用层一次改对。
+
 ## 1. ① 手机「查看原件」：改**同页弹窗**，不再开新标签
 
 | 项 | 规格 |
@@ -28,6 +36,9 @@
 | 失败态 | antd `Alert type="error"` + 文案 **`原件打不开：可能需要重新登录，或该原件已不存在`** + 按钮 **`重试`**；容器带 `data-blob-error` 属性（供判据取样） |
 | 为什么同页就不 401 | 新标签 `window.open('/api/intake/blob/<id>')` 在部分手机浏览器里**不带同域 cookie / 被当第三方上下文** ⇒ 401 JSON 被当图片渲染 = 白屏。同页 `<img src>` 走本页登录态 ⇒ 不会掉 cookie |
 | 复用优先 | 若 `SourceModal.jsx`（`web/src/pages/card/SourceModal.jsx`）里已有等价的图片/PDF 预览体，**抽出来复用**，不重写第二套；抽不出就按上表新建 `BlobModal`，**不许**在页面里塞内联 `<img>` 一段了事 |
+| **PDF 渲染（B 的关键，不许用 iframe）** | 用 **pdf.js**（项目已装 `pdfjs-dist`，写法照 `meddata/src/utils/parseDoc.js:6-11` 的 `GlobalWorkerOptions.workerSrc`）逐页渲染成 `<canvas>`：页面宽 = 容器宽、`devicePixelRatio` 取 2、**首屏先渲染 3 页**、滚到底续 3 页（最多 12 页后给「继续加载」）；顶部显示 **`第 n / N 页`**（12px 灰）。**理由**：iOS Safari 对 iframe 内嵌 PDF 支持差（只显首屏或空白），`<img>` 也吃不了 PDF |
+| **兜底（必须有）** | 弹窗底部一行文本按钮 **`下载 / 在浏览器打开`**，旁注 12px：`若上面看不全，可下载后用系统阅读器打开`；仍走同源 URL（是下载通道，**不是**新标签渲染的替代品） |
+| **服务端两个头（A 的部分，防御层）** | `server.mjs:1661` 的 `writeHead(200, …)` 增加 `Content-Disposition: inline; filename*=UTF-8''<encodeURIComponent(原名)>` 与 `X-Content-Type-Options: nosniff`；`content-type` 仍按原类型。**改动归属 = 实现方（代码）**；规格只要求「必须有」，见 P14 |
 
 ---
 
@@ -84,9 +95,13 @@
 | **P7** | 原件能真加载 | `.blob-modal` 内 `<img>` 的 `naturalWidth > 0`；或 `<iframe>` 的 `contentDocument` 非空（PDF 允许 `contentDocument === null`，改为断言 `iframe.src` 同源且 `HTTP 200`） | 真 |
 | **P8** | 401 不白屏 | 用未登录上下文（清 cookie）点原件 ⇒ 出现 `[data-blob-error]` 且模态框内有可见文字；**body 不得为空** | 全真 |
 | **P9** | 同源不丢 cookie | 监听 `request`：blob 请求 `url` 以 `/api/intake/blob/` 开头且**同 origin**（无 `cross-origin` 302） | 真 |
+| **P11** | 图片同页加载 | 375 与 1440 视口点 `查看原件`（jpeg/png 报告）：`page.on('popup')` 零触发；`.blob-modal img` 的 `naturalWidth > 0` 且 `currentSrc` 以 `/api/intake/blob/` 开头 | 全真 |
+| **P12** | **PDF 用 canvas 不用 iframe** | 打开 pdf 原件后：`.blob-modal iframe` 计数 === **0**；`.blob-modal canvas` 计数 ≥ **1** 且首个 canvas `width > 0`；`第 n / N 页` 文本存在 | 全真 |
+| **P13** | 401 不白屏且有指路 | 清 cookie 后点原件：`[data-blob-error]` 存在、文案含 **`登录`**、有 `重试` 按钮；模态框内 `innerText.length > 0` | 全真 |
+| **P14** | 服务端两个头 | `curl -sI <base>/api/intake/blob/<id>`（带登录 cookie）：`content-disposition` 匹配 `/^inline;/i` 且含 `filename*=UTF-8''`；`x-content-type-options` === `nosniff`；`content-type` ∈ {`image/jpeg`,`image/png`,`application/pdf`} | 全真 |
 | **P10** | 整行可点 + 按钮热区 44 | ① 375 视口点 `.rb-day-row` 的**空白区**（不落在按钮上）→ 详情打开；② `.rb-day-row` 的 `rect.height ≥ 44`；③ `.rb-day-actions` 内每个按钮：视觉 32×32，但 `document.elementFromPoint(cx±20, cy)` 与 `(cx, cy±20)` **四点都返回该按钮**（`::before` 扩展归宿主） | 全真 |
 
-**证伪（3 条，贴退出码 1）**：① 把 `onRow` 去掉（PC 退回只有按钮）⇒ **P1/P2 必红**；② 把手机删除按钮放回列表 ⇒ **P4 必红**；③ 把原件改回 `window.open` ⇒ **P6 必红**。
+**证伪（5 条，贴退出码 1）**：① 去掉 `onRow`（PC 退回只有按钮）⇒ **P1/P2 必红**；② 手机删除按钮放回列表 ⇒ **P4 必红**；③ 原件改回 `window.open` ⇒ **P6 必红**；④ PDF 改用 `<iframe>` ⇒ **P12 必红**；⑤ 去掉 `server.mjs` 的 `Content-Disposition` ⇒ **P14 必红**。
 
 ---
 
@@ -98,6 +113,6 @@
 
 ## 7. 条数统计（v1.0）
 
-- 规格条目：**§1 手机原件 9 条 / §2 删除与编辑 5 条 / §3 眼睛与行点击 6 条 / §4 布局数值 4 条 = 24 条**
-- 判据：**P1–P10 共 10 条**（3 条带证伪），门禁 `test:reports-panel-ui` **待创建**
+- 规格条目：**§1 手机原件 13 条（v1.1 +4）/ §2 删除与编辑 5 条 / §3 眼睛与行点击 6 条 / §4 布局数值 4 条 = 28 条**
+- 判据：**P1–P14 共 14 条**（5 条带证伪），门禁 `test:reports-panel-ui` **待创建**
 - 待确认：**1 条**（§6）
